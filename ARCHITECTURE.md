@@ -113,6 +113,14 @@ effective(t, angleDeg) = t / cos(angle)
 pose = { pos, yaw, pitch, roll, turretYaw, gunPitch }   // from tank.pose()
 ```
 
+Implementation notes (`armor.js`): `rayArmor(model, pose, origin, dir, maxDist?)` returns a
+**reused** array (copy what you keep); each hit also has `side` ('L'|'R' for tracks/skirts),
+`plateName` (German) and `point` (world). Non-convex hull profiles (stepped fronts) are split
+horizontally at concave vertices into convex slabs; cut faces are internal. Extra exports:
+`armorFor(cfg)` (cached per type), `rayModules`, `modulesNear`, `gunWorld(cfg, pose, outPos,
+outDir)` (muzzle + barrel direction), `hullToWorld`. `model.parts[i].faces[j].loop` are the
+vertex loops (part frame: hull, turret = around the ring at hull roof, gun = trunnion).
+
 ## Ballistics (`ballistics.js`)
 
 * Shells are 3D projectiles with gravity `g = 9.81`, velocities from the ammo (AP ~600–1000
@@ -134,6 +142,13 @@ pose = { pos, yaw, pitch, roll, turretYaw, gunPitch }   // from tank.pose()
   penetrates → full damage + module damage; else splash damage = `alpha/2 − effT*k` (≥0),
   module/crew damage in radius. Splash radius per caliber.
 * **Overpen / miss**: no damage. **Non-pen** (bounce or absorbed): 0 damage, "Kein Durchschlag".
+* API: `penAt(round, dist)`, `rollPen`, `ricochets(type, cal, t, angle)`, `normalisation`,
+  `resolveImpact(target{armor,pose}, origin, dir, shell{type,cal,dmg,pen}, rng)` →
+  `{ kind:'pen'|'ricochet'|'noPen'|'he'|'miss', dmg, plateId, part, side, t, effT, angleDeg, pen,
+  point, normal, crits:[{kind:'module'|'crew', id, dmg}], ricDir, overmatch }`, `heSplash(target,
+  point, shell, rng)`, `solveElevation(v, dx, dy)`, `fireShell(world, tank, round, pos, dir)`,
+  `updateShells(world, dt)` → calls `world.onShellHit(shell, tank|null, result|null, point,
+  what:'tank'|'splash'|'ground'|'object'|'water'|'expire')`; the World applies damage + events.
 * Results become events: `pen`, `ricochet`, `noPen`, `he`, `crit`, `ammoRack`, `fire`, `kill`,
   `track`, `crew` with `{ srcId, dstId, dmg, pos, plateId, effT, pen, angleDeg, ammo }`.
 * **Dispersion** (WoT-like): `gun.disp` (m at 100 m), multiplied by bloom from moving
@@ -259,6 +274,6 @@ co-op vs bots and PvP, rejoin, host migration later). Transport files (`mqtt.js`
 
 ## Tests
 
-`node --test tests/` — sim tests (armour ray tests, effective thickness, ricochet/overmatch,
+`npm test` (= `node --test "tests/*.test.mjs"`; node ≥ 22 no longer accepts a bare directory) — sim tests (armour ray tests, effective thickness, ricochet/overmatch,
 pen falloff, determinism of terrain, a bot battle runs to an end without errors). Playwright
 screenshot scripts in `tests/*.mjs` for the browser (Chrome via playwright).
