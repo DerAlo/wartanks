@@ -373,9 +373,8 @@ export function gunWorld(cfg, pose, outPos, outDir) {
    let dx = 0, dy = sp, dz = -cp;                    // pitched direction
    let px = g.pivot.x, py = g.pivot.y, pz = g.pivot.z; // pivot in turret (or hull) frame
    const cy = Math.cos(ty), sy = Math.sin(ty);
-   const rotY = (x, z) => [cy * x + sy * z, -sy * x + cy * z];
-   [dx, dz] = rotY(dx, dz);
-   if (T) { [px, pz] = rotY(px, pz); px += T.x; py += T.y; pz += T.z; }
+   let rx = cy * dx + sy * dz; dz = -sy * dx + cy * dz; dx = rx;     // rotate about y (no allocation)
+   if (T) { rx = cy * px + sy * pz; pz = -sy * px + cy * pz; px = rx + T.x; py += T.y; pz += T.z; }
    const L = g.len + 0.15;
    _n.x = px + dx * L; _n.y = py + dy * L; _n.z = pz + dz * L;
    mulMat3(outPos, m, _n);
