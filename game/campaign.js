@@ -106,7 +106,7 @@ export class Script {
       }
       const t = w.addTank(cls, team, { x, z, yaw, name: o.name || cfg.name, isPlayer: !!o.isPlayer });
       t.placeOn?.(T);
-      t.tag = o.tag || null;
+      t.tag = o.tag || null; if (o.aiErr) t.aiErr = o.aiErr; if (o.viewMul) t.viewMul = o.viewMul;
       if (o.tag) { if (!this.tags.has(o.tag)) this.tags.set(o.tag, []); this.tags.get(o.tag).push(t); }
       if (w.ais && !o.isPlayer) {                     // after construction World does not wire these
          t.side = w.player && t.team === w.player.team ? 'ally' : 'enemy';
@@ -143,8 +143,9 @@ export class Script {
       for (const k in p.ammoCount) p.ammoCount[k] = Math.max(p.ammoCount[k], Math.ceil((load[k] ?? 0) * 0.6));
       if (text) this.radio(text, 'info');
    }
-   _tuneAI(t) {            // emplacement crews aim worse than tank gunners at moving tanks (cfg.aiErr)
-      if (t.ai && t.cfg.aiErr && !t.ai._tuned) { t.ai._tuned = true; t.ai.D = { ...t.ai.D, err: t.ai.D.err * t.cfg.aiErr }; }
+   _tuneAI(t) {            // emplacement crews / green crews aim worse (cfg.aiErr, spawn o.aiErr)
+      const k = t.aiErr ?? t.cfg.aiErr;
+      if (t.ai && k && !t.ai._tuned) { t.ai._tuned = true; t.ai.D = { ...t.ai.D, err: t.ai.D.err * k, react: t.ai.D.react * Math.sqrt(k) }; }
    }
    group(tag) { return Array.isArray(tag) ? tag.flatMap((g) => this.group(g)) : this.tags.get(tag) || []; }
    alive(tag) { let n = 0; for (const t of this.group(tag)) if (t.alive) n++; return n; }
@@ -348,38 +349,61 @@ export const OPS = {
       goals: ['Brückenkopf 8 Minuten halten', 'Über die Brücke zurückziehen', 'Brücke sprengen lassen'],
       tip: 'Nutze den Panzer schräg (Winkel) und lass dich nicht flankieren. Munition ist knapp.',
       script(S) {
-         const br = S.T.bridges?.[0] || { x: 0, z: 0 }, bx = br.x ?? 0, bz = br.z ?? 0;
-         S.player.pos.x = bx; S.player.pos.z = bz + 90; S.player.placeOn?.(S.T);
+         // the river causeway becomes a real bridge (deck over water) that can be blown
+         const site = S.T.bridgeSites?.[0], T = S.T;
+         let br = null;
+         if (site && T.addBridge) {
+            const ex = (site.x0 - site.x1) * 0.12, ez = (site.z0 - site.z1) * 0.12;
+            br = T.addBridge(site.x0 + ex, site.z0 + ez, site.x1 - ex, site.z1 - ez, { w: 8 });
+         }
+         const bx = br?.x ?? 0, bz = br?.z ?? 0, south = Math.max(br?.z0 ?? 0, br?.z1 ?? 0), north = Math.min(br?.z0 ?? 0, br?.z1 ?? 0);
+         const hz = south + 75;                                   // bridgehead line on the south bank
+         S.player.pos.x = bx; S.player.pos.z = hz + 15; S.player.placeOn?.(S.T);
+         // roadblock in front of the bridgehead: hedgehogs and wire with a gap on the road, so the
+         // attackers come at the Tiger's front instead of swarming round it
+         for (let x = -200; x <= 200; x += 9) if (Math.abs(x) > 18) T.addObject?.({ kind: x % 2 ? 'hedgehog' : 'wire', x: bx + x, z: hz + 110, yaw: 0 });
+         S.spawn('pak40', 1, bx - 70, hz + 10, { tag: 'rear', name: 'PaK 40 (Nachhut)', face: [bx - 70, hz + 400], order: { kind: 'hold', x: bx - 70, z: hz + 10 } });
+         S.spawn('pz4h', 1, bx + 60, hz + 5, { tag: 'rear', name: 'Panzer IV (Nachhut)', yaw: Math.PI, order: { kind: 'hold', x: bx + 60, z: hz + 5 } });
          S.obj('hold', 'Den Brückenkopf halten, bis die Nachhut drüben ist');
          S.obj('back', 'Über die Brücke ans Nordufer zurückziehen', { hidden: true });
-         S.obj('b_kills', '10 Feindpanzer vernichten', { bonus: true, need: 10 });
+         S.obj('b_kills', '7 Feindpanzer vernichten', { bonus: true, need: 7 });
          S.obj('b_pershing', 'Den M26 Pershing vernichten', { bonus: true, hidden: true });
-         S.goal(bx, bz + 70, 'Brückenkopf', 50); S.timer('Nachhut über den Fluss', 480);
-         this.start = (S) => S.radio('Nachhut an Tiger: Noch acht Minuten, dann sind alle drüben. Haltet sie uns vom Leib!');
-         let wave = 0, killed = 0;
+         S.goal(bx, hz, 'Brückenkopf', 40); S.timer('Nachhut über den Fluss', 480);
+         this.start = (S) => S.radio('Nachhut an Tiger: Noch acht Minuten, dann sind alle drüben. Haltet sie uns vom Leib – die Sperre zwingt sie auf die Straße!');
+         let wave = 0;
+         // waves trickle in one tank at a time; each first halts at the edge of the wood and only
+         // then pushes (route), so the opening is a long-range duel, not a swarm
          const waves = [
-            [['m4a3e8', -120], ['m4a3e8', 0], ['m4a3e8', 120]],
-            [['m18', -220], ['m4a3e8', -60], ['m4a3e8', 80], ['m18', 220]],
-            [['m26', 0], ['m4a3e8', -150], ['m4a3e8', 150], ['m18', 260]],
+            [['m4a3e8', -60], ['m4a3e8', 70]],
+            [['m18', -230], ['m4a3e8', -40], ['m4a3e8', 60]],
+            [['m4a3e8', -120], ['m18', 200], ['m26', 0]],
          ];
          const send = (S) => {
             const list = waves[wave++]; if (!list) return;
-            for (const [c, dx] of list) S.spawn(c, 2, bx + dx, 470, { yaw: 0, tag: c === 'm26' ? 'pershing' : 'wave', name: TANKS[c].short || TANKS[c].name, order: { kind: 'advance', x: bx + dx * 0.25, z: bz + 70 } });
+            list.forEach(([c, dx], i) => S.after(i * 14, (S) => S.spawn(c, 2, bx + dx, 470, { yaw: 0, tag: c === 'm26' ? 'pershing' : 'wave', name: TANKS[c].short || TANKS[c].name,
+               order: c === 'm26' ? { kind: 'route', pin: true, pts: [[bx + dx, hz + 300], [bx + 30, hz + 170]] }      // the heavy duels from range
+                  : { kind: 'route', pin: true, pts: [[bx + dx, hz + 300], [bx + dx * 0.4, hz + 200], [bx + dx * 0.1, hz + 120], [bx + dx * 0.3, hz + 70]] } })));
             S.radio(['Feindpanzer im Süden – Shermans!', 'Zweite Welle, Jagdpanzer an den Flanken!', 'Schwerer Panzer dabei – ein Pershing!'][wave - 1], 'warn');
             if (wave === 3) S.show('b_pershing');
          };
-         S.at(15, send); S.at(150, send); S.at(300, send);
-         S.when(() => true, (S) => { killed = S.dead('wave') + S.dead('pershing'); S.progress('b_kills', killed); if (S.group('pershing').length && !S.alive('pershing')) S.done('b_pershing'); }, { repeat: true });
+         S.at(40, send); S.at(190, send); S.at(330, send);
+         S.at(320, (S) => S.refit(0.4, 'Ein Kübelwagen bringt Granaten und zwei Schlosser – schnell, die nächste Welle kommt!'));
+         S.when(() => true, (S) => { S.progress('b_kills', S.dead('wave') + S.dead('pershing')); if (S.group('pershing').length && !S.alive('pershing')) S.done('b_pershing'); }, { repeat: true });
          S.when((S) => S.c.timer && S.c.timer.left <= 0, (S) => {
-            S.done('hold'); S.show('back'); S.phase('retreat'); S.timer('Brücke wird gesprengt', 90);
-            S.radio('Alle sind drüben! Tiger, zurück über die Brücke – die Pioniere warten auf euch!');
-            S.goal(bx, bz - 70, 'Nordufer', 30);
+            S.done('hold'); S.show('back'); S.phase('retreat'); S.timer('Brücke wird gesprengt', 120);
+            S.radio('Alle sind drüben! Tiger, zurück über die Brücke – die Pioniere warten auf euch! Die Artillerie schießt Sperrfeuer.');
+            // the last battery on the north bank lays a barrage: the attackers pull back into the wood
+            S.order([...S.group('wave'), ...S.group('pershing')].filter((t) => t.alive), { kind: 'advance', x: bx, z: hz + 380 });
+            S.goal(bx, north - 40, 'Nordufer', 25);
+            S.order(S.group('rear').filter((t) => !t.cfg.site), { kind: 'advance', x: bx + 10, z: north - 60 });
          });
-         S.when((S) => S.c.phase === 'retreat' && S.player && S.player.pos.z < bz - 45, (S) => {
-            S.done('back'); S.T.blowBridge?.(br); S.radio('Brücke gesprengt. Für euch ist der Krieg hier zu Ende – ihr habt sie alle rübergebracht.');
-            S.win('Nachhut gerettet');
+         S.when((S) => S.c.phase === 'retreat' && S.player && S.player.pos.z < north - 25, (S) => {
+            S.done('back'); S.phase('blown');
+            S.radio('Tiger ist drüben – Zündung!', 'warn');
+            S.after(2, (S) => { if (br) S.T.blowBridge?.(br); S.radio('Die Brücke ist gesprengt. Für euch ist der Krieg hier zu Ende – ihr habt sie alle rübergebracht.'); });
+            S.after(7, (S) => S.win('Nachhut gerettet, Brücke gesprengt'));
          });
-         S.when((S) => S.c.phase === 'retreat' && S.c.timer && S.c.timer.left <= 0, (S) => S.lose('Die Brücke flog ohne euch in die Luft'));
+         S.when((S) => S.c.phase === 'retreat' && S.c.timer && S.c.timer.left <= 0, (S) => { if (br) S.T.blowBridge?.(br); S.lose('Die Brücke flog ohne euch in die Luft'); });
       },
    },
 
@@ -420,7 +444,7 @@ export const OPS = {
 
    arracourt: {
       id: 'arracourt', name: 'Nebel über Arracourt', place: 'Arracourt, Lothringen', date: '19. September 1944', nation: 'US',
-      map: 'dorf', seed: 919, tanks: ['m18', 'm4a3e8'], start0: [0, 200, 0], fog: 0.65,
+      map: 'dorf', seed: 919, tanks: ['m18', 'm4a3e8'], start0: [0, 250, 0], fog: 0.65,
       brief: [
          'Lothringen, Morgennebel. Die 4. Panzerdivision hält einen Bogen um Arracourt; die deutsche Panzer-Brigade 113 greift mit neuen Panthern an.',
          'Im Nebel zählt nicht die Panzerung, sondern wer zuerst schießt. Die M18 Hellcats der 704. Panzerjägerabteilung liegen in Hinterhalten am Hang.',
@@ -429,22 +453,33 @@ export const OPS = {
       goals: ['Panzerangriff abwehren', 'Gefechtsstand halten'],
       tip: 'Im Nebel sieht man kaum 150 m weit. Aus dem Busch feuern und dann umsetzen.',
       script(S) {
-         const cp = { x: 0, z: 260 };
-         S.obj('kill', 'Angreifende Panzer vernichten', { need: 10 });
+         const cp = { x: 0, z: 260 }, T = S.T;
+         // the ambush line: the bushiest spot near each planned position (cover the player can use)
+         const bushAt = (x, z) => { let b = null, bd = 60; for (const o of T.bushes || []) { const d = Math.hypot(o.x - x, o.z - z); if (o.alive !== false && d < bd) { bd = d; b = o; } } return b ? [b.x, b.z] : [x, z]; };
+         const amb = bushAt(0, 150);
+         S.obj('kill', 'Angreifende Panzer vernichten', { need: 9 });
          S.obj('cp', 'Gefechtsstand halten (kein Feind im Dorf)');
          S.obj('b_ally', 'Kein Hellcat verloren', { bonus: true });
-         S.obj('b_ace', '5 Abschüsse selbst erzielen', { bonus: true, need: 5 });
-         for (const [x, z] of [[-160, 120], [170, 110]]) S.spawn('m18', 1, x, z, { tag: 'allies', name: 'M18 Hellcat', order: { kind: 'ambush', x, z, r: 160 } });
-         S.goal(0, 120, 'Hinterhalt', 40); S.mark('cp', cp.x, cp.z, 'Gefechtsstand', 'area', 60);
-         this.start = (S) => S.radio('Hier Gefechtsstand: Motorengeräusche im Nebel, Richtung Nord. Feuer erst auf kurze Distanz!');
-         const W = [[['panther', -100], ['panther', 60]], [['pz4h', -200], ['panther', 0], ['pz4h', 200]], [['panther', -120], ['panther', 120], ['pz4h', 0], ['panther', 240]]];
+         S.obj('b_ace', '4 Abschüsse selbst erzielen', { bonus: true, need: 4 });
+         for (const [x, z] of [[amb[0] - 90, 130], [amb[0] + 90, 125]]) { const [bx, bz] = bushAt(x, z); S.spawn('m18', 1, bx, bz, { tag: 'allies', name: 'M18 Hellcat', order: { kind: 'ambush', x: bx, z: bz, r: 140 } }); }
+         for (const x of [-35, 35]) S.spawn('m4a3e8', 1, cp.x + x, cp.z - 25, { tag: 'cpguard', name: 'Sherman (Gefechtsstand)', order: { kind: 'hold', x: cp.x + x, z: cp.z - 25 } });
+         S.goal(amb[0], amb[1], 'Hinterhalt', 20); S.mark('cp', cp.x, cp.z, 'Gefechtsstand', 'area', 60);
+         this.start = (S) => S.radio('Hier Gefechtsstand: Motorengeräusche im Nebel, Richtung Nord. Geht in den Büschen in Stellung – Feuer erst auf kurze Distanz!');
+         // waves come one tank at a time down three lanes; Panzer-Brigade 113 was freshly raised:
+         // green crews, buttoned up in the fog, see little (view −25 %) and shoot worse
+         const W = [[['panther', -90], ['panther', 70]], [['pz4h', -200], ['panther', 0], ['pz4h', 190]], [['panther', -120], ['pz4h', 0], ['panther', 130], ['panther', 240]]];
          let wave = 0;
          const send = (S) => {
             const list = W[wave++]; if (!list) return;
-            for (const [c, dx] of list) S.spawn(c, 2, dx, -440, { yaw: Math.PI, tag: 'att', name: TANKS[c].short || TANKS[c].name, order: { kind: 'route', pts: [[dx * 0.7, -150], [dx * 0.3, 80], [cp.x, cp.z]] } });
+            list.forEach(([c, dx], i) => S.after(i * 18, (S) => {
+               S.spawn(c, 2, dx, -440, { yaw: Math.PI, tag: 'att', name: TANKS[c].short || TANKS[c].name, viewMul: 0.75, aiErr: 1.8,
+                  order: { kind: 'route', pts: [[dx * 0.8, -200], [dx * 0.6, -60], [dx * 0.3, 90], [cp.x, cp.z]] } });
+            }));
             S.radio(wave === 1 ? 'Panther im Nebel – zwei Stück!' : wave === 2 ? 'Neue Welle, Panzer IV und Panther!' : 'Starke Kräfte, die ganze Brigade kommt!', 'warn');
          };
-         S.at(10, send); S.at(150, send); S.at(300, send);
+         S.at(45, send); S.at(220, send); S.at(400, send);
+         S.at(200, (S) => S.refit(0.3, 'Kurze Pause im Nebel. Die Instandsetzung flickt, was sie kann.'));
+         S.at(380, (S) => S.refit(0.35, 'Munitionswagen ist durch: auffüllen und Schäden flicken, schnell!'));
          S.when(() => true, (S) => { S.progress('kill', S.dead('att')); S.progress('b_ace', S.player?.stats?.kills || 0); }, { repeat: true });
          S.when((S) => S.alive('allies') < 2, (S) => S.fail('b_ally'));
          let lost = 0;                    // the CP falls after 20 s with an enemy tank inside
@@ -453,7 +488,7 @@ export const OPS = {
             if (lost === 0.25) S.radio('Feindpanzer am Gefechtsstand!', 'warn');
             if (lost >= 20) { S.fail('cp'); S.lose('Gefechtsstand überrannt'); }
          }, { repeat: true });
-         S.when((S) => S.isDone('kill'), (S) => { S.done('cp'); if (S.alive('allies') >= 2) S.done('b_ally'); S.win('Angriff abgewehrt'); });
+         S.when((S) => S.isDone('kill'), (S) => { S.done('cp'); if (S.alive('allies') >= 2) S.done('b_ally'); S.timer(null); S.win('Angriff abgewehrt'); });
       },
    },
 };

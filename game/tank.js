@@ -113,7 +113,7 @@ export class Tank {
    }
    round() { return this.cfg.gun.ammoByType[this.ammoSel]; }
    viewRangeNow() {
-      let v = this.cfg.view;
+      let v = this.cfg.view * (this.viewMul ?? 1);
       if (!this.roleAlive('commander')) v *= 0.85;
       const o = this.mod('optics'); if (o === 'damaged') v *= 0.8; else if (o === 'destroyed') v *= 0.6;
       return v;

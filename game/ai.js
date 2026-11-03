@@ -39,6 +39,12 @@ function navGrid(T) {
       if (slope > 0.75) c = Infinity;
       const wd = T.waterDepth ? T.waterDepth(x, z) : 0;
       if (wd > 1.1) c = Infinity; else if (wd > 0.2) c += 3;
+      // an intact bridge deck (campaign) is road, whatever the water and banks around it say
+      for (const b of T.bridges || []) {
+         if (!b.alive) continue;
+         const ux = b.x1 - b.x0, uz = b.z1 - b.z0, L2 = ux * ux + uz * uz || 1, k = Math.max(0, Math.min(1, ((x - b.x0) * ux + (z - b.z0) * uz) / L2));
+         if (Math.hypot(b.x0 + ux * k - x, b.z0 + uz * k - z) < b.w / 2 + 3) c = 1.2;
+      }
       if (Math.abs(x) > half - 12 || Math.abs(z) > half - 12) c = Infinity;
       if (c < Infinity) for (const o of T.objectsNear(x, z, 4)) {
          if (!o.destructible) { c = Infinity; break; }
@@ -232,8 +238,23 @@ export class BotAI {
    setDest(d) {
       this.dest = d;
       const t = this.tank;
-      this.path = findPath(this.w.terrain, t.pos.x, t.pos.z, d.x, d.z) || [{ x: d.x, z: d.z }];
+      const T = this.w.terrain;
+      this.path = findPath(T, t.pos.x, t.pos.z, d.x, d.z) || [{ x: d.x, z: d.z }];
       this.pi = 0;
+      // crossing an intact bridge: line up on its axis and drive the deck end to end (the 16 m
+      // nav grid alone would cut corners into the river)
+      for (const b of T.bridges || []) {
+         if (!b.alive) continue;
+         const ux = b.x1 - b.x0, uz = b.z1 - b.z0, L = Math.hypot(ux, uz) || 1, L2 = L * L;
+         const ka = ((t.pos.x - b.x0) * ux + (t.pos.z - b.z0) * uz) / L2, kb = ((d.x - b.x0) * ux + (d.z - b.z0) * uz) / L2;
+         if (!((ka < 0.2 && kb > 0.8) || (ka > 0.8 && kb < 0.2))) continue;
+         const s = ka < kb ? 1 : -1, nx = s > 0 ? b.x0 : b.x1, nz = s > 0 ? b.z0 : b.z1, fx = s > 0 ? b.x1 : b.x0, fz = s > 0 ? b.z1 : b.z0;
+         const ex = ux / L * 14 * s, ez = uz / L * 14 * s;
+         if (Math.hypot(nx - t.pos.x, nz - t.pos.z) > 250) continue;
+         const pre = { x: nx - ex, z: nz - ez };
+         this.path = (findPath(T, t.pos.x, t.pos.z, pre.x, pre.z) || [pre]).concat([{ x: nx + ex * 0.3, z: nz + ez * 0.3 }, { x: (nx + fx) / 2, z: (nz + fz) / 2 }, { x: fx + ex, z: fz + ez }, { x: d.x, z: d.z }]);
+         break;
+      }
    }
 
    // ---------------------------------------------------------------- per step
@@ -301,7 +322,7 @@ export class BotAI {
       // parking in front of it and trading bounces (turreted, mobile tanks; HT / TD keep station)
       if (this.flankT > 0) this.flankT -= 0.25;
       const e = this.target;
-      const pinned = this.order && (this.order.kind === 'hold' || this.order.kind === 'ambush');
+      const pinned = this.order && (this.order.kind === 'hold' || this.order.kind === 'ambush' || this.order.pin);
       if (e && !pinned && this.bestRatio < 0.8 && !(this.flankT > 0) && !this.returning && !this.retreating && t.cfg.turret && t.cfg.cls !== 'TD'
          && t.mod('trackL') !== 'destroyed' && t.mod('trackR') !== 'destroyed' && Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z) < 260) {
          const fx = -Math.sin(e.yaw), fz = -Math.cos(e.yaw), rx = -fz, rz = fx;
@@ -524,6 +545,11 @@ export class BotAI {
       }
       if (!wp) { inp.throttle = 0; inp.steer = 0; return; }
       wantYaw = yawTo(t.pos.x, t.pos.z, wp.x, wp.z);
+      // careful player falling back from a known enemy: reverse along the path, front to the enemy
+      if (this.careful && e && e.alive && dE < 300 && w.time - t.lastDamaged < 10 && Math.abs(angleDelta(wantYaw, yawTo(t.pos.x, t.pos.z, e.pos.x, e.pos.z))) > 2.2) {
+         const ry = angleDelta(t.yaw, wantYaw + Math.PI);
+         inp.steer = clamp(ry * 2.2, -1, 1); inp.throttle = Math.abs(ry) > 0.8 ? 0 : -1; return;
+      }
       let dy = angleDelta(t.yaw, wantYaw);
       // simple ally avoidance: veer away from tanks just ahead
       for (const o of w.tanks) {
