@@ -58,12 +58,18 @@ uniform vec3 uRock;` + NOISE_GLSL)
    };
    mat.customProgramCacheKey = () => 'pz-ground';
 }
-function patchWind(mat, amp, key) {
+// snow > 0: settled snow on upward faces (winter map; instances only rotate about y, so the
+// object-space normal's y is the world one)
+function patchWind(mat, amp, key, snow = 0) {
    mat.onBeforeCompile = (sh) => {
       sh.uniforms.uWind = WIND.uWind;
+      if (snow) sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying float vSnowN; varying vec3 vSnowP;`).replace('#include <color_fragment>', `#include <color_fragment>
+         float sn = sin(vSnowP.x * 3.1 + sin(vSnowP.z * 2.3)) * sin(vSnowP.z * 2.7 + vSnowP.y * 1.9) * 0.3;
+         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.91, 0.95), smoothstep(0.62, 0.9, vSnowN + sn) * ${snow.toFixed(2)});`);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
-uniform float uWind;`)
-         .replace('#include <begin_vertex>', `#include <begin_vertex>
+uniform float uWind;${snow ? ' varying float vSnowN; varying vec3 vSnowP;' : ''}`)
+         .replace('#include <begin_vertex>', `#include <begin_vertex>${snow ? '\n            vSnowN = objectNormal.y; vSnowP = position;' : ''}
             #ifdef USE_INSTANCING
                vec2 wOrg = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;
                float wk = max(position.y - ${amp[1].toFixed(2)}, 0.0) * ${amp[0].toFixed(4)};
@@ -72,7 +78,7 @@ uniform float uWind;`)
                transformed.z += sin(wph * 0.8 + 2.0) * 0.5 * wk;
             #endif`);
    };
-   mat.customProgramCacheKey = () => key;
+   mat.customProgramCacheKey = () => key + (snow ? '-snow' : '');
 }
 
 function hash(x, z) { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); }
@@ -178,7 +184,7 @@ export class Terrain3D {
       this.groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.detail, bumpMap: this.detail, bumpScale: 2.2, roughness: 0.97, metalness: 0 });
       patchGround(this.groundMat, { dry: this.winter ? 0.25 : pid === 'steppe' ? 0.8 : 0.6, rock: this.pal.rock.clone().multiplyScalar(this.winter ? 1.15 : 1) });
       this.vegMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
-      patchWind(this.vegMat, [0.03, 2.5], 'pz-veg');   // smooth: faceted crowns read as flat planes in the x8/x16 scope
+      patchWind(this.vegMat, [0.03, 2.5], 'pz-veg', this.winter ? 0.75 : 0);   // smooth: faceted crowns read as flat planes in the x8/x16 scope
       this.buildGround();
       this.buildWater();
       this.buildObjects();

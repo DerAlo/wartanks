@@ -42,7 +42,7 @@ THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
       float fogFactor = 1.0 - exp( -3.6 * pow( fogT, 1.45 ) );
    #endif
    vec3 fogC = fogColor;
-   #if NUM_DIR_LIGHTS > 0
+   #if NUM_DIR_LIGHTS > 0 && (defined( STANDARD ) || defined( PHONG ) || defined( LAMBERT ) || defined( TOON ))
       float fogMu = max( dot( normalize( vFogView ), directionalLights[ 0 ].direction ), 0.0 );
       fogC += directionalLights[ 0 ].color * ( 0.035 * pow( fogMu, 5.0 ) + 0.05 * pow( fogMu, 24.0 ) );
    #endif
