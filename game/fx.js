@@ -14,7 +14,7 @@ uniform vec3 uFogColor; uniform float uFogNear, uFogFar, uAdd; varying vec4 vCol
 void main() { vec2 c = gl_PointCoord - 0.5; float d = length(c) * 2.0; if (d > 1.0 || vCol.a <= 0.003) discard;
    float a = vCol.a * (uAdd > 0.5 ? pow(1.0 - d, 1.6) : (1.0 - d * d) * (0.75 + 0.25 * sin(c.x * 11.0 + c.y * 7.0)));
    float f = smoothstep(uFogNear, uFogFar, vFog);
-   vec3 col = uAdd > 0.5 ? vCol.rgb : mix(vCol.rgb, uFogColor, f);
+   vec3 col = uAdd > 0.5 ? vCol.rgb * 2.2 : mix(vCol.rgb, uFogColor, f);
    gl_FragColor = vec4(col * (uAdd > 0.5 ? (1.0 - f) : 1.0), a); }`;
 
 class Particles {
@@ -257,7 +257,7 @@ export class FX {
          const x = sh.pos.x + sh.vel.x * acc, y = sh.pos.y + sh.vel.y * acc, z = sh.pos.z + sh.vel.z * acc, L = 0.028;
          const o = n * 6, hot = sh.ammo === 'HE' ? [1, 0.45, 0.2] : sh.ammo === 'APCR' ? [0.75, 0.85, 1] : [1, 0.75, 0.35];
          trP[o] = x - sh.vel.x * L; trP[o + 1] = y - sh.vel.y * L; trP[o + 2] = z - sh.vel.z * L; trP[o + 3] = x; trP[o + 4] = y; trP[o + 5] = z;
-         trC[o] = hot[0] * 0.25; trC[o + 1] = hot[1] * 0.25; trC[o + 2] = hot[2] * 0.25; trC[o + 3] = hot[0]; trC[o + 4] = hot[1]; trC[o + 5] = hot[2];
+         trC[o] = hot[0] * 0.25; trC[o + 1] = hot[1] * 0.25; trC[o + 2] = hot[2] * 0.25; trC[o + 3] = hot[0] * 3; trC[o + 4] = hot[1] * 3; trC[o + 5] = hot[2] * 3;   // HDR head: blooms
          if (sh.tracer !== false) this.glow.spawn(x, y, z, 0, 0, 0, 0.05, 0.55, 0.3, hot[0], hot[1], hot[2], 1, hot[0], hot[1] * 0.6, hot[2] * 0.3);
          n++;
          if (!w.effects) this.shellSeen.set(sh, sh.pos);

@@ -16,7 +16,7 @@ transport layer copied from warships). UI language **German**. `node server.js` 
 |---|---|---|
 | Data | `config.js` (tanks, guns, ammo, armour geometry, tiers), `maps.js` (map themes) | sim |
 | Simulation | `utils.js` (seeded RNG, math), `terrain.js` (heightfield + objects, pure sim), `armor.js` (hull/turret polyhedra, ray tests, effective thickness), `ballistics.js` (shell flight, penetration, damage, modules, crew), `tank.js` (Tank class: drivetrain, physics, turret/gun, aim, reload, modules), `spotting.js`, `ai.js` (bots), `state.js` (World), `missions.js` (modes), `progress.js` (garage, XP, credits, unlocks) | sim |
-| Graphics | `render.js` (scene, renderer, lights, shadows, post), `terrain3d.js` (ground mesh from `terrain.js`, splat shading, grass, trees, houses, rocks), `tanks3d.js` (procedural tank models built from the SAME armour geometry in `config.js` + details), `fx.js` (muzzle flash, dust, tracers, impacts, ricochet sparks, explosions, fire, smoke, track marks, wrecks), `sky.js`, `gfxquality.js` | client |
+| Graphics | `render.js` (scene, renderer, lights, shadows, fog chunks, atmosphere API), `post.js` (HDR target + MSAA, bloom pyramid, ACES, grading), `terrain3d.js` (ground mesh from `terrain.js`, splat shading, grass, trees, houses, rocks), `tanks3d.js` (procedural tank models built from the SAME armour geometry in `config.js` + details), `fx.js` (muzzle flash, dust, tracers, impacts, ricochet sparks, explosions, fire, smoke, track marks, wrecks), `sky.js`, `gfxquality.js` | client |
 | Controls / UI / audio | `main.js` (boot, loop), `input.js`, `camera.js` (third-person orbit + sniper zoom ladder), `hud.js` (reticle, pen indicator, damage panel, minimap, kill feed, damage log), `menu.js` (main menu, garage, armour viewer, tech tree, results), `audio.js` (+ `audiosynth.js`), `index.html` (page, design tokens) | client |
 | Multiplayer | `net/*` | net |
 
@@ -377,6 +377,24 @@ nation. Works without localStorage (memory fallback).
   gun shot by caliber (with distance delay and echo), shell whistle near-miss, ricochet ping,
   penetration clang, non-pen "dong", HE explosion, ammo rack, fire crackle, radio/crew voice
   callouts as short synthetic tones + German text callouts in HUD.
+
+* Image pipeline: the scene renders into a HalfFloat MSAA target (`post.js`), so fog, sky and
+  lighting mix in linear HDR; the composite does bloom (threshold 1.5: only HDR sources such as
+  the sun disc, tracer heads and additive fx bloom), ACES, saturation/contrast, split toning,
+  vignette, dither. Per-map look = `theme.render.grade` {saturation, contrast, vignette, bloom,
+  bloomThreshold, tint, shadowTint} over `GRADE` in `render.js`.
+* Fog: three's fog chunks are replaced globally (`render.js`): exponential curve on the linear
+  near/far range plus sun in-scatter (lit materials only); `sky.js` uses the same formula at the
+  horizon so far terrain melts into the sky. **Atmosphere API:** `R.setTheme(theme)` sets the base
+  map look; `R.setFog(amount 0..1, color?)` thickens fog over that base (campaign ops) and
+  re-themes the sky; `fogTheme(theme, amount, color)` is the pure function behind it.
+* Material patches (`onBeforeCompile`): ground detail/macro/dry patches/rock strata
+  (`terrain3d.patchGround`), wind sway on trees and grass (`patchWind`, shared `WIND.uWind`,
+  snow on upward faces on the winter map), tank weathering (`tanks3d.weathered`: mud on the
+  running gear by height above ground, dust, streaks, winter whitewash + snow; per map via
+  `setTankWeather(mapId)`).
+* Quality tiers (`gfxquality.js`): low = no MSAA, no bloom; mid = MSAA 4, 4 bloom levels; high =
+  MSAA 4, 5 levels. Post costs ~10 draw calls (bloom chain + composite).
 
 ## Performance budget
 
