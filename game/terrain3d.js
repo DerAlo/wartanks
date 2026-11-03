@@ -228,6 +228,7 @@ export class Terrain3D {
       roof.computeVertexNormals();
       for (const o of t.objects || []) {
          if (o.kind !== 'house' && o.kind !== 'wall' && o.kind !== 'fence') continue;
+         o.d ??= 0.6; o.w ??= 2;
          const y = Math.min(t.heightAt(o.x - o.w / 2, o.z), t.heightAt(o.x + o.w / 2, o.z), t.heightAt(o.x, o.z - o.d / 2), t.heightAt(o.x, o.z + o.d / 2)) - 0.3;
          const r = hash(o.x, o.z), yaw = o.yaw || 0, cos = Math.cos(yaw), sin = Math.sin(yaw);
          const at = (lx, ly, lz) => [o.x + lx * cos + lz * sin, y + ly, o.z - lx * sin + lz * cos];
