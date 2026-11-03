@@ -97,7 +97,7 @@ export function calcRewards(world) {
    return { xp, credits, freeXP: Math.round(xp * 0.05), ammoCost, breakdown: b };
 }
 export function applyRewards(p, tankId, r) {
-   const t = p.tanks[tankId]; if (!t || !r) return p;
+   const t = p.tanks[tankId]; if (!t || !r || !t.owned) return p;   // test drive (?tank= not owned): nothing credited
    t.xp += r.xp || 0; p.freeXP += r.freeXP || 0; p.credits = Math.max(0, p.credits + (r.credits || 0));
    t.battles++; p.battles++;
    if (r.outcome === 'win') { t.wins++; p.wins++; }

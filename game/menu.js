@@ -149,6 +149,7 @@ export class Menu {
    }
    applyResult(snap) {
       if (!this.P || !snap.result) return;
+      if (!this.owned(snap.playerCls)) { snap.result.unowned = true; return; }
       try { this.P.applyRewards(this.prof(), snap.playerCls, { ...snap.result, dmg: snap.stats?.dmg, kills: snap.stats?.kills }); } catch (e) { console.warn('[menu] rewards', e); }
    }
    toast(text) {
@@ -532,7 +533,7 @@ export class Menu {
             ${box('Schaden verursacht', fmt(st.dmg))}${box('Abschüsse', fmt(st.kills))}${box('Aufgeklärt', fmt(st.spotted))}${box('Schaden blockiert', fmt(st.blocked))}
             ${box('Schüsse', fmt(st.shots))}${box('Treffer', fmt(st.hits))}${box('Durchschläge', fmt(st.pens))}${box('Abpraller / kein DS', fmt(st.bounces))}
             ${st.assist != null ? box('Unterstützung', fmt(st.assist)) : ''}${st.received != null ? box('Schaden erhalten', fmt(st.received)) : ''}
-            ${res.xp != null ? box('Erfahrung', '+' + fmt(res.xp) + ' EP', true) : ''}${res.credits != null ? box('Kreditpunkte', '+' + fmt(res.credits), true) : ''}
+            ${res.unowned ? box('Belohnung', 'keine – Panzer nicht im Besitz') : (res.xp != null ? box('Erfahrung', '+' + fmt(res.xp) + ' EP', true) : '') + (res.credits != null ? box('Kreditpunkte', '+' + fmt(res.credits), true) : '')}
          </div>
          <div class="bt"><button class="pri" data-a="toGarage">Zurück zur Garage</button></div>`;
       this.$('#pz-results').classList.add('on');
