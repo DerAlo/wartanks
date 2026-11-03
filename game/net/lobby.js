@@ -37,7 +37,7 @@ import { NET_VERSION, makeLocalTransport } from './transport.js';
 import { coopSlots } from './coop.js';
 import { pvpMissions, pvpSlots, TEAM_MAX } from './pvp.js';
 import { MISSIONS } from '../missions.js';
-import { MAPS, MAP_LIST } from '../maps.js';
+import { MAPS, MAP_LIST, RANDOM_MAPS } from '../maps.js';
 import { TANKS, TANK_LIST } from '../config.js';
 
 export { NET_VERSION };
@@ -416,7 +416,7 @@ export class Lobby {
       const r = this.room;
       const seed = crypto.getRandomValues(new Uint32Array(1))[0];
       // 'random': the host rolls the map once, everybody plays the same one
-      const mapId = r.mapId === RANDOM_MAP ? MAP_LIST[seed % MAP_LIST.length] : r.mapId;
+      const mapId = r.mapId === RANDOM_MAP ? RANDOM_MAPS[seed % RANDOM_MAPS.length] : r.mapId;   // sent explicitly: clients never re-derive it
       const msg = { t: 'start', mode: r.mode, mission: r.mission, mapId, difficulty: r.difficulty, seed,
          players: r.players.map(p => ({ id: p.id, name: p.name, tank: p.tank, ...(r.mode === 'pvp' ? { team: p.team } : null) })) };
       r.state = 'running';
@@ -735,7 +735,7 @@ export class Lobby {
       let done = false;
       const transport = sessionTransport(this.rt, players.map(p => p.id), () => this.leaveRoom());
       const session = {
-         transport, mode: String(m.mode), mission: String(m.mission), mapId: getMap(m.mapId) ? String(m.mapId) : MAP_LIST[(m.seed >>> 0) % MAP_LIST.length], difficulty: String(m.difficulty), seed: m.seed >>> 0, players,
+         transport, mode: String(m.mode), mission: String(m.mission), mapId: getMap(m.mapId) ? String(m.mapId) : RANDOM_MAPS[(m.seed >>> 0) % RANDOM_MAPS.length], difficulty: String(m.difficulty), seed: m.seed >>> 0, players,
          onEnd: (result) => {
             if (done) return;
             done = true; transport._close();

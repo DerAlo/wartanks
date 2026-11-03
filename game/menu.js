@@ -362,7 +362,7 @@ export class Menu {
    }
 
    go() {
-      const ids = this.mapList, mapId = this.sel.map === 'random' || !this.maps[this.sel.map] ? ids[(Math.random() * ids.length) | 0] : this.sel.map;
+      const ids = this.mods.mapsM?.RANDOM_MAPS || this.mapList, mapId = this.sel.map === 'random' || !this.maps[this.sel.map] ? ids[(Math.random() * ids.length) | 0] : this.sel.map;
       if (!this.owned(this.sel.cls)) return;
       this.ctx.startBattle({ mode: this.sel.mode, mapId, seed: (Math.random() * 1e9) | 0, playerCls: this.sel.cls, difficulty: this.sel.diff });
    }

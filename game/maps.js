@@ -152,7 +152,7 @@ export const MAPS = {
    },
    kueste: {
       id: 'kueste', name: 'Küste', desc: 'Ostseeküste an der Danziger Bucht: Strand, Dünen und Kiefern, ein Backsteinhafen mit Mole – im Norden nur offene See.',
-      palette: 'coast', seed: 67,
+      palette: 'coast', seed: 67, noRandom: true,      // half the map is sea: campaign / chosen only, not in the random rotation
       render: { ...SUMMER, fog: 0xb3c0c8, skyHor: 0xc8d4dc, skyTop: 0x5b86b4, skyLow: 0x6f7a78, sunColor: 0xfff4e2,
          sunIntensity: 2.4, groundLight: 0x5e5a48, cloud: 0.65, fogNear: 320, fogFar: 1500 },
       noise: { amp: 2.5, scale: 260, detail: 0.4, ridgedAmp: 1.5 },
@@ -197,4 +197,6 @@ export const MAPS = {
    },
 };
 export const MAP_LIST = Object.keys(MAPS);
+/** Maps the random pick (menu, lobby host) rolls from: no coast map with open sea for 7v7. */
+export const RANDOM_MAPS = MAP_LIST.filter((id) => !MAPS[id].noRandom);
 export default MAPS;
