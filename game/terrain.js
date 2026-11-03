@@ -24,7 +24,30 @@ export const OBJECT_KINDS = {
    tree: { solid: true, shots: false, destructible: true, hp: 120 },
    bush: { solid: false, shots: false, destructible: false, hp: Infinity },
    wreck: { solid: true, shots: true, destructible: false, hp: Infinity },
+   // mission obstacles (terrain.addObject). hp = HE damage points (terrain.blast); hedgehogs also
+   // break under ramming above `breakMomentum` t·m/s (tank.js hook), teeth never by ramming.
+   teeth: { solid: true, shots: true, destructible: false, hp: 400 },
+   hedgehog: { solid: true, shots: false, destructible: true, hp: 150, breakMomentum: 150 },
+   wire: { solid: false, shots: false, destructible: true, hp: 40 },
+   bridge: { solid: false, shots: false, destructible: false, hp: Infinity },
 };
+const KIND_SIZE = { teeth: [1.2, 1.2, 1.1], hedgehog: [1.6, 1.6, 1.15], wire: [6, 0.9, 0.9], bridge: [7, 20, 0.6] };
+const BLAST_KINDS = { teeth: 1, hedgehog: 1, wire: 1 };
+export const TRENCH_BRIDGE_K = 2.2;   // hull length >= K × trench width: the tank bridges the trench
+const TRENCH_BRIDGED_DEPTH = 0.5;     // m of dip a bridging hull still feels
+const TRENCH_WALL = 0.15;             // m: trench walls go from floor to lip over this width
+const PARAPET_IN = 0.2, PARAPET_OUT = 2.6;   // spoil parapet band beyond the lip (m)
+
+// segment distance without allocation: returns distance, parameter in _segT
+let _segT = 0;
+function segD(px, pz, ax, az, bx, bz) {
+   const abx = bx - ax, abz = bz - az, l2 = abx * abx + abz * abz || 1e-9;
+   let t = ((px - ax) * abx + (pz - az) * abz) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+   _segT = t;
+   const cx = ax + abx * t - px, cz = az + abz * t - pz;
+   return Math.sqrt(cx * cx + cz * cz);
+}
+const posHash = (x, z) => { const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453; return v - Math.floor(v); };
 
 function segDist(px, pz, ax, az, bx, bz) {
    const abx = bx - ax, abz = bz - az;
@@ -89,6 +112,9 @@ export class Terrain {
       this.bushes = [];
       this.caps = [];
       this.lastHit = { type: null, obj: null };
+      // mission features (trenches, bridges, wire): analytic height overlay on a cell grid, null = none
+      this._pg = null; this.trenches = []; this.bridges = []; this.wires = [];
+      this.heightVersion = 0; this.heightEdits = [];
       const rng = this.rng = makeRng(hashSeed(seed, theme.id, theme.seed));
       this.nseed = hashSeed(seed, theme.id) & 0xffff;
       // features (+ mirrored copies)
@@ -102,8 +128,17 @@ export class Terrain {
       this.rivers = feats.filter((f) => f.kind === 'river');
       this.roads = feats.filter((f) => f.kind === 'road');
       this.lakes = feats.filter((f) => f.kind === 'lake');
+      this.coast = feats.find((f) => f.kind === 'coast') || null;
+      this.moles = feats.filter((f) => f.kind === 'mole');
       // bases & spawns (mirrored): team 1 south, team 2 north
       this.bases = { team1: { x: -170, z: 385 }, team2: { x: 170, z: -385 }, neutral: { x: 0, z: 0 } };
+      if (theme.bases) for (const k in theme.bases) this.bases[k] = { ...theme.bases[k] };
+      // river bridge sites (the causeways cut into rivers by `bridge:[t]`), for addBridge
+      this.bridgeSites = [];
+      for (const r of this.rivers) for (const bt of r.bridge || []) {
+         const p = pointOnPoly(r, bt), hs = r.w / 2 + 14;
+         this.bridgeSites.push({ x0: p.x + p.dz * hs, z0: p.z - p.dx * hs, x1: p.x - p.dz * hs, z1: p.z + p.dx * hs, w: 8, x: p.x, z: p.z });
+      }
       this.spawns = { team1: [], team2: [] };
       this._genHeights();
       this._genGround();
@@ -182,7 +217,7 @@ export class Terrain {
             const wl = this.water ?? 0, bed = wl - depth;
             if (d < hw) h = bed + (Math.min(h, wl + 0.3) - bed) * (d / hw) ** 4;
             else h += (Math.min(h, wl + 0.6 + (d - hw) * 0.25) - h) * smoothstep(1 - (d - hw) / 25);
-            for (const bt of r.bridge || []) {
+            if (!this._noCauseway) for (const bt of r.bridge || []) {
                const along = Math.abs(sP - bt) * r.total;
                if (along < 5) h = Math.max(h, (this.water ?? 0) + 0.7);
             }
@@ -202,10 +237,32 @@ export class Terrain {
          const d = Math.hypot(x - b.x, z - b.z);
          if (d < 110) h += ((this.water != null ? nz.amp + 2.5 : 0) + 1 - h) * (1 - smoothstep((d - 60) / 50)) * 0.7;
       }
-      // outside the playable square: rising rim
+      // sea coast (shore, beach, shelf) and harbour moles
+      let rimK = 1;
+      if (this.coast) { const cs = this.coastS(x, z); h = this._coastH(cs, h); rimK = clamp01(-cs / 60); }
+      for (const m of this.moles) {
+         const [d] = polyDist(x, z, m.pts, m.lens, m.total);
+         if (d < m.w / 2 + 12) h = Math.max(h, (this.water ?? 0) + m.h - Math.max(0, d - m.w / 2) * 1.6);
+      }
+      // outside the playable square: rising rim (not out at sea)
       const e = Math.max(Math.abs(x), Math.abs(z)) - this.half;
-      if (e > -20) h += Math.max(0, e + 20) ** 1.35 * 0.12 + Math.max(0, e) * fbm(x / 60, z / 60, s + 11, 2) * 0.15;
+      if (e > -20 && rimK > 0) h += (Math.max(0, e + 20) ** 1.35 * 0.12 + Math.max(0, e) * fbm(x / 60, z / 60, s + 11, 2) * 0.15) * rimK;
       return h;
+   }
+
+   /** Coast maps: signed distance seaward of the shore line (> 0 = sea). */
+   coastS(x, z) {
+      const c = this.coast;
+      return c ? c.z + fbm(x / 170, 0.5, this.nseed + 31, 2) * c.wig - z : -Infinity;
+   }
+   _coastH(cs, h) {
+      const c = this.coast, wl = this.water ?? 0, top = wl + 0.5;
+      if (cs < -c.beach) return h;
+      if (cs <= 0) return h + (top - h) * smoothstep((cs + c.beach) / c.beach);
+      const P = c.shelf;
+      let dep = P[P.length - 1][1];
+      for (let i = 0; i < P.length - 1; i++) if (cs < P[i + 1][0]) { dep = P[i][1] + (P[i + 1][1] - P[i][1]) * (cs - P[i][0]) / (P[i + 1][0] - P[i][0]); break; }
+      return top - dep;
    }
 
    _genHeights() {
@@ -231,6 +288,21 @@ export class Terrain {
    }
 
    heightAt(x, z) {
+      const v = this._baseH(x, z);
+      return this._pg === null ? v : this._ov(x, z, v, 0, true);
+   }
+   /** Height as felt by a tank hull of length `hullLen` (m): trenches narrower than
+    *  hullLen / TRENCH_BRIDGE_K are bridged (shallow dip instead of the full drop). */
+   hullHeightAt(x, z, hullLen = 0) {
+      const v = this._baseH(x, z);
+      return this._pg === null ? v : this._ov(x, z, v, hullLen, true);
+   }
+   /** Height of the ground mesh: trenches included, bridge decks not (they are drawn separately). */
+   groundHeightAt(x, z) {
+      const v = this._baseH(x, z);
+      return this._pg === null ? v : this._ov(x, z, v, 0, false);
+   }
+   _baseH(x, z) {
       const n = this.n;
       let fx = (x + this.ext) / RES, fz = (z + this.ext) / RES;
       fx = fx < 0 ? 0 : fx > n - 1.001 ? n - 1.001 : fx;
@@ -274,6 +346,8 @@ export class Terrain {
          for (const f of fields) if (Math.hypot(x - f.x, z - f.z) < f.r * (0.8 + 0.2 * n1)) g = G_SOFT;
          for (const f of flats) if (Math.hypot(x - f.x, z - f.z) < f.r * 0.9) g = g === G_SOFT ? G_MED : G_HARD;
          if (this.ice) for (const L of this.lakes) if (Math.hypot(x - L.x, z - L.z) < L.r) g = G_HARD;
+         if (this.coast && this.coastS(x, z) > -this.coast.beach * 0.7) g = G_SOFT;     // beach sand
+         for (const m of this.moles) if (polyDist(x, z, m.pts, m.lens, m.total)[0] < m.w / 2) g = G_ROAD;
          for (const r of this.roads) if (polyDist(x, z, r.pts, r.lens, r.total)[0] < r.w / 2 + 0.5) g = G_ROAD;
          if (this.water != null && this.heightAt(x, z) < this.water - 0.05) g = G_WATER;
          this.g[j * gn + i] = g;
@@ -282,6 +356,11 @@ export class Terrain {
    groundIdxAt(x, z) {
       const gn = this.gn;
       const i = clamp(Math.round((x + this.ext) / 4), 0, gn - 1), j = clamp(Math.round((z + this.ext) / 4), 0, gn - 1);
+      if (this._pg !== null) {
+         this._ov(x, z, this._baseH(x, z), 0, true);
+         if (this._ovDeck) return G_ROAD;
+         if (this._ovDig > 0.3) return G_SOFT;
+      }
       return this.g[j * gn + i];
    }
    groundAt(x, z) { return GROUND_NAMES[this.groundIdxAt(x, z)]; }
@@ -381,6 +460,8 @@ export class Terrain {
                const a = corners[i], b = corners[(i + 1) % 4];
                this._wallLine(a[0], a[1], b[0], b[1], 'fence');
             }
+         } else if (f.kind === 'house') {          // explicitly placed building (warehouse, ...)
+            this._house(f.x, f.z, f.yaw || 0, f.w, f.d, f.h);
          }
       }
       const tree = (x, z) => {
@@ -426,7 +507,8 @@ export class Terrain {
          for (let i = 0; i < 10; i++) {
             const col = i % 5, row = (i / 5) | 0;
             const x = sgn * (-190 + col * 95) + (row ? sgn * 45 : 0);
-            const z = sgn * (395 + row * 30);
+            const sz = this.theme.spawnZ?.[team];
+            const z = sz != null ? sz + sgn * row * 30 : sgn * (395 + row * 30);   // row 1 behind row 0
             list.push({ x, z, yaw: face });
          }
          void b;
@@ -569,6 +651,242 @@ export class Terrain {
       return tg;
    }
 
+   // ------------------------------------------------------------------ mission features
+   // Added by missions after generation (before the renderer is built; later calls work too:
+   // `version` / `heightVersion` tell the renderer to rebuild). All deterministic, no rng use.
+
+   _newObj(kind, x, z, yaw, w, d, h, extra) {
+      const k = OBJECT_KINDS[kind];
+      const o = {
+         id: this.objects.length, kind, x, z, y: this.heightAt(x, z), yaw, w, d, h,
+         solid: k.solid, shots: k.shots, destructible: k.destructible, alive: true, hp: k.hp,
+         seed: (posHash(x, z) * 1e6) | 0, _st: 0, ...extra,
+      };
+      if (k.breakMomentum) o.breakMomentum ??= k.breakMomentum;
+      o.r = Math.hypot(w, d) / 2;
+      this.objects.push(o);
+      if (kind === 'wire') this.wires.push(o);
+      else if (o.solid || o.shots) this._gridAdd(o);
+      this.version++;
+      return o;
+   }
+   _gridAdd(o) {
+      const r = Math.hypot(o.w, o.d) / 2, gc = this.gc;
+      const i0 = this._ci(o.x - r), i1 = this._ci(o.x + r), j0 = this._ci(o.z - r), j1 = this._ci(o.z + r);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) this.cells[j * gc + i].push(o);
+   }
+   /** Register a height-overlay segment record in every grid cell within r of it. */
+   _pgAdd(p, r) {
+      const gc = this.gc;
+      if (this._pg === null) this._pg = new Array(gc * gc).fill(null);
+      const i0 = this._ci(Math.min(p.ax, p.bx) - r), i1 = this._ci(Math.max(p.ax, p.bx) + r);
+      const j0 = this._ci(Math.min(p.az, p.bz) - r), j1 = this._ci(Math.max(p.az, p.bz) + r);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+         const x = -this.ext + (i + 0.5) * CELL, z = -this.ext + (j + 0.5) * CELL;
+         if (segD(x, z, p.ax, p.az, p.bx, p.bz) > r + CELL * 0.75) continue;
+         (this._pg[j * gc + i] ??= []).push(p);
+      }
+   }
+   _heightEdit(x0, z0, x1, z1) {
+      this.heightVersion++;
+      this.heightEdits.push({ v: this.heightVersion, x0, z0, x1, z1 });
+   }
+   /** Height overlay: trench cuts + parapets, bridge decks (decks=false: ground mesh view).
+    *  Leaves this._ovDig (trench depth here) and this._ovDeck (standing on a deck). */
+   _ov(x, z, v, hull, decks) {
+      this._ovDig = 0; this._ovDeck = false;
+      const cell = this._pg[this._ci(z) * this.gc + this._ci(x)];
+      if (cell === null) return v;
+      let dig = 0, par = 0, deck = -Infinity;
+      for (let i = 0; i < cell.length; i++) {
+         const p = cell[i], d = segD(x, z, p.ax, p.az, p.bx, p.bz);
+         if (p.type === 0) {
+            if (d < p.hw) {
+               const k = (p.hw - d) / TRENCH_WALL, dep = hull >= p.bl ? Math.min(p.d, TRENCH_BRIDGED_DEPTH) : p.d;
+               const dd = dep * (k > 1 ? 1 : k);
+               if (dd > dig) dig = dd;
+            } else if (p.par !== 0 && d > p.hw + PARAPET_IN && d < p.hw + PARAPET_OUT) {
+               if (((p.bx - p.ax) * (z - p.az) - (p.bz - p.az) * (x - p.ax)) * p.par > 0) {
+                  const u = (d - p.hw - (PARAPET_IN + PARAPET_OUT) / 2) / ((PARAPET_OUT - PARAPET_IN) / 2), b = 1 - u * u;
+                  if (p.ph * b * b > par) par = p.ph * b * b;
+               }
+            }
+         } else if (decks && d < p.hw) {
+            const t = _segT, o = p.o;
+            if (o.alive === false && t > o.gap[0] && t < o.gap[1]) continue;
+            const y = p.y0 + (p.y1 - p.y0) * t;
+            if (y > deck) deck = y;
+         }
+      }
+      this._ovDig = dig;
+      const h = dig > 0 ? v - dig : v + par;
+      if (deck > h) { this._ovDeck = true; return deck; }
+      return h;
+   }
+
+   /** Add a mission object: { kind:'teeth'|'hedgehog'|'wire'|'bridge'|any OBJECT_KINDS, x, z, yaw?, w?, d?, h?, hp? }.
+    *  Bridges also take { x0, z0, x1, z1 } (or x, z, yaw + d = length) and go through addBridge. */
+   addObject(spec) {
+      const kind = spec.kind;
+      if (!OBJECT_KINDS[kind]) throw new Error('unknown object kind ' + kind);
+      if (kind === 'bridge') {
+         if (spec.x0 != null) return this.addBridge(spec.x0, spec.z0, spec.x1, spec.z1, spec);
+         const L = spec.d ?? 20, s = Math.sin(spec.yaw || 0) * L / 2, c = Math.cos(spec.yaw || 0) * L / 2;
+         return this.addBridge(spec.x + s, spec.z + c, spec.x - s, spec.z - c, spec);
+      }
+      const sz = KIND_SIZE[kind] || [2, 2, 2];
+      const o = this._newObj(kind, spec.x, spec.z, spec.yaw ?? 0, spec.w ?? sz[0], spec.d ?? sz[1], spec.h ?? sz[2],
+         spec.breakMomentum != null ? { breakMomentum: spec.breakMomentum } : undefined);
+      if (spec.hp != null) o.hp = spec.hp;
+      return o;
+   }
+
+   /** Staggered rows of dragon's teeth (Höcker) from (x0,z0) to (x1,z1); rows 3|4, ~1.6 m pitch.
+    *  Rows are offset to the left of the direction x0->x1; later rows are taller. Returns the objects. */
+   addTeethLine(x0, z0, x1, z1, { rows = 3, spacing = 1.6, rowGap = 1.45 } = {}) {
+      const L = Math.hypot(x1 - x0, z1 - z0) || 1, ux = (x1 - x0) / L, uz = (z1 - z0) / L;
+      const yaw = Math.atan2(-ux, -uz), out = [];
+      for (let r = 0; r < rows; r++) {
+         const off = (r % 2) * spacing / 2, ax = -uz * r * rowGap, az = ux * r * rowGap;   // left normal (-uz, ux)
+         for (let s = off; s <= L + 1e-6; s += spacing) {
+            const x = x0 + ux * s + ax, z = z0 + uz * s + az, k = posHash(x, z);
+            out.push(this.addObject({ kind: 'teeth', x, z, yaw: yaw + (k - 0.5) * 0.12, h: 0.95 + r * 0.15 + k * 0.1 }));
+         }
+      }
+      return out;
+   }
+   /** Concertina wire along a line, ~6 m segments. Returns the objects. */
+   addWireLine(x0, z0, x1, z1, { seg = 6 } = {}) {
+      const L = Math.hypot(x1 - x0, z1 - z0) || 1, n = Math.max(1, Math.round(L / seg)), ux = (x1 - x0) / L, uz = (z1 - z0) / L;
+      const yaw = Math.atan2(-uz, ux), out = [];      // local x (cos yaw, -sin yaw) along the line
+      for (let i = 0; i < n; i++) {
+         const t = (i + 0.5) / n;
+         out.push(this.addObject({ kind: 'wire', x: x0 + (x1 - x0) * t, z: z0 + (z1 - z0) * t, yaw, w: L / n }));
+      }
+      return out;
+   }
+
+   /** Carve a trench along a polyline [[x,z],...]: { w = 2.5, d = 1.8, enemy?: [x,z] (spoil parapet on
+    *  that side), parapet = 0.6 (m) }. Floor follows the ground, walls near vertical, soft ground inside. */
+   carveTrench(points, { w = 2.5, d = 1.8, enemy = null, parapet = 0.6 } = {}) {
+      const pts = points.map((p) => (Array.isArray(p) ? [p[0], p[1]] : [p.x, p.z]));
+      const ex = enemy && (Array.isArray(enemy) ? enemy[0] : enemy.x), ez = enemy && (Array.isArray(enemy) ? enemy[1] : enemy.z);
+      const tr = { id: this.trenches.length, kind: 'trench', pts, w, d, parapet: enemy ? parapet : 0, enemy, segs: [] };
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (let i = 0; i < pts.length - 1; i++) {
+         const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+         const par = enemy ? Math.sign((bx - ax) * (ez - az) - (bz - az) * (ex - ax)) : 0;
+         const p = { type: 0, ax, az, bx, bz, hw: w / 2, d, bl: TRENCH_BRIDGE_K * w, par, ph: tr.parapet, tr };
+         tr.segs.push(p);
+         this._pgAdd(p, w / 2 + PARAPET_OUT + 1);
+         x0 = Math.min(x0, ax, bx); x1 = Math.max(x1, ax, bx); z0 = Math.min(z0, az, bz); z1 = Math.max(z1, az, bz);
+      }
+      const pad = w / 2 + PARAPET_OUT + 2;
+      this.trenches.push(tr);
+      this._heightEdit(x0 - pad, z0 - pad, x1 + pad, z1 + pad);
+      return tr;
+   }
+   /** Distance from (x,z) to the nearest trench centre line minus its half width (< 0 inside), or Infinity. */
+   trenchDist(x, z) {
+      if (this._pg === null) return Infinity;
+      const cell = this._pg[this._ci(z) * this.gc + this._ci(x)];
+      let best = Infinity;
+      if (cell) for (const p of cell) if (p.type === 0) best = Math.min(best, segD(x, z, p.ax, p.az, p.bx, p.bz) - p.hw);
+      return best;
+   }
+
+   /** Road bridge from bank (x0,z0) to bank (x1,z1), { w = 7 }. Deck at the bank heights (at least 1.2 m
+    *  above water). A river causeway (`bridgeSites`) under the span is dug out. Returns the object. */
+   addBridge(x0, z0, x1, z1, { w = 7 } = {}) {
+      for (const site of this.bridgeSites) if (segD(site.x, site.z, x0, z0, x1, z1) < 12) this._removeCauseway(site);
+      const L = Math.hypot(x1 - x0, z1 - z0) || 1, wl = this.water;
+      const deckAt = (x, z) => { const h = this.groundHeightAt(x, z); return wl != null ? Math.max(h, wl + 1.2) : h; };
+      const y0 = deckAt(x0, z0), y1 = deckAt(x1, z1);
+      const o = this._newObj('bridge', (x0 + x1) / 2, (z0 + z1) / 2, Math.atan2(-(x1 - x0), -(z1 - z0)), w, L, 0.6,
+         { x0, z0, x1, z1, y0, y1, gap: [0.35, 0.65], blown: false });
+      o.y = (y0 + y1) / 2;
+      this._pgAdd({ type: 1, ax: x0, az: z0, bx: x1, bz: z1, hw: w / 2, y0, y1, o }, w / 2 + 1);
+      this.bridges.push(o);
+      this.heightVersion++;
+      return o;
+   }
+   /** Blow a bridge: the span between gap[0]..gap[1] (fraction of the length, default the middle
+    *  third) drops out. Tanks on it fall into the water; shells fly through. */
+   blowBridge(o, { gap } = {}) {
+      if (!o || o.kind !== 'bridge' || o.alive === false) return false;
+      if (gap) o.gap = gap;
+      o.alive = false; o.blown = true;
+      this.version++; this.heightVersion++;
+      return true;
+   }
+   _removeCauseway(site) {
+      if (site.removed) return;
+      site.removed = true;
+      const n = this.n, R = Math.hypot(site.x1 - site.x0, site.z1 - site.z0) / 2 + 12;
+      const i0 = Math.max(0, Math.floor((site.x - R + this.ext) / RES)), i1 = Math.min(n - 1, Math.ceil((site.x + R + this.ext) / RES));
+      const j0 = Math.max(0, Math.floor((site.z - R + this.ext) / RES)), j1 = Math.min(n - 1, Math.ceil((site.z + R + this.ext) / RES));
+      this._noCauseway = true;
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) this.h[j * n + i] = this._rawHeight(-this.ext + i * RES, -this.ext + j * RES);
+      this._noCauseway = false;
+      const gn = this.gn;
+      for (let j = 0; j < gn; j++) for (let i = 0; i < gn; i++) {
+         const x = -this.ext + i * 4, z = -this.ext + j * 4;
+         if (Math.abs(x - site.x) > R || Math.abs(z - site.z) > R) continue;
+         if (this.water != null && this._baseH(x, z) < this.water - 0.05) this.g[j * gn + i] = G_WATER;
+      }
+      this._heightEdit(site.x - R, site.z - R, site.x + R, site.z + R);
+   }
+
+   /** A tank footprint (circle r around x,z) flattens concertina wire. Returns how many broke. */
+   driveOver(x, z, r) {
+      let n = 0;
+      for (const o of this.wires) {
+         if (!o.alive || Math.abs(o.x - x) > r + o.w || Math.abs(o.z - z) > r + o.w) continue;
+         const hx = Math.cos(o.yaw) * o.w / 2, hz = -Math.sin(o.yaw) * o.w / 2;
+         if (segD(x, z, o.x - hx, o.z - hz, o.x + hx, o.z + hz) < r + o.d / 2) {
+            o.alive = false; o.fallYaw = o.yaw; this.version++; n++;
+         }
+      }
+      return n;
+   }
+   /** HE blast at (x,y,z): damages teeth / hedgehogs / wire within ~0.6 + cal·0.025 m (direct hit
+    *  `hitObj` takes the full `dmg`, near misses up to 60 %, linear falloff). Returns objects destroyed. */
+   blast(x, y, z, cal = 75, dmg = 0, hitObj = null) {
+      const R = 0.6 + cal * 0.025, base = dmg || cal * 3;
+      const cand = this.objectsNear(x, z, R + 1).slice();
+      for (const o of this.wires) if (o.alive && Math.abs(o.x - x) < R + o.w && Math.abs(o.z - z) < R + o.w) cand.push(o);
+      if (hitObj && !cand.includes(hitObj)) cand.push(hitObj);
+      let n = 0;
+      for (const o of cand) {
+         if (!BLAST_KINDS[o.kind] || !o.alive) continue;
+         let f = 1;
+         if (o !== hitObj) {
+            const dd = Math.max(0, Math.hypot(o.x - x, o.z - z, Math.max(0, y - (o.y + o.h))) - (o.kind === 'wire' ? o.d : o.r));
+            if (dd >= R) continue;
+            f = 0.6 * (1 - dd / R);
+         }
+         o.hp -= base * f;
+         if (o.hp <= 0) { o.hp = 0; if (this.destroyObject(o, o.x - x || 0.01, o.z - z)) n++; }
+      }
+      return n;
+   }
+
+   /** Dev/screenshot helper (`?demofeatures` in the page URL): a sample of every feature in front of
+    *  team 1's spawn; `?demofeatures=blown` also blows the bridge. */
+   addDemoFeatures(blown = false) {
+      const sp = this.spawns.team1[2], x = sp.x, z = sp.z - 30;
+      this.addTeethLine(x - 70, z - 10, x - 8, z - 10, { rows: 3 });
+      this.addTeethLine(x + 8, z - 10, x + 70, z - 10, { rows: 4 });
+      for (let i = 0; i < 6; i++) this.addObject({ kind: 'hedgehog', x: x - 6 + (i % 3) * 5, z: z - 6 - ((i / 3) | 0) * 5, yaw: i * 0.9 });
+      this.addWireLine(x - 60, z - 22, x + 60, z - 22);
+      this.carveTrench([[x - 80, z - 40], [x - 50, z - 48], [x - 20, z - 38], [x + 10, z - 48], [x + 40, z - 38], [x + 80, z - 46]],
+         { w: 2.5, d: 1.8, enemy: [x, z - 300] });
+      const site = this.bridgeSites[0];
+      const b = site ? this.addBridge(site.x0, site.z0, site.x1, site.z1, { w: 7 })
+         : this.addBridge(x + 30, z + 12, x + 30, z - 4, { w: 7 });
+      if (blown) this.blowBridge(b);
+   }
+
    /** Bushes whose canopy the segment a->b passes through (for camouflage). Count only. */
    bushesOnLine(ax, az, bx, bz, skipNearB = 0) {
       let n = 0;
@@ -594,4 +912,9 @@ function lerpDepth(s, ft, total, shallow, deep) {
    return shallow + (deep - shallow) * clamp01((along - 10) / 25);
 }
 
-export function makeTerrain(seed, themeId) { return new Terrain(seed, themeId); }
+export function makeTerrain(seed, themeId) {
+   const t = new Terrain(seed, themeId);
+   const qs = (typeof location !== 'undefined' && location?.search) || '';
+   if (/[?&]demofeatures/.test(qs)) t.addDemoFeatures(/demofeatures=blown/.test(qs));
+   return t;
+}

@@ -20,6 +20,14 @@
 //   farm   { x, z, yaw }                   2–3 houses + fences
 //   field  { x, z, r }                     soft ground (ploughed field)
 //   valley { k, max }                      terrain rises with distance from the river (k m per m)
+//   coast  { z, wig, beach, shelf:[[s,depth]...] }  sea north of the wiggly shore line z (+ fbm·wig):
+//                                          beach blends to water+0.5 over `beach` m, seabed follows
+//                                          the shelf profile (s = m seaward of the shore line)
+//   mole   { pts:[[x,z]...], w, h }        harbour mole / quay: road surface h m above the water
+//   house  { x, z, yaw, w, d, h }          one explicitly placed building (warehouse, ...)
+//
+// Theme extras: water (sea / river level), bases { team1, team2, neutral } and spawnZ { team1, team2 }
+// override the default base / spawn positions (used by coast maps whose north is sea).
 
 const SUMMER = {
    fog: 0xb9c2b8, fogNear: 280, fogFar: 1200, sunDir: [0.55, 0.62, 0.35], sunColor: 0xfff1d6, sunIntensity: 2.6,
@@ -141,6 +149,51 @@ export const MAPS = {
          { kind: 'bushes', sym: true, x: -100, z: 140, r: 60, n: 14 },
       ],
       scatter: { trees: 200, bushes: 90, rocks: 25 },
+   },
+   kueste: {
+      id: 'kueste', name: 'Küste', desc: 'Ostseeküste an der Danziger Bucht: Strand, Dünen und Kiefern, ein Backsteinhafen mit Mole – im Norden nur offene See.',
+      palette: 'coast', seed: 67,
+      render: { ...SUMMER, fog: 0xb3c0c8, skyHor: 0xc8d4dc, skyTop: 0x5b86b4, skyLow: 0x6f7a78, sunColor: 0xfff4e2,
+         sunIntensity: 2.4, groundLight: 0x5e5a48, cloud: 0.65, fogNear: 320, fogFar: 1500 },
+      noise: { amp: 2.5, scale: 260, detail: 0.4, ridgedAmp: 1.5 },
+      ground: { soft: 0.2, hard: 0.08 },
+      water: 0,
+      bases: { team1: { x: -170, z: 385 }, team2: { x: 0, z: -45 }, neutral: { x: 0, z: 170 } },
+      spawnZ: { team1: 395, team2: -30 },
+      features: [
+         { kind: 'coast', z: -165, wig: 18, beach: 45, shelf: [[0, 0], [15, 1.5], [35, 4], [60, 7.5], [100, 10], [180, 13], [300, 14]] },
+         // dune belt behind the beach, gaps for the beach exits
+         { kind: 'ridge', x0: -480, z0: -108, x1: -120, z1: -100, w: 34, h: 4.5, gaps: [[0.3, 26], [0.75, 30]] },
+         { kind: 'ridge', x0: -60, z0: -98, x1: 200, z1: -106, w: 30, h: 4, gaps: [[0.45, 34]] },
+         // harbour: long mole out into the bay + quay along the shore
+         { kind: 'mole', pts: [[300, -150], [300, -345], [335, -372]], w: 14, h: 1.8 },
+         { kind: 'mole', pts: [[225, -146], [385, -146]], w: 22, h: 1.6 },
+         { kind: 'road', pts: [[300, 500], [320, 260], [345, 60], [320, -60], [300, -130]], w: 7 },
+         { kind: 'road', pts: [[-500, 120], [-250, 70], [0, 40], [200, 20], [345, 60]], w: 6 },
+         { kind: 'road', pts: [[0, 40], [-10, -60]], w: 5 },
+         // brick town and harbour warehouses
+         { kind: 'village', x: 380, z: -20, r: 70, houses: 14, walls: 4, church: true },
+         { kind: 'house', x: 245, z: -112, yaw: 0, w: 14, d: 24, h: 9 },
+         { kind: 'house', x: 270, z: -108, yaw: 0, w: 12, d: 20, h: 8 },
+         { kind: 'house', x: 340, z: -112, yaw: 0, w: 14, d: 26, h: 10 },
+         { kind: 'house', x: 368, z: -110, yaw: 0, w: 12, d: 22, h: 8 },
+         { kind: 'house', x: 395, z: -114, yaw: 0.05, w: 10, d: 18, h: 7 },
+         // pines on the dunes and inland, farmland in the south
+         { kind: 'forest', x: -330, z: -70, r: 80, density: 0.55, bushes: 0.5 },
+         { kind: 'forest', x: 80, z: -60, r: 60, density: 0.5, bushes: 0.5 },
+         { kind: 'forest', x: -120, z: 200, r: 90, density: 0.45, bushes: 0.6 },
+         { kind: 'forest', x: 230, z: 250, r: 70, density: 0.4, bushes: 0.5 },
+         { kind: 'farm', x: -300, z: 290, yaw: 0.2 },
+         { kind: 'farm', x: 120, z: 120, yaw: -0.4 },
+         { kind: 'field', x: -330, z: 220, r: 90 },
+         { kind: 'field', x: 60, z: 330, r: 80 },
+         { kind: 'hill', x: -180, z: 60, r: 90, h: 7 },
+         { kind: 'hill', x: 180, z: 330, r: 70, h: 5 },
+         { kind: 'bushes', x: -60, z: -40, r: 80, n: 26 },
+         { kind: 'bushes', x: 150, z: 60, r: 70, n: 18 },
+         { kind: 'rocks', x: -250, z: -130, r: 60, n: 5 },
+      ],
+      scatter: { trees: 90, bushes: 120, rocks: 8 },
    },
 };
 export const MAP_LIST = Object.keys(MAPS);
