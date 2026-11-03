@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>PANZER</title>
+<style>
+   /* =====================================================================================
+      PANZER design tokens: the ONE place for colours and type. menu.js and hud.js use them
+      through var() (canvas drawing reads them once via getComputedStyle).
+      Direction "Feldkarte": menus are a field map on olive canvas with stencil headings,
+      khaki paper cards and a signal-orange accent; the battle HUD is dark steel plates with
+      khaki lettering. Own side green-cyan, enemy red (distinct for red-green blindness by
+      lightness). Type: Bahnschrift (Windows), stencil headings via letter-spaced condensed caps.
+      ===================================================================================== */
+   :root {
+      --olive: #4b5132; --olive-2: #5d6440; --olive-3: #737b52; --olive-dk: #2e321f;
+      --khaki: #d8cfa8; --khaki-2: #c7bc8f; --khaki-3: #a99d6e; --paper: #e9e2c4;
+      --ink: #1f2214; --ink-2: #3f4329; --ink-3: #6b6d52; --rule: rgba(31, 34, 20, .2);
+      --steel: #23272a; --steel-2: #30363a; --steel-3: #444c51; --steel-hi: #7d878c;
+      --signal: #e07a1f; --signal-hi: #f59a3c; --signal-lo: #9c4f0d;
+      --veil: rgba(14, 16, 10, .66);
+      --hud: #ece4c6; --hud-dim: #a9a385;
+      --panel: rgba(20, 23, 22, .74); --panel-solid: rgba(20, 23, 22, .94); --panel-edge: rgba(216, 207, 168, .28);
+      --ally: #6fe0b0; --enemy: #ff4b3a; --self: #fff6d8;
+      --ok: #8fd65a; --warn: #f1c83c; --bad: #ee4b36; --dead: #5a5850;
+      --pen-yes: #57e04a; --pen-maybe: #ffd23a; --pen-no: #ff3a2a;
+      --reticle: #f4eed6;
+      --map-ground: #6f7448; --map-forest: #3f4a2a; --map-water: #3d5f6b; --map-road: #b9ad80; --map-ink: #1c1f12;
+      --font: "Bahnschrift", "DIN Alternate", "Segoe UI", system-ui, sans-serif;
+      --font-cond: "Bahnschrift Condensed", "Arial Narrow", "Bahnschrift", sans-serif;
+      --font-stencil: "Stencil", "Stencil Std", "Bahnschrift Condensed", "Impact", sans-serif;
+   }
+   * { box-sizing: border-box; }
+   html, body { margin: 0; height: 100%; overflow: hidden; background: #11130c; color: var(--hud); font-family: var(--font); user-select: none; }
+   #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+   #hud { position: fixed; inset: 0; pointer-events: none; }
+   #hud canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+   #scope { position: fixed; inset: 0; pointer-events: none; display: none;
+      background: radial-gradient(circle at 50% 50%, transparent 0 calc(min(46vw, 46vh)), rgba(0,0,0,.55) calc(min(46vw, 46vh) + 1px), #050604 calc(min(48vw, 48vh))); }
+   #scope.on { display: block; }
+   #menu { position: fixed; inset: 0; display: none; }
+   #menu.on { display: block; }
+   .stencil { font-family: var(--font-stencil); letter-spacing: .14em; text-transform: uppercase; font-weight: 700; }
+   #boot { position: fixed; inset: 0; display: grid; place-items: center; background: var(--olive-dk); color: var(--khaki); font-size: 14px; letter-spacing: .3em; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="scope"></div>
+<div id="hud"><canvas id="hudc"></canvas></div>
+<div id="menu"></div>
+<div id="boot" class="stencil">PANZER — LADE …</div>
+<script type="module" src="game/main.js"></script>
+</body>
+</html>
