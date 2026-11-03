@@ -26,6 +26,7 @@ const MU = [0.85, 0.78, 0.7, 0.55, 0.5];   // traction by ground idx (road, hard
 const RES = [GROUND.road.res, GROUND.hard.res, GROUND.medium.res, GROUND.soft.res, GROUND.water.res];
 const CFG_GROUND_IDX = [0, 0, 1, 2, 2];     // ground idx -> cfg.ground [hard, medium, soft] slot
 const BRAKE = 6.5;             // m/s² service brake
+const COAST = 2.8;             // m/s² engine braking with the throttle released (WoT-like: stops in ~4 s)
 const DROWN_TIME = 10;
 const REPAIR_TIME = { trackL: 9, trackR: 9, engine: 14, gun: 12, turretRing: 12, optics: 10, radio: 10, fuel: 12, ammo: 12 };
 const ELEV_SPEED = 14 * DEG;   // gun elevation drive, rad/s
@@ -216,7 +217,7 @@ export class Tank {
          } else a -= Math.sign(v) * 1.5;
       }
       // rolling resistance + engine braking; turning bleeds speed
-      const rr = res * N + (dirWanted ? 0 : 0.6) + Math.abs(this.yawRate) * av * 0.35;
+      const rr = res * N + (dirWanted ? 0 : COAST) + Math.abs(this.yawRate) * av * 0.35;
       let v1 = v + a * dt;
       if (Math.abs(v1) > 1e-4) { const dv = rr * dt; v1 = Math.abs(v1) <= dv ? 0 : v1 - Math.sign(v1) * dv; }
       const slides = Math.abs(slopeA) > mu * N * 0.95;               // steeper than traction: slide
