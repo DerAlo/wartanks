@@ -247,6 +247,14 @@ export class BotAI {
          if (!b.alive) continue;
          const ux = b.x1 - b.x0, uz = b.z1 - b.z0, L = Math.hypot(ux, uz) || 1, L2 = L * L;
          const ka = ((t.pos.x - b.x0) * ux + (t.pos.z - b.z0) * uz) / L2, kb = ((d.x - b.x0) * ux + (d.z - b.z0) * uz) / L2;
+         // already on the deck (a repath mid-crossing): keep going, never turn back to the ramp
+         const onDeck = ka > 0.02 && ka < 0.98 && Math.abs((t.pos.x - b.x0) * uz - (t.pos.z - b.z0) * ux) / L < (b.w || 8) / 2 + 1;
+         if (onDeck && (kb > 1 || kb < 0)) {
+            const s = kb > ka ? 1 : -1, fx = s > 0 ? b.x1 : b.x0, fz = s > 0 ? b.z1 : b.z0, ex = ux / L * 14 * s, ez = uz / L * 14 * s;
+            const ahead = Math.min(1, Math.max(0, ka + s * 0.3));
+            this.path = [{ x: b.x0 + ux * ahead, z: b.z0 + uz * ahead }, { x: fx + ex, z: fz + ez }, { x: d.x, z: d.z }];
+            break;
+         }
          if (!((ka < 0.2 && kb > 0.8) || (ka > 0.8 && kb < 0.2))) continue;
          const s = ka < kb ? 1 : -1, nx = s > 0 ? b.x0 : b.x1, nz = s > 0 ? b.z0 : b.z1, fx = s > 0 ? b.x1 : b.x0, fz = s > 0 ? b.z1 : b.z0;
          const ex = ux / L * 14 * s, ez = uz / L * 14 * s;

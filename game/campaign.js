@@ -417,6 +417,9 @@ export const OPS = {
          }
          const bx = br?.x ?? 0, bz = br?.z ?? 0, south = Math.max(br?.z0 ?? 0, br?.z1 ?? 0), north = Math.min(br?.z0 ?? 0, br?.z1 ?? 0);
          const hz = south + 75;                                   // bridgehead line on the south bank
+         // the deck's south and north ends and the unit vector from south to north along it
+         const sEnd = br ? (br.z0 > br.z1 ? [br.x0, br.z0] : [br.x1, br.z1]) : [bx, south], nEnd = br ? (br.z0 > br.z1 ? [br.x1, br.z1] : [br.x0, br.z0]) : [bx, north];
+         const bl = Math.hypot(nEnd[0] - sEnd[0], nEnd[1] - sEnd[1]) || 1, ux = (nEnd[0] - sEnd[0]) / bl, uz = (nEnd[1] - sEnd[1]) / bl;
          S.player.pos.x = bx; S.player.pos.z = hz + 15; S.player.placeOn?.(S.T);
          // roadblock in front of the bridgehead: hedgehogs and wire with a gap on the road, so the
          // attackers come at the Tiger's front instead of swarming round it
@@ -439,8 +442,9 @@ export const OPS = {
          ];
          const send = (S) => {
             const list = waves[wave++]; if (!list) return;
-            list.forEach(([c, dx], i) => S.after(i * 14, (S) => S.spawn(c, 2, bx + dx, 470, { yaw: 0, tag: c === 'm26' ? 'pershing' : 'wave', name: TANKS[c].short || TANKS[c].name,
-               order: c === 'm26' ? { kind: 'route', pin: true, pts: [[bx + dx, hz + 300], [bx + 30, hz + 170]] }      // the heavy duels from range
+            // the Pershing crew came off Shermans a few weeks ago and does not know the new gun yet
+            list.forEach(([c, dx], i) => S.after(i * 14, (S) => S.spawn(c, 2, bx + dx, 470, { yaw: 0, tag: c === 'm26' ? 'pershing' : 'wave', name: TANKS[c].short || TANKS[c].name, aiErr: c === 'm26' ? 1.8 : undefined,
+               order: c === 'm26' ? { kind: 'route', pin: true, pts: [[bx + dx, hz + 320], [bx + 30, hz + 250]] }      // the heavy duels from the wood's edge
                   : { kind: 'route', pin: true, pts: [[bx + dx, hz + 300], [bx + dx * 0.4, hz + 200], [bx + dx * 0.1, hz + 120], [bx + dx * 0.3, hz + 70]] } })));
             S.radio(['Feindpanzer im Süden – Shermans!', 'Zweite Welle, Jagdpanzer an den Flanken!', 'Schwerer Panzer dabei – ein Pershing!'][wave - 1], 'warn');
             if (wave === 3) S.show('b_pershing');
@@ -452,8 +456,13 @@ export const OPS = {
             S.done('hold'); S.show('back'); S.phase('retreat'); S.timer('Brücke wird gesprengt', 120);
             S.radio('Alle sind drüben! Tiger, zurück über die Brücke – die Pioniere warten auf euch! Die Artillerie schießt Sperrfeuer.');
             // the last battery on the north bank lays a barrage: the attackers pull back into the wood
-            S.order([...S.group('wave'), ...S.group('pershing')].filter((t) => t.alive), { kind: 'advance', x: bx, z: hz + 380 });
-            S.goal(bx, north - 40, 'Nordufer', 25);
+            // and smoke: the attackers lose sight of the Tiger while it backs over the river
+            const att = [...S.group('wave'), ...S.group('pershing')].filter((t) => t.alive);
+            S.order(att, { kind: 'advance', x: bx, z: hz + 380 }); for (const t of att) t.viewMul = 0.35;
+            // the bridge runs askew: first line up on its south ramp, then straight across
+            const ax = sEnd[0] - ux * 14, az = sEnd[1] - uz * 14;
+            S.goal(ax, az, 'Brückenauffahrt', 6);
+            S.when((S) => S.player && Math.hypot(S.player.pos.x - ax, S.player.pos.z - az) < 9, (S) => S.goal(nEnd[0] + ux * 35, nEnd[1] + uz * 35, 'Nordufer', 25));
             S.order(S.group('rear').filter((t) => !t.cfg.site), { kind: 'advance', x: bx + 10, z: north - 60 });
          });
          S.when((S) => S.c.phase === 'retreat' && S.player && S.player.pos.z < north - 25, (S) => {
@@ -535,12 +544,14 @@ export const OPS = {
          const cp = { x: 0, z: 260 }, T = S.T;
          // the ambush line: the bushiest spot near each planned position (cover the player can use)
          const bushAt = (x, z) => { let b = null, bd = 60; for (const o of T.bushes || []) { const d = Math.hypot(o.x - x, o.z - z); if (o.alive !== false && d < bd) { bd = d; b = o; } } return b ? [b.x, b.z] : [x, z]; };
-         const amb = bushAt(0, 150);
+         // the Hellcats lie on both flanks of the road into the village, so the Panthers drive past
+         // them and show their 40 mm sides instead of the 80 mm glacis the 76 mm gun cannot pierce
+         const amb = bushAt(-110, 150);
          S.obj('kill', 'Angreifende Panzer vernichten', { need: 9 });
          S.obj('cp', 'Gefechtsstand halten (kein Feind im Dorf)');
          S.obj('b_ally', 'Kein Hellcat verloren', { bonus: true });
          S.obj('b_ace', '4 Abschüsse selbst erzielen', { bonus: true, need: 4 });
-         for (const [x, z] of [[amb[0] - 90, 130], [amb[0] + 90, 125]]) { const [bx, bz] = bushAt(x, z); S.spawn('m18', 1, bx, bz, { tag: 'allies', name: 'M18 Hellcat', order: { kind: 'ambush', x: bx, z: bz, r: 140 } }); }
+         for (const [x, z] of [[125, 115], [70, 170]]) { const [bx, bz] = bushAt(x, z); S.spawn('m18', 1, bx, bz, { tag: 'allies', name: 'M18 Hellcat', order: { kind: 'ambush', x: bx, z: bz, r: 140 } }); }
          for (const x of [-35, 35]) S.spawn('m4a3e8', 1, cp.x + x, cp.z - 25, { tag: 'cpguard', name: 'Sherman (Gefechtsstand)', order: { kind: 'hold', x: cp.x + x, z: cp.z - 25 } });
          S.goal(amb[0], amb[1], 'Hinterhalt', 20); S.mark('cp', cp.x, cp.z, 'Gefechtsstand', 'area', 60);
          this.start = (S) => S.radio('Hier Gefechtsstand: Motorengeräusche im Nebel, Richtung Nord. Geht in den Büschen in Stellung – Feuer erst auf kurze Distanz!');
@@ -551,8 +562,8 @@ export const OPS = {
          const send = (S) => {
             const list = W[wave++]; if (!list) return;
             list.forEach(([c, dx], i) => S.after(i * 18, (S) => {
-               S.spawn(c, 2, dx, -440, { yaw: Math.PI, tag: 'att', name: TANKS[c].short || TANKS[c].name, viewMul: 0.75, aiErr: 1.8,
-                  order: { kind: 'route', pts: [[dx * 0.8, -200], [dx * 0.6, -60], [dx * 0.3, 90], [cp.x, cp.z]] } });
+               S.spawn(c, 2, dx, -440, { yaw: Math.PI, tag: 'att', name: TANKS[c].short || TANKS[c].name, viewMul: 0.5, aiErr: 1.8,
+                  order: { kind: 'route', pin: true, pts: [[dx * 0.8, -200], [dx * 0.6, -60], [dx * 0.3, 90], [cp.x, cp.z]] } });
             }));
             S.radio(wave === 1 ? 'Panther im Nebel – zwei Stück!' : wave === 2 ? 'Neue Welle, Panzer IV und Panther!' : 'Starke Kräfte, die ganze Brigade kommt!', 'warn');
          };
