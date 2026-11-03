@@ -377,7 +377,12 @@ export const OPS = {
          S.at(10, send); S.at(150, send); S.at(300, send);
          S.when(() => true, (S) => { S.progress('kill', S.dead('att')); S.progress('b_ace', S.player?.stats?.kills || 0); }, { repeat: true });
          S.when((S) => S.alive('allies') < 2, (S) => S.fail('b_ally'));
-         S.when((S) => S.countIn('att', cp.x, cp.z, 60) > 0, (S) => { S.fail('cp'); S.lose('Gefechtsstand überrannt'); });
+         let lost = 0;                    // the CP falls after 20 s with an enemy tank inside
+         S.when((S) => S.countIn('att', cp.x, cp.z, 60) > 0, (S) => {
+            lost += 0.25; S.timer('Gefechtsstand fällt', Math.max(0, 20 - lost));
+            if (lost === 0.25) S.radio('Feindpanzer am Gefechtsstand!', 'warn');
+            if (lost >= 20) { S.fail('cp'); S.lose('Gefechtsstand überrannt'); }
+         }, { repeat: true });
          S.when((S) => S.isDone('kill'), (S) => { S.done('cp'); if (S.alive('allies') >= 2) S.done('b_ally'); S.win('Angriff abgewehrt'); });
       },
    },
