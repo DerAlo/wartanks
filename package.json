@@ -1,0 +1,14 @@
+{
+  "name": "wartanks",
+  "version": "0.1.0",
+  "description": "Panzer: a browser tank combat game (WW2-era armour, ballistics, driving). HTML/JS/three.js, no build step, serverless multiplayer.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  },
+  "engines": { "node": ">=18" }
+}
