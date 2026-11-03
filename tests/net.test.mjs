@@ -35,6 +35,18 @@ function runMatch({ mode, players, seconds = 90, seed = 4242, mission = 'standar
          for (const r of s.tanks) { const t = hw.tankById(r.id); if (t.alive && t.team !== rep.own.team && !t.spotted) leaks.push([p.id, r.id]); }
          on(u8);
       };
+      // PvP: no shell of an unspotted enemy, no event about one (spotted: only to the spotting team)
+      const onE = rep.onEvt.bind(rep);
+      rep.onEvt = (d) => {
+         if (mode === 'pvp') for (const it of d[2]) {
+            const enemyHidden = (id) => { const t = id == null ? null : hw.tankById(id); return !!t && t.alive && t.team !== rep.own.team && !t.spotted; };
+            if (it[0] === 's' && enemyHidden(it[2]) && !rep._seenShell?.has(it[1])) leaks.push([p.id, 'shell', it[2]]);
+            if (it[0] === 's') (rep._seenShell ??= new Set()).add(it[1]);
+            if (it[0] === 'e' && it[1] !== 'spotted' && (enemyHidden(it[2].dstId) || (it[2].dstId == null && enemyHidden(it[2].srcId)))) leaks.push([p.id, 'event', it[1]]);
+            if (it[0] === 'e' && it[1] === 'spotted' && hw.tankById(it[2].srcId)?.team !== rep.own.team) leaks.push([p.id, 'spotted']);
+         }
+         onE(d);
+      };
       p.hooked = true;
    };
    const steps = Math.round(seconds / DT);

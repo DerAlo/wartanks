@@ -5,7 +5,7 @@
 //   host = new NetHost(world, transport, start, { onLog })
 //   host.step(dt)          after every world.update(SIM_DT) (game.js wraps world.update)
 //   host.dispose()
-import { encodeSnap } from './codec.js';
+import { encodeSnap, visibleTo } from './codec.js';
 import { applyCmd, tickFire } from './command.js';
 import { setHuman } from './setup.js';
 
@@ -34,6 +34,8 @@ export class NetHost {
       this.cl = start.slots.map((s, i) => ({ i, peer: s.peer, tid: s.tid, wteam: s.wteam, team: s.team, name: s.name, joined: false, st: { seq: 0, done: 0, fireT: 0 }, rejoin: false })).slice(1);
       this.items = []; this.batch = 0; this.lastSeq = world.seq;
       this.shells = new Map();               // shell id -> ricochet count sent
+      this.shellTo = new Map();              // PvP: shell id -> bits of the World teams told of it (1, 2)
+      this.pvp = start.mode === 'pvp';
       this.objAlive = world.terrain.objects.map((o) => o.alive !== false); this.objVer = world.terrain.version;
       this.snapT = 0; this.syncT = 0; this.meT = 0; this.ended = false;
       transport.on('cmd', (d, from) => {
@@ -131,9 +133,43 @@ export class NetHost {
    }
    flush() {
       if (!this.items.length) return;
-      const to = this.peers();
-      if (to.length) this.T.send('evt', [++this.batch, this.tick(), this.items], to);
+      const to = this.peers(), all = this.items;
       this.items = [];
+      if (!to.length) return;
+      if (!this.pvp) { this.T.send('evt', [++this.batch, this.tick(), all], to); return; }
+      // PvP: each team hears only of what it can see (rules as in warships host.js forTeam)
+      const batch = ++this.batch, tick = this.tick();
+      for (const wt of [1, 2]) {
+         const ids = this.cl.filter((c) => c.joined && c.wteam === wt).map((c) => c.peer);
+         if (!ids.length) continue;
+         const list = [];
+         for (const it of all) { const x = this.forTeam(it, wt); if (x) list.push(x); }
+         if (list.length) this.T.send('evt', [batch, tick, list], ids);
+      }
+      for (const id of [...this.shellTo.keys()]) if (!this.shells.has(id)) this.shellTo.delete(id);
+   }
+   /** PvP: an evt item as World team `wt` may see it, or null. A shell is shown when its gun is in
+    *  sight at the shot (or a team saw an earlier leg), and its end only to the teams told of it;
+    *  events about a tank out of the team's sight (or, without a target, by such a tank) are left
+    *  out; `spotted` goes to the spotting team only. Effects and terrain objects are world state. */
+   forTeam(it, wt) {
+      const w = this.w, bit = wt, hid = (id) => { const t = id == null ? null : w.tankById(id); return !!t && !visibleTo(t, wt); };
+      switch (it[0]) {
+         case 's': {
+            const got = this.shellTo.get(it[1]) || 0;
+            if (!(got & bit) && hid(it[2])) return null;
+            this.shellTo.set(it[1], got | bit);
+            return it;
+         }
+         case 'x': return (this.shellTo.get(it[1]) || 0) & bit ? it : null;
+         case 'e': {
+            const d = it[2] || {};
+            if (it[1] === 'spotted') { const s = w.tankById(d.srcId); return s && s.team === wt ? it : null; }
+            if (hid(d.dstId) || (d.dstId == null && hid(d.srcId))) return null;
+            return it;
+         }
+         default: return it;
+      }
    }
    tick() { return Math.round(this.w.time * 60); }
    snaps() {
