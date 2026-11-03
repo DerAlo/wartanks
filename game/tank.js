@@ -368,6 +368,12 @@ export class Tank {
       }
       const ring = this.mod('turretRing');
       let tspd = this.turretSpeed * (ring === 'damaged' ? 0.5 : ring === 'destroyed' ? 0 : 1) * (this.roleAlive('gunner') ? 1 : 0.8);
+      // the turret holds its world bearing while the hull turns under it (WoT feel): the counter-
+      // rotation for the hull's own yaw is free, only the remaining laying uses the traverse drive
+      if (ring !== 'destroyed' && this.yawRate) {
+         this.turretYaw -= this.yawRate * dt;
+         if (this.arc) this.turretYaw = clamp(this.turretYaw, this.arc[0], this.arc[1]);
+      }
       const old = this.turretYaw;
       if (this.arc) this.turretYaw = approach(this.turretYaw, wantYaw, tspd * dt);
       else this.turretYaw = approachAngle(this.turretYaw, wantYaw, tspd * dt);

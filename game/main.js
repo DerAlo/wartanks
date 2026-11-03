@@ -36,7 +36,7 @@ function themeOf(mapId) {
 
 
 export function startBattle(opts = {}) {
-   stopBattle();
+   stopBattle(); G.lock = null; G.rmbT = null;
    for (const k in opts) if (opts[k] === undefined) delete opts[k];
    if (!stateM.World) { console.error('[main] state.js missing: no battle possible'); menu?.show('garage'); return; }
    const world = G.world = opts.world || new stateM.World({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
@@ -70,7 +70,7 @@ function finishBattle() {
       result: w.result ? { ...w.result } : null, stats: w.stats ? { ...w.stats } : null };
    menu?.applyResult?.(snap);
    G.lastResult = snap;
-   stopBattle();
+   stopBattle(); G.lock = null; G.rmbT = null;
    if (G.net) G.net.finish(snap);                   // net game: the lobby shows the result and the room
    else if (menu) menu.showResults(snap);
 }
@@ -98,6 +98,48 @@ G.startNetGame = async (session) => {
    G.net = startNetGame(s, { startBattle, stopBattle, log: (t) => console.log('[net]', t) });
    return G.net;
 };
+
+// ---- right mouse (WoT style): a short click locks the aim onto a spotted enemy (auto-aim; the
+// crosshair sticks to it until the next click or the target is lost), holding it is free look ----
+const RMB_HOLD = 0.25;
+function lockValid(world, p, t) { return t && t.alive && t.team !== p.team && t.spotted !== false && world.tanks.includes(t); }
+function pickLock(world, p) {
+   const a = G.aimTarget?.tank;
+   if (lockValid(world, p, a)) return a;
+   // nearest spotted enemy within ~7° of the view direction
+   tmpO.copy(R.camera.position); tcam.aimDir(tmpD);
+   let best = null, bestA = 7 * Math.PI / 180;
+   for (const t of world.tanks) {
+      if (!lockValid(world, p, t)) continue;
+      const dx = t.pos.x - tmpO.x, dy = t.pos.y + 1.2 - tmpO.y, dz = t.pos.z - tmpO.z, L = Math.hypot(dx, dy, dz) || 1;
+      const ang = Math.acos(Math.min(1, (dx * tmpD.x + dy * tmpD.y + dz * tmpD.z) / L));
+      if (ang < bestA) { bestA = ang; best = t; }
+   }
+   return best;
+}
+function setLock(p, t) {
+   G.lock = t || null;
+   if (p.input) p.input.lockId = t ? t.id : null;
+}
+function rightMouse(world, p) {
+   const now = performance.now() / 1000;
+   if (input.rmb && G.rmbT == null) G.rmbT = now;
+   const held = G.rmbT != null ? now - G.rmbT : 0;
+   tcam.setFreeLook(input.rmb && held >= RMB_HOLD);
+   if (!input.rmb && G.rmbT != null) {
+      if (held < RMB_HOLD && p?.alive) {
+         if (G.lock) { setLock(p, null); hud?.msg?.('Zielautomatik aus', undefined, 0.8); }
+         else { const t = pickLock(world, p); if (t) { setLock(p, t); hud?.msg?.('Zielautomatik: ' + (t.name || t.cfg?.short || 'Ziel'), undefined, 1); audio?.ui?.('scope'); } }
+      }
+      G.rmbT = null;
+   }
+   if (G.lock && (!p?.alive || !lockValid(world, p, G.lock))) { setLock(p, null); hud?.msg?.('Ziel verloren', '#ff6a4d', 1); }
+   if (G.lock) {   // keep the camera (and so the crosshair) on the target's centre
+      const t = G.lock, c = R.camera.position;
+      const dx = t.pos.x - c.x, dy = t.pos.y + (t.height ?? 2.2) * 0.55 - c.y, dz = t.pos.z - c.z;
+      tcam.yaw = Math.atan2(-dx, -dz); tcam.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+   }
+}
 
 // ---- aim: camera ray → first hit on terrain / objects / other tanks ----
 function aimRay(world, p) {
@@ -128,8 +170,8 @@ function aimRay(world, p) {
 function controls(world, p, dt) {
    if (input.wheel && tcam.wheel(input.wheel)) audio?.ui?.('scope');
    if (input.hit('ShiftLeft') || input.hit('ShiftRight')) { tcam.toggleScope(); audio?.ui?.('scope'); }
-   tcam.setFreeLook(input.rmb);
-   tcam.look(input.dx, input.invert ? -input.dy : input.dy, input.sens);
+   rightMouse(world, p);
+   if (!G.lock) tcam.look(input.dx, input.invert ? -input.dy : input.dy, input.sens);
    if (!p?.alive) return;
    const k = (c) => input.down(c);
    const inp = p.input ??= {};

@@ -576,7 +576,11 @@ export class Menu {
       if (this.armor) { this.armor.rotation.y = this.yaw; this.armorGroups.turretG.rotation.y = this.turretYaw; if (!this.C.TANKS?.[this.sel.cls]?.turret) this.armorGroups.gunG.rotation.y = this.turretYaw; }
       this.table.rotation.y = this.yaw;
       // camera: title = slow wide orbit; garage = framed between the side panels
-      const z = this.zoom || 1, a = garage ? 0.85 : this.t * 0.05 + 2.2, d = (garage ? 11.5 : 15) * z, h = garage ? 3.6 * z : 4.2;
+      // the battle camera leaves its FOV behind (a narrow one after leaving in scope view): the
+      // preview always uses its own, and the distance follows the tank's size
+      if (cam.fov !== 60) { cam.fov = 60; cam.updateProjectionMatrix(); }
+      const len = this.C.TANKS?.[this.viewCls || this.sel.cls]?.dims?.len ?? 6.5, sz = Math.max(0.85, Math.min(1.35, len / 6.5));
+      const z = (this.zoom || 1) * (garage ? sz : 1), a = garage ? 0.85 : this.t * 0.05 + 2.2, d = (garage ? 11.5 : 15) * z, h = garage ? 3.6 * z : 4.2;
       cam.position.set(Math.sin(a) * d, h, Math.cos(a) * d);
       const tgt = new THREE.Vector3(0, garage ? 1.3 : 1.6, 0);
       if (garage) { const right = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a)); tgt.addScaledVector(right, 0.9 * z); tgt.y -= 0.6 * z; }
