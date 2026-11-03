@@ -84,6 +84,7 @@ export const BALLISTICS = {
    OVERMATCH_NORM: 2,       // caliber > 2 × t: normalisation scaled by 1.4 × cal/t (WoT style)
    RIC_PEN_LOSS: 0.25,      // pen lost on a ricochet
    HEAT_AIR_LOSS: 0.5,      // HEAT pen fraction lost per metre of air after the first plate
+   HE_MIN: 0.1,             // a direct non-penetrating HE hit deals at least 10 % of its damage
    HE_SPLASH_K: 1.1,        // HE splash: dmg = alpha/2 * falloff − effT × k
    HE_RADIUS: (cal) => 0.6 + cal * 0.012,   // m
    MAX_PLATES: 8,

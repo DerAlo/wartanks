@@ -144,6 +144,16 @@ test('HE splash hurts a light tank, not a heavy one', () => {
    assert.ok(res.dmg > 150, 'direct HE ' + res.kind + ' ' + res.dmg);
 });
 
+test('a direct HE hit on thick armour still does a little damage', () => {
+   const he = round(TANKS.t34_76, 'HE');
+   const shell = { type: 'HE', cal: he.cal, dmg: he.dmg, pen: he.pen };
+   const cfg = TANKS.tiger1, A = buildArmor(cfg), ps = pose();
+   const r = rayAt(ps, [0, cfg.hull.roofY - 0.3, 0], { x: 1, y: 0, z: 0 });
+   const res = resolveImpact({ armor: A, pose: ps }, r.o, r.d, shell, makeRng(4));
+   assert.equal(res.kind, 'he');
+   assert.ok(res.dmg > 0 && res.dmg < he.dmg / 2, 'tiger side HE ' + res.dmg);
+});
+
 test('HEAT loses pen through spaced armour (skirts)', () => {
    const cfg = TANKS.panther, A = buildArmor(cfg), ps = pose();
    const heat = { type: 'HEAT', cal: 75, dmg: 110, pen: 100 };

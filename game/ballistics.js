@@ -103,7 +103,10 @@ export function resolveImpact(target, origin, dir, shell, rng) {
             if (h.part === 'gun') r.crits.push({ kind: 'module', id: 'gun', dmg: Math.round(rollDmg(shell.dmg, rng) * 0.5) });
          }
          r.kind = 'he';
-         r.dmg = Math.max(0, Math.round(rollDmg(shell.dmg, rng) / 2 - shieldT * B.HE_SPLASH_K * (B.DMG_MUL ?? 1)));
+         // a direct HE hit that does not penetrate still hurts a little: the blast is absorbed by the
+         // plate, but at least HE_MIN of the rolled damage gets through (spalling, shock, fittings)
+         const rolled = rollDmg(shell.dmg, rng);
+         r.dmg = Math.round(Math.max(rolled * B.HE_MIN, rolled / 2 - shieldT * B.HE_SPLASH_K * (B.DMG_MUL ?? 1)));
          if (r.dmg > 0) heModules(target, h.point, shell, r.crits, rng, 0.5);
          return r;
       }
