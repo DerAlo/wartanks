@@ -432,7 +432,7 @@ can run an operation unchanged and clients only render `world.campaign`.
 * Results (`mode === 'campaign'`): objectives with ✓/✗, stars, medal SVG (Gold/Silber/Bronze),
   buttons "Zurück zum Feldzug" / "Erneut versuchen" / "Nächste Operation"; no XP/credits.
   `applyResult` calls `recordCampaign` only.
-* Progress: `profile.campaign[opId] = { done, stars (best), medal (best), bestTime, plays }`;
+* Progress: `profile.campaign[opId] = { done, stars (best), bestTime, tries }`;
   `recordCampaign(p, opId, result)`, `campaignUnlocked(p, opId, order)` (op n+1 opens once op n
   is won).
 * HUD reads `world.campaign` only: objectives panel top-left (flash on change; hidden objectives
