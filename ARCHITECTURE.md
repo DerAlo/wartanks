@@ -101,7 +101,9 @@ height overlay on top of the 2 m heightfield (steep walls; zero cost on maps wit
 A trench is bridged (only 0.5 m deep for the hull) when `hullLen ≥ 2.2 × w`: with w = 2.5 m the
 Luchs / M18 nose-dive and stick, Pz IV and longer cross. `heightAt` is the deepest (short-hull)
 view; tank.js should query `hullHeightAt(x, z, cfg.dims.len)`. Blown bridges replicate via
-`alive=false` (terrain3d finishes the blow on clients). Dev flag: `?demofeatures` (or
+`alive=false` (terrain3d finishes the blow on clients). AI pathing (`ai.js setDest`): a bot already on a bridge deck keeps
+driving to the far end when its path is re-planned, instead of turning back to the ramp's
+line-up point (it used to turn mid-span and drown). Dev flag: `?demofeatures` (or
 `?demofeatures=blown`) adds one of each feature in front of team 1's spawn.
 
 ## Armour geometry (`config.js` + `armor.js`) — the core of the game
