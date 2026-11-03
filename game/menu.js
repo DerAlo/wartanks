@@ -161,7 +161,7 @@ export class Menu {
       return `
 <div class="pz-scr" id="pz-title">
    <div class="pz-title"><div class="pz-logo pz-st">PANZER</div><div class="pz-sub pz-st">Panzergefechte 1939 – 1945</div>
-      <div class="pz-btns"><button class="pri" data-a="garage">Gefecht</button><button data-a="settings">Einstellungen</button></div></div>
+      <div class="pz-btns"><button class="pri" data-a="garage">Gefecht</button><button data-a="mp" id="pz-mp">Mehrspieler</button><button data-a="settings">Einstellungen</button></div></div>
    <div class="pz-foot pz-st">Panzerung · Winkel · Munition · Gelände</div>
 </div>
 <div class="pz-scr" id="pz-garage">
@@ -220,6 +220,7 @@ export class Menu {
          case 'garage': this.show('garage'); break;
          case 'title': this.show('title'); break;
          case 'settings': this.openSettings(); break;
+         case 'mp': import('./mpui.js').then((m) => m.openMultiplayer(this)).catch((e) => console.warn('[menu] mpui', e)); break;   // multiplayer screen (lazy)
          case 'closeSettings': this.$('#pz-settings').classList.remove('on'); break;
          case 'reload': location.reload(); break;
          case 'armor': this.setArmorView(!this.armorView); break;

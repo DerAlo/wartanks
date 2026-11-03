@@ -39,8 +39,8 @@ export function startBattle(opts = {}) {
    stopBattle();
    for (const k in opts) if (opts[k] === undefined) delete opts[k];
    if (!stateM.World) { console.error('[main] state.js missing: no battle possible'); menu?.show('garage'); return; }
-   const world = G.world = new stateM.World({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
-   G.battleOpts = { ...opts }; G.endT = 0; G.paused = false;
+   const world = G.world = opts.world || new stateM.World({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
+   G.battleOpts = { ...opts }; delete G.battleOpts.world; G.endT = 0; G.paused = false;
    const th = themeOf(world.mapId ?? opts.mapId);
    R.setTheme(th); sky.setTheme(th, R.sunDir);
    terrain3d = new Terrain3D(R.scene, world.terrain, th, q);
@@ -70,7 +70,8 @@ function finishBattle() {
    menu?.applyResult?.(snap);
    G.lastResult = snap;
    stopBattle();
-   if (menu) menu.showResults(snap);
+   if (G.net) G.net.finish(snap);                   // net game: the lobby shows the result and the room
+   else if (menu) menu.showResults(snap);
 }
 function setPaused(on) {
    if (!G.world || !menu) return;
@@ -78,7 +79,7 @@ function setPaused(on) {
    input.enabled = !on; if (on) { input.unlock(); input.keys.clear(); input.lmb = input.rmb = false; }
    menu.pause(on);
 }
-function leaveBattle() { stopBattle(); menu?.show('garage'); }
+function leaveBattle() { G.net?.leave(); stopBattle(); menu?.show('garage'); }
 G.finishBattle = finishBattle; G.setPaused = setPaused; G.leaveBattle = leaveBattle;
 addEventListener('keydown', (e) => {
    if (e.code !== 'Escape' || !G.world || !menu) return;
@@ -88,6 +89,14 @@ addEventListener('keydown', (e) => {
 });
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && G.world && !G.paused && input.enabled && G.world.phase !== 'won' && G.world.phase !== 'lost' && G.world.phase !== 'draw') setPaused(true); });
 G.startBattle = startBattle; G.stopBattle = stopBattle;
+// ---- multiplayer (game/net/game.js): the lobby (mpui.js) hands over its session here
+G.startNetGame = async (session) => {
+   const { startNetGame } = await import('./net/game.js');
+   const onEnd = session.onEnd;
+   const s = { ...session, onEnd: (r) => { G.net = null; if (G.world) stopBattle(); onEnd?.(r); } };
+   G.net = startNetGame(s, { startBattle, stopBattle, log: (t) => console.log('[net]', t) });
+   return G.net;
+};
 
 // ---- aim: camera ray → first hit on terrain / objects / other tanks ----
 function aimRay(world, p) {
@@ -151,7 +160,7 @@ function frame(now) {
    const dt = Math.min(0.1, (now - last) / 1000); last = now;
    fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { G.fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
    const world = G.world;
-   if (world && G.paused) { /* frozen: render only */ }
+   if (world && G.paused && !G.net) { /* frozen: render only */ }
    else if (world) {
       const p = world.player;
       if (/^(won|lost|draw)$/.test(world.phase) || world.result) { G.endT += dt; if (G.endT > 4 && menu) { finishBattle(); return; } }

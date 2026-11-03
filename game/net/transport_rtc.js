@@ -14,7 +14,7 @@
 import { joinRoom, selfId, getRelaySockets } from '../../vendor/trystero/trystero-nostr.min.js';
 
 export { selfId };
-export const APP_ID = 'kriegsschiffe-3d-net';
+export const APP_ID = 'panzer-wt3d-net';
 // Public Nostr relays that accepted and forwarded Trystero's ephemeral events when this was
 // written (2026-10; 19 of the library's 28 defaults worked, these answered fastest). Every peer
 // must share at least one live relay with the others, so all clients use the same list. Relays
