@@ -7,7 +7,7 @@ import { World } from '../game/state.js';
 import { makeTerrain } from '../game/terrain.js';
 import { canSee } from '../game/spotting.js';
 import { matchmake } from '../game/missions.js';
-import { TANKS } from '../game/config.js';
+import { TANKS, TANK_LIST } from '../game/config.js';
 import { makeRng } from '../game/utils.js';
 import * as P from '../game/progress.js';
 
@@ -57,7 +57,7 @@ test('training ground: infinite ammo, targets of every type, respawn', () => {
    assert.equal(w.phase, 'playing');
    assert.equal(w.timeLeft, null);
    assert.ok(w.infiniteAmmo);
-   assert.equal(w.tanks.length, 1 + Object.keys(TANKS).length);
+   assert.equal(w.tanks.length, 1 + TANK_LIST.length);
    const tgt = w.tanks[1];
    const n0 = w.player.ammoCount.AP;
    w.player.reload = 0; w.player.fire(w);

@@ -126,10 +126,18 @@ export class Tank {
       return P;
    }
 
+   _siteTick(dt, world) {
+      this.speed = 0; this.vel.x = this.vel.y = this.vel.z = 0; this.yawRate = 0; this.input.throttle = 0; this.input.steer = 0;
+      if (this.cfg.draft != null) {                  // a ship rides at the water line and rolls gently
+         this.pos.y = (world.terrain.water ?? 0) - this.cfg.draft;
+         this.pitch = Math.sin(world.time * 0.37 + this.id) * 0.004; this.roll = Math.sin(world.time * 0.53 + this.id * 2) * 0.012;
+      }
+   }
+
    /** Snap onto the ground (spawn). */
    placeOn(T) {
-      this.pos.y = T.heightAt(this.pos.x, this.pos.z);
-      this._terrainPose(T, 1);
+      this.pos.y = this.cfg.draft != null ? (T.water ?? 0) - this.cfg.draft : T.heightAt(this.pos.x, this.pos.z);
+      if (this.cfg.draft == null) this._terrainPose(T, 1);
       this.pose(); gunWorld(this.cfg, this._pose, this.muzzle, this.gunDir);
    }
 
@@ -138,11 +146,14 @@ export class Tank {
       const T = world.terrain;
       if (!this.alive) { this._wreck(dt, T); return; }
       this._modulesTick(dt);
-      this._drive(dt, world);
-      this._terrainPose(T, dt);
-      this._water(dt, world);
-      this._objects(world);
-      this._boundary(T);
+      if (this.cfg.site) this._siteTick(dt, world);       // emplacements / ships never drive
+      else {
+         this._drive(dt, world);
+         this._terrainPose(T, dt);
+         this._water(dt, world);
+         this._objects(world);
+         this._boundary(T);
+      }
       this.pose();
       this._aim(dt);
       this._fireTick(dt, world);

@@ -44,7 +44,7 @@ function los(T, o, t) {
 export function canSee(world, o, t) {
    const dx = t.pos.x - o.pos.x, dz = t.pos.z - o.pos.z, d = Math.hypot(dx, dz);
    if (d <= WORLD.PROXIMITY) return true;
-   const view = Math.min(o.viewRange, WORLD.DRAW_RANGE);
+   const view = Math.min(o.viewRange, WORLD.DRAW_RANGE) * (1 - 0.62 * (world.campaign?.fog || 0));   // campaign fog (Arracourt)
    if (d > view) return false;
    const T = world.terrain;
    const { k, fired } = camoOf(t, world.time);

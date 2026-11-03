@@ -7,6 +7,7 @@
 // or opts.playerCls = null for a bots-only battle, e.g. headless tests).
 import { TANKS, TANK_LIST } from './config.js';
 import { makeRng, hashSeed } from './utils.js';
+import { OPS, setupCampaign } from './campaign.js';
 
 const RANKS = ['Gefr.', 'Uffz.', 'Fw.', 'Ofw.', 'Lt.', 'Oblt.', 'Hptm.'];
 const NAMES = ['Wagner', 'Becker', 'Hoffmann', 'Schulz', 'Krüger', 'Neumann', 'Schwarz', 'Zimmermann', 'Braun', 'Hartmann',
@@ -65,6 +66,13 @@ function spawnTeams(world, opts, teamSize) {
 const capCircle = (T, id, b, team, r = 30) => ({ id, pos: { x: b.x, y: T.heightAt(b.x, b.z), z: b.z }, r, team, progress: 0, capper: null, rate: 1 });
 
 export const MISSIONS = {
+   // scripted historical operations (campaign.js): opts.op picks the operation, which fixes map + seed
+   campaign: {
+      id: 'campaign', name: 'Feldzug', teamSize: 1, timeLimit: null, countdown: 5, noEnd: true,
+      mapFor: (opts) => OPS[opts.op]?.map, seedFor: (opts) => OPS[opts.op]?.seed,
+      setup(world, opts) { setupCampaign(world, opts); },
+      tick(world, dt) { world.script?.tick(dt); },
+   },
    standard: {
       id: 'standard', name: 'Standardgefecht', teamSize: 7, timeLimit: 600, countdown: 10,
       desc: 'Zwei Basen. Vernichte alle Gegner oder erobere die gegnerische Basis.',
@@ -129,4 +137,4 @@ export const MISSIONS = {
       },
    },
 };
-export const MISSION_LIST = Object.keys(MISSIONS);
+export const MISSION_LIST = Object.keys(MISSIONS).filter((k) => k !== 'campaign');   // campaign starts from its own menu

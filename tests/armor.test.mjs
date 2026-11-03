@@ -29,6 +29,7 @@ test('effective thickness = t / cos(angle)', () => {
 
 test('every tank builds closed armour and front shots hit the front', () => {
    for (const cfg of Object.values(TANKS)) {
+      if (cfg.site) continue;                  // campaign emplacements: covered in campaign.test.mjs
       const A = buildArmor(cfg);
       assert.ok(A.boundR > 2 && A.boundR < 9, cfg.id + ' boundR ' + A.boundR);
       for (const part of A.parts) for (let k = 0; k < part.planes.length; k += 4) {

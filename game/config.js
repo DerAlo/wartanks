@@ -120,6 +120,7 @@ export const CONSUMABLES = {
 export const PLATE_NAMES = {
    belly: 'Bugunterseite', lfp: 'Untere Bugplatte', nose: 'Bugnase', glac: 'Glacis', ufp: 'Obere Bugplatte',
    roof: 'Wannendach', eng: 'Motordeck', urp: 'Obere Heckplatte', lrp: 'Untere Heckplatte', floor: 'Wannenboden',
+   emb: 'Schießscharte', conc: 'Betondecke', shield: 'Schutzschild', deck: 'Deck', belt: 'Bordwand',
    side: 'Seite', sideLow: 'Untere Seite', spon: 'Kettenabdeckung',
    tf: 'Turmfront', tcl: 'Turmwange links', tcr: 'Turmwange rechts', tsl: 'Turmseite links', tsr: 'Turmseite rechts',
    trl: 'Turmheck links', trr: 'Turmheck rechts', tr: 'Turmheck', troof: 'Turmdach', tbase: 'Turmboden',
@@ -668,6 +669,51 @@ for (const raw of RAW) {
    TANKS[cfg.id] = cfg;
    TANK_LIST.push(cfg.id);
 }
+// ---- campaign emplacements ("sites"): Tank-shaped static targets, finalised like tanks so armour,
+// ballistics, spotting, bot gunnery and rendering all work unchanged. Not in TANK_LIST (no garage).
+// cfg.site = 'bunker'|'pak'|'ship'; they never drive (vMax 0); ships float at terrain.water - draft.
+const SITE_RAW = [
+   {  // Westwall pillbox (Regelbau style): ~1.5-2 m concrete is beyond any tank gun; the steel
+      // embrasure band and the rear door are the weak spots, HE through the slit kills the crew
+      id: 'bunker', site: 'bunker', name: 'Bunker (Regelbau)', short: 'Bunker', nation: 'DE', cls: 'TD', tier: 6,
+      hp: 1600, mass: 400, engine: { hp: 1, fuel: 'diesel' }, vMax: 0, vRev: 0, traverse: 0, ground: [1, 1, 1],
+      view: 330, camo: { still: 0.3, move: 0.3 }, crew: ['commander', 'gunner', 'loader'],
+      hull: { floorY: 0.0, w: 5.4, front: [['lfp', 300, 0, 0.9], ['emb', 60, 0, 0.55], ['ufp', 300, 25, 0.75]], roof: [250, 4.2],
+         rear: [['urp', 70, 0, null]], floorT: 300, side: { t: 300 } },   // rear: steel door
+      turret: null,
+      mantlet: { w: 0.7, h: 0.45, d: 0.25, t: 80 },
+      gun: gun(G.kwk40_75, { name: '7,5 cm PaK 40 (Kasematte)', pivotY: 1.17, arc: [-32, 32], traverse: 18, reload: 6.5, elev: 12, depr: -6, load: { AP: 60, HE: 40 } }),
+      run: { wheels: 2, wheelR: 0.05, interleave: 0, rollers: 0, sprocket: 'rear', sprocketR: 0.05, idlerR: 0.05, trackW: 0.1, len: 1, h: 0.1, t: 300 },
+      layout: { ammo: 'floor', fuel: 'floor' },
+   },
+   {  // 7,5 cm PaK 40 with its crew behind a thin shield: an AP hit rarely stops it, HE does
+      id: 'pak40', site: 'pak', name: '7,5 cm PaK 40', short: 'PaK 40', nation: 'DE', cls: 'TD', tier: 5,
+      hp: 260, mass: 1.5, engine: { hp: 1, fuel: 'diesel' }, vMax: 0, vRev: 0, traverse: 0, ground: [1, 1, 1],
+      view: 320, camo: { still: 0.45, move: 0.3 }, crew: ['commander', 'gunner', 'loader'],
+      hull: { floorY: 0.3, w: 1.9, front: [['shield', 5, 20, 0.9]], roof: [5, 2.6], rear: [['urp', 5, 0, null]], floorT: 5, side: { t: 5 } },
+      turret: null,
+      mantlet: { w: 1.9, h: 0.9, d: 0.05, t: 5 },
+      gun: gun(G.kwk40_75, { name: '7,5 cm PaK 40 L/46', pivotY: 0.75, arc: [-30, 30], traverse: 14, reload: 5.5, elev: 22, depr: -5, load: { AP: 40, HE: 20 } }),
+      run: { wheels: 1, wheelR: 0.4, interleave: 0, rollers: 0, sprocket: 'rear', sprocketR: 0.05, idlerR: 0.05, trackW: 0.15, len: 0.9, h: 0.8, t: 5 },
+      layout: { ammo: 'floor', fuel: 'floor' },
+   },
+   {  // Torpedoboot (Flottentorpedoboot 1939 class, 10,5 cm guns): thin plating, big hull
+      id: 'tboat', site: 'ship', name: 'Torpedoboot', short: 'T-Boot', nation: 'DE', cls: 'TD', tier: 7, draft: 3.2,
+      hp: 3200, mass: 1700, engine: { hp: 1, fuel: 'diesel' }, vMax: 0, vRev: 0, traverse: 0, ground: [1, 1, 1],
+      view: 520, camo: { still: 0, move: 0 }, crew: ['commander', 'gunner', 'loader', 'radio'],
+      hull: { floorY: 0.0, w: 10, front: [['nose', 15, 40, 7.0]], roof: [12, 82], rear: [['urp', 12, 20, null]], floorT: 12, side: { t: 15, slope: 4 } },
+      turret: { z: -26, ringR: 1.5, h: 2.2, roofT: 8, oct: [3.6, 1.6, 2.6, 0.5, 0.5], f: [12, 20], cheek: [12, 30], s: [10, 10], rr: [8, 10], r: [8, 0], traverse: 10 },
+      mantlet: { w: 0.8, h: 0.6, d: 0.3, t: 12 },
+      gun: { name: '10,5 cm SK C/32', cal: 105, len: 4.8, reload: 7.5, disp: 0.42, aim: 2.5, elev: 30, depr: -10, cap: 200,
+         load: { AP: 100, HE: 100 },
+         ammo: [{ type: 'AP', name: 'Pzsprgr', pen: 120, dmg: 300, vel: 785 }, { type: 'HE', name: 'Sprgr L/4,4', pen: 45, dmg: 380, vel: 785 }] },
+      run: { wheels: 2, wheelR: 0.05, interleave: 0, rollers: 0, sprocket: 'rear', sprocketR: 0.05, idlerR: 0.05, trackW: 0.1, len: 1, h: 0.1, t: 15 },
+      layout: { ammo: 'floor', fuel: 'floor' },
+   },
+];
+export const SITE_LIST = [];
+for (const raw of SITE_RAW) { const cfg = finalize(raw); TANKS[cfg.id] = cfg; SITE_LIST.push(cfg.id); }
+
 export const tanksByNation = (nation) => TANK_LIST.filter((id) => TANKS[id].nation === nation);
 export const tanksInTier = (lo, hi) => TANK_LIST.filter((id) => TANKS[id].tier >= lo && TANKS[id].tier <= hi);
 

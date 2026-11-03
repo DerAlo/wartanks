@@ -43,8 +43,8 @@ export class World {
       this.opts = opts;
       this.mode = MISSIONS[opts.mode] ? opts.mode : 'standard';
       this.mission = MISSIONS[this.mode];
-      this.mapId = opts.mapId || 'steppe';
-      this.seed = opts.seed ?? 1234;
+      this.mapId = this.mission.mapFor?.(opts) || opts.mapId || 'steppe';     // campaign ops fix map + seed
+      this.seed = this.mission.seedFor?.(opts) ?? opts.seed ?? 1234;
       this.rng = makeRng(hashSeed(this.seed, 'world', this.mode));
       this.diffKey = difficultyKey(opts.difficulty ?? 1);
       this.diff = DIFFICULTY[this.diffKey];

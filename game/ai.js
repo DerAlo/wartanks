@@ -163,6 +163,9 @@ export class BotAI {
       const own = T.bases['team' + t.team], enemy = T.bases['team' + (3 - t.team)];
       const lateGame = this.w.timeLeft != null && this.w.timeLeft < LATE_T;
       const neutral = this.w.mode === 'encounter' ? T.bases.neutral : null;
+      // scripted order (campaign.js): ai.order = { kind:'hold'|'advance'|'route'|'ambush', x, z, pts?, i? }
+      const o = this.order;
+      if (o) { const p = o.kind === 'route' ? o.pts[Math.min(o.i || 0, o.pts.length - 1)] : o; if (p) return { x: p.x ?? p[0], z: p.z ?? p[1] }; }
       if (this.hunting) {                 // nobody known: sweep toward the enemy side (defenders too)
          const k = this.huntPoint(); if (k) return k;
          const g = neutral || enemy; return { x: g.x * 0.7 + (r() - 0.5) * 120, z: g.z * 0.7 + (r() - 0.5) * 60 };
@@ -297,7 +300,8 @@ export class BotAI {
       // parking in front of it and trading bounces (turreted, mobile tanks; HT / TD keep station)
       if (this.flankT > 0) this.flankT -= 0.25;
       const e = this.target;
-      if (e && this.bestRatio < 0.8 && !(this.flankT > 0) && !this.returning && !this.retreating && t.cfg.turret && t.cfg.cls !== 'TD'
+      const pinned = this.order && (this.order.kind === 'hold' || this.order.kind === 'ambush');
+      if (e && !pinned && this.bestRatio < 0.8 && !(this.flankT > 0) && !this.returning && !this.retreating && t.cfg.turret && t.cfg.cls !== 'TD'
          && t.mod('trackL') !== 'destroyed' && t.mod('trackR') !== 'destroyed' && Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z) < 260) {
          const fx = -Math.sin(e.yaw), fz = -Math.cos(e.yaw), rx = -fz, rz = fx;
          const side = (t.pos.x - e.pos.x) * rx + (t.pos.z - e.pos.z) * rz > 0 ? 1 : -1, T = w.terrain;
@@ -440,6 +444,7 @@ export class BotAI {
       t.aimPoint.z = P.pos.z + _wp.z + e.vel.z * tof + rz * this.errX;
       if (this.targetT < this.D.react) return;
       if (this.flankT > 0 && this.bestRatio < 0.3) return;            // pointless shot while manoeuvring
+      if (this.order?.kind === 'ambush' && !this.order.sprung) return;  // hold fire until the trap is sprung
       if (t.reload > 0 || t.gunBlocked) { this.aimT = 0; return; }
       this.aimT += dt;
       const conv = t.aimDisp <= t.baseDisp * this.D.convK;
