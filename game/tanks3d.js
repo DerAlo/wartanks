@@ -58,11 +58,56 @@ function insigniaTexture() {   // atlas 4×1: de cross, su star, us star, uk rou
    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
    return t;
 }
+// weathering, shared by all camo materials: mud thrown up on the running gear and lower hull,
+// dust on upward faces, rain streaks, winter whitewash and snow. `wy` = height above the ground
+// in the model (geometryFor), so the turret and gun stay clean. Map-dependent via setTankWeather.
+const WX = { uMud: { value: new THREE.Color(0x4a3e30) }, uWash: { value: 0 }, uSnow: { value: 0 } };
+const WEATHER = {
+   default: [0x4a3e30, 0, 0], steppe: [0x7a6a50, 0, 0], flusstal: [0x3a3126, 0, 0], waldhuegel: [0x3e3428, 0, 0], winter: [0x5c5a58, 1, 1],
+};
+export function setTankWeather(mapId) {
+   const w = WEATHER[mapId] || WEATHER.default;
+   WX.uMud.value.setHex(w[0]); WX.uWash.value = w[1]; WX.uSnow.value = w[2];
+}
+const WX_NOISE = `
+float wxH(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float wxN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+   return mix(mix(wxH(i), wxH(i+vec2(1,0)), f.x), mix(wxH(i+vec2(0,1)), wxH(i+vec2(1,1)), f.x), f.y); }`;
+function weathered(m) {
+   m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, WX);
+      sh.vertexShader = sh.vertexShader
+         .replace('#include <common>', `#include <common>
+attribute float wy; varying float vWy; varying float vUpN; varying vec3 vObjP;`)
+         .replace('#include <begin_vertex>', `#include <begin_vertex>
+vWy = wy; vUpN = normal.y; vObjP = position;`);
+      sh.fragmentShader = sh.fragmentShader
+         .replace('#include <common>', `#include <common>
+uniform vec3 uMud; uniform float uWash, uSnow; varying float vWy; varying float vUpN; varying vec3 vObjP;${WX_NOISE}`)
+         .replace('#include <map_fragment>', `#include <map_fragment>
+float wn = wxN(vObjP.xz*3.1 + vObjP.y*1.7)*0.6 + wxN(vObjP.zx*9.0 - vObjP.y*5.0)*0.4;
+float wash = uWash * smoothstep(0.3, 0.5, wxN(vObjP.xz*1.6 + vObjP.y*2.3)*0.7 + wn*0.3 + 0.12);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.72, 0.73, 0.71), wash);`)
+         .replace('#include <color_fragment>', `#include <color_fragment>
+float upF = smoothstep(0.55, 0.95, vUpN);
+float streak = wxN(vec2((vObjP.x + vObjP.z)*6.0, vObjP.y*0.7));
+diffuseColor.rgb *= 1.0 - 0.16*smoothstep(0.55, 0.9, streak)*(1.0 - upF);
+diffuseColor.rgb = mix(diffuseColor.rgb, uMud*1.15, upF*0.3*wn*(1.0 - uSnow));
+float mud = 1.0 - smoothstep(0.2, 0.7 + wn*0.6, vWy);
+diffuseColor.rgb = mix(diffuseColor.rgb, uMud, clamp(mud, 0.0, 0.92));
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.92), uSnow*upF*smoothstep(0.4, 0.62, wn)*step(0.3, vWy));`)
+         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+roughnessFactor = min(1.0, roughnessFactor + 0.2*(1.0 - smoothstep(0.2, 0.9, vWy)));`);
+   };
+   m.customProgramCacheKey = () => 'pz-tank-wx';
+   return m;
+}
+const withWy = (geo, off) => { if (!geo) return geo; const p = geo.attributes.position.array, a = new Float32Array(p.length / 3); for (let i = 0; i < a.length; i++) a[i] = p[i * 3 + 1] + off; geo.setAttribute('wy', new THREE.BufferAttribute(a, 1)); return geo; };
 let SHARED = null;
 function shared() {
    if (SHARED) return SHARED;
    const camo = {}, tread = treadTexture();
-   for (const n in CAMO) camo[n] = new THREE.MeshStandardMaterial({ map: camoTexture(n), vertexColors: true, roughness: 0.78, metalness: 0.15, flatShading: true });
+   for (const n in CAMO) camo[n] = weathered(new THREE.MeshStandardMaterial({ map: camoTexture(n), vertexColors: true, roughness: 0.78, metalness: 0.15, flatShading: true }));
    SHARED = {
       camo, tread,
       wreck: new THREE.MeshStandardMaterial({ color: 0x2b2724, vertexColors: true, roughness: 1, metalness: 0.05, flatShading: true }),
@@ -280,7 +325,7 @@ const GEO_CACHE = new Map();
 function geometryFor(cfg, key) {
    if (GEO_CACHE.has(key)) return GEO_CACHE.get(key);
    const S = shapeOf(cfg);
-   const g = { S, hull: buildHull(S), turret: S.turret ? buildTurret(S) : null, gun: buildGun(S), track: buildTrack(S), decT: buildDecals(S, true), decH: buildDecals(S, false) };
+   const g = { S, hull: withWy(buildHull(S), 0), turret: S.turret ? withWy(buildTurret(S), S.turret.y) : null, gun: withWy(buildGun(S), 3), track: buildTrack(S), decT: buildDecals(S, true), decH: buildDecals(S, false) };
    GEO_CACHE.set(key, g); return g;
 }
 
@@ -567,6 +612,7 @@ export function buildTankModel(cfg, key = cfg?.id || 'x') {
 export class Tanks3D {
    constructor(scene, world) {
       this.scene = scene; this.world = world; this.models = new Map(); this.lastSeq = 0;
+      setTankWeather(world?.mapId);
       this.group = new THREE.Group(); scene.add(this.group);
       this.marks = new HitMarks(this.group); this.hitQ = [];
    }

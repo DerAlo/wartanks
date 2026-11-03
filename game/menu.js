@@ -514,7 +514,7 @@ export class Menu {
       if (this.tank) { this.scene.remove(this.tank.root); this.tank = null; }
       this.disposeArmor();
       if (!c || !T3?.buildTankModel) return;
-      const m = this.tank = T3.buildTankModel(c, c.id); this.tankCls = c.id;
+      T3.setTankWeather?.(null); const m = this.tank = T3.buildTankModel(c, c.id); this.tankCls = c.id;
       m.root.position.y = 0.32; this.scene.add(m.root);
       this.buildArmor(c);
       m.root.visible = !this.armorView;
