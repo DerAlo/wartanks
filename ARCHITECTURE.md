@@ -83,6 +83,16 @@ model use the same geometry, so what the player sees is what the shell hits.
   fuel → fire; gun → no fire/aim; tracks → immobile; crew: commander → view range, gunner →
   aim/dispersion, driver → mobility, loader → reload, radio → minimap range).
 
+**Vehicle data format** — documented in the header of `game/config.js`. Consumers read the
+finalised `TANKS[id]` (built at module load): `hull.profile` (side polygon, z/y, plate per edge,
+recentred so the hull's z-extent is centred on 0), `hull.w/lowerW/sponsonY/sideSlope`,
+`turret.base/top` (top-view polygons at base and roof height, CCW from above), `turret.faces`
+(plate + slope per base edge), `mantlet` box, `gun.pivot/len/cal/brake`, `run` (wheels, radius,
+interleave, sprocket, track width/length/height, `x` = track centre offset), `skirts`,
+`modules` / `crew` boxes, `dims`. **Hull-local origin = ground point under the hull centre**;
+`tank.pos` is that point (so `pos.y` ≈ terrain height). For exact plate geometry the renderer
+may also call `buildArmor(cfg)` and use its face loops.
+
 `armor.js` API:
 ```
 buildArmor(tankCfg) -> armorModel   // polyhedra (faces: plane normal, offset, plate id, t, vertex loops for rendering)
