@@ -421,3 +421,27 @@ can run an operation unchanged and clients only render `world.campaign`.
   12–15 mm plating, floats at `terrain.water − cfg.draft`). They never drive (`Tank._siteTick`).
 * Tests: `tests/campaign.test.mjs` runs every op headless; `tests/out/_camp.mjs` (scratch) prints
   per-op outcome and objective states.
+
+## Campaign UI (client: `menu.js`, `hud.js`, `tanks3d.js`, `progress.js`)
+
+* Menu: title button "Feldzug" → `#pz-camp` (operation index cards from `OP_LIST`: name, place,
+  date, nation insignia, stars, "Gesperrt"/"Erfüllt" stamps) → `#pz-brief` (briefing sheet with
+  `brief`/`goals`/`tip`, tank choice from `op.tanks` with gun/pen/damage/front armour/speed,
+  difficulty, "Einsatz beginnen") → `startBattle({ mode:'campaign', op, playerCls, difficulty })`.
+  `campaign.js` is loaded lazily (`import()`) by the menu.
+* Results (`mode === 'campaign'`): objectives with ✓/✗, stars, medal SVG (Gold/Silber/Bronze),
+  buttons "Zurück zum Feldzug" / "Erneut versuchen" / "Nächste Operation"; no XP/credits.
+  `applyResult` calls `recordCampaign` only.
+* Progress: `profile.campaign[opId] = { done, stars (best), medal (best), bestTime, plays }`;
+  `recordCampaign(p, opId, result)`, `campaignUnlocked(p, opId, order)` (op n+1 opens once op n
+  is won).
+* HUD reads `world.campaign` only: objectives panel top-left (flash on change; hidden objectives
+  appear once resolved), radio ticker from the append-only `log` (top centre, FUNK/LAGE/ACHTUNG,
+  8 s), mission timer, screen waypoint diamonds with label + distance (edge-clamped with arrow,
+  "erreicht" inside `r`), marker diamonds/rings on minimap and big map; sites and unseen enemies
+  are left out of the team list; end banner "AUFTRAG ERFÜLLT"/"GESCHEITERT".
+* Site models (`buildSiteModel` for `cfg.site`): bunker (concrete, steel embrasure band, earth
+  cover), PaK 40 (shield, spoked wheels, split trails), Torpedoboot (hull, bridge, funnels, mast,
+  ensign). Wrecks: bunker blackens, PaK tips over, ship lists and sinks 5.5 m over 40 s.
+* Autostart: `?autostart&mode=campaign&op=<id>&tank=<cls>`. Browser check:
+  `tests/out/campaign.flow.mjs` (title → ops → briefing → HUD → results → unlock).
