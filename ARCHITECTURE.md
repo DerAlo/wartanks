@@ -70,6 +70,39 @@ Themes in `maps.js` (at least 5): e.g. *Steppe* (open rolling, ridges for hull-d
 bushes), *Flusstal* (river with fords and a bridge, valley), *Winter* (snowy, frozen lake,
 pine forest). Each gives height-noise params, object densities, ground palette, sky/lighting.
 Map layout should create real tactical choices: ridgelines, cover, flanking corridors.
+*Küste* (`kueste`, palette `coast`): Baltic coast. North of the shore line (z ≈ -165 ± 18) is
+open sea (`water = 0`, seabed 8–14 m below at z < -240), beach, dune belt, pines, a red-brick town
+with church (380, -20), warehouses on a quay (z ≈ -110) and a harbour mole (x = 300 from the quay to
+z = -345, then a short arm to the NE). Team 1 spawns south (z 395), team 2 north on the shore (z -30).
+Suggested 90 m ship berth (3.2 m draft): (275, -290), lying along z beside the mole's west side
+(water ≥ 8 m there). Theme extras: feature kinds `coast`, `mole`, `house`; `bases` and `spawnZ`
+override the default base/spawn positions. Existing maps generate unchanged.
+
+### Mission features (added after generation, deterministic, no rng)
+```
+terrain.addObject({kind, x, z, yaw?, w?, d?, h?, hp?}) -> obj   // also bridges ({x0,z0,x1,z1} or x,z,yaw,d)
+terrain.addTeethLine(x0,z0,x1,z1, {rows:3|4, spacing:1.6}) -> [obj]   // Höcker, rows offset to the left
+terrain.addWireLine(x0,z0,x1,z1, {seg:6}) -> [obj]
+terrain.carveTrench([[x,z],...], {w:2.5, d:1.8, enemy?:[x,z], parapet:0.6}) -> trench
+terrain.addBridge(x0,z0,x1,z1, {w:7}) -> obj;  terrain.blowBridge(obj, {gap?:[0.35,0.65]})
+terrain.blast(x,y,z, cal, dmg, hitObj?) -> destroyed   // HE vs teeth / hedgehog / wire
+terrain.driveOver(x,z,r) -> flattened wire count
+terrain.hullHeightAt(x,z,hullLen)   // height a hull of that length feels (trench bridging)
+terrain.groundHeightAt(x,z)         // ground incl. trenches, without bridge decks (renderer)
+terrain.trenchDist(x,z)             // to the nearest trench wall (< 0 inside), Infinity if none
+terrain.trenches, terrain.bridges, terrain.wires, terrain.bridgeSites (river causeways)
+terrain.heightVersion, terrain.heightEdits [{v,x0,z0,x1,z1}]   // height changes -> renderer rebuild
+```
+Kinds: `teeth` (1.2 × 1.2 × ~1.1 m concrete, solid, stops shells, never rammed, hp 400, HE only),
+`hedgehog` (solid, shells pass, `breakMomentum` 150 t·m/s, HE), `wire` (not solid, kept out of
+`objectsNear`, flattened by `driveOver`, HE), `bridge` (deck height via the overlay; not in the
+collision grid, shells fly through; blown gap = water below). Trenches and decks are an analytic
+height overlay on top of the 2 m heightfield (steep walls; zero cost on maps without features).
+A trench is bridged (only 0.5 m deep for the hull) when `hullLen ≥ 2.2 × w`: with w = 2.5 m the
+Luchs / M18 nose-dive and stick, Pz IV and longer cross. `heightAt` is the deepest (short-hull)
+view; tank.js should query `hullHeightAt(x, z, cfg.dims.len)`. Blown bridges replicate via
+`alive=false` (terrain3d finishes the blow on clients). Dev flag: `?demofeatures` (or
+`?demofeatures=blown`) adds one of each feature in front of team 1's spawn.
 
 ## Armour geometry (`config.js` + `armor.js`) — the core of the game
 

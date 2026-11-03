@@ -813,7 +813,7 @@ export class Terrain {
    /** Blow a bridge: the span between gap[0]..gap[1] (fraction of the length, default the middle
     *  third) drops out. Tanks on it fall into the water; shells fly through. */
    blowBridge(o, { gap } = {}) {
-      if (!o || o.kind !== 'bridge' || o.alive === false) return false;
+      if (!o || o.kind !== 'bridge' || o.blown) return false;     // alive === false && !blown: net replica, finish it
       if (gap) o.gap = gap;
       o.alive = false; o.blown = true;
       this.version++; this.heightVersion++;
@@ -915,6 +915,6 @@ function lerpDepth(s, ft, total, shallow, deep) {
 export function makeTerrain(seed, themeId) {
    const t = new Terrain(seed, themeId);
    const qs = (typeof location !== 'undefined' && location?.search) || '';
-   if (/[?&]demofeatures/.test(qs)) t.addDemoFeatures(/demofeatures=blown/.test(qs));
+   if (/[?&]demofeatures(=|&|$)/.test(qs)) t.addDemoFeatures(/demofeatures=blown/.test(qs));
    return t;
 }

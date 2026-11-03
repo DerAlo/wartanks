@@ -2,12 +2,19 @@
 // vertex colours by ground class / slope / height + a tiled detail texture), a low-res outer ring
 // to the horizon, water, instanced trees / bushes / rocks, merged houses and walls, and a field of
 // grass clumps that wraps around the camera. Destructible objects follow terrain.version.
+// Mission features (terrain.addObject & co.): dragon's teeth, hedgehogs and wire are merged with the
+// houses; trenches are a fine ribbon mesh (the ground chunks leave a hole there) with revetment and
+// sandbags; bridges a merged deck/girder/pier mesh. terrain.heightVersion / heightEdits trigger a
+// rebuild of the trench mesh and of the ground chunks the edit touched.
 import * as THREE from '../vendor/three/three.module.min.js';
 
 const C = (h) => new THREE.Color(h);
 const PALETTES = {
    summer: { grass: C(0x6b7a3a), grass2: C(0x857f45), dirt: C(0x7a6544), rock: C(0x7c776c), road: C(0x9a8a66), sand: C(0xb3a273), soft: C(0x5b5a34), snow: C(0xe8ecef), tree: C(0x3f5a26), tree2: C(0x56682c), pine: C(0x2c4422), bush: C(0x4c6229) },
    winter: { grass: C(0xdfe5ea), grass2: C(0xc9d2d8), dirt: C(0x8d8578), rock: C(0x6f6e6a), road: C(0xa59e8d), sand: C(0xcfcfc8), soft: C(0xb8c0c4), snow: C(0xf2f5f7), tree: C(0x3a4a2c), tree2: C(0x4a5a34), pine: C(0x24361f), bush: C(0x5a6648) },
+   // Baltic coast: dune grass, pale sand, pines, red-brick towns with dark tile roofs
+   coast: { grass: C(0x76814a), grass2: C(0x928c5c), dirt: C(0x7c6a4c), rock: C(0x7d7a72), road: C(0x9d927a), sand: C(0xcfbe90), soft: C(0x958a5e), snow: C(0xe8ecef), tree: C(0x3d5628), tree2: C(0x52632e), pine: C(0x2a4224), bush: C(0x4f6230),
+      walls: [0x8e4a36, 0x7c3e2e, 0x9b5a44, 0xa89e8a], roofs: [0x5a2a20, 0x4a3a34, 0x3f4448], pines: 0.8 },
    steppe: { grass: C(0x8a8a48), grass2: C(0xa49a58), dirt: C(0x86704a), rock: C(0x8a8274), road: C(0xa8956a), sand: C(0xbfae7a), soft: C(0x6d6a3a), snow: C(0xe8ecef), tree: C(0x4d6229), tree2: C(0x657236), pine: C(0x33482a), bush: C(0x5f6b30) },
 };
 
@@ -58,6 +65,12 @@ export function mergeAcc(acc) {
 const newAcc = () => ({ p: [], n: [], c: [] });
 const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), S = new THREE.Vector3(), E = new THREE.Euler();
 const mat = (x, y, z, ry = 0, sx = 1, sy = 1, sz = 1, rx = 0, rz = 0) => M.compose(V.set(x, y, z), Q.setFromEuler(E.set(rx, ry, rz)), S.set(sx, sy, sz)).clone();
+const E2 = new THREE.Euler(0, 0, 0, 'YXZ');      // yaw, then pitch / roll in the yawed frame
+const matYXZ = (x, y, z, ry, rx, rz, sx = 1, sy = 1, sz = 1) => M.compose(V.set(x, y, z), Q.setFromEuler(E2.set(rx, ry, rz, 'YXZ')), S.set(sx, sy, sz)).clone();
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const SEABED = C(0x34443e), EARTH = C(0x3d3022), EARTH2 = C(0x55432d), CONC = C(0xa9a69c), STEEL = C(0x4a4640), WIREC = C(0x57524b),
+   WOOD = C(0x6b5236), BAG = C(0x9a8a62), DECK = C(0x77736a), GIRDER = C(0x5d5b56);
+const FEATURE_KINDS = { teeth: 1, hedgehog: 1, wire: 1, bridge: 1 };
 
 // Trees: crown and trunk are separate instanced meshes (instance colour tints only the crown).
 // Crown = several jittered lumps with baked light/dark vertex shading; vertex colours ~1 so the
@@ -102,6 +115,7 @@ export class Terrain3D {
       this.group = new THREE.Group(); scene.add(this.group);
       const pid = theme.palette && PALETTES[theme.palette] ? theme.palette : (/winter|schnee/i.test(theme.id || '') ? 'winter' : /steppe/i.test(theme.id || '') ? 'steppe' : 'summer');
       this.winter = pid === 'winter';
+      this.chunks = [];
       this.pal = { ...PALETTES[pid], ...(theme.colors ? Object.fromEntries(Object.entries(theme.colors).map(([k, v]) => [k, C(v)])) : {}) };
       this.detail = detailTexture();
       this.groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.detail, roughness: 0.97, metalness: 0 });
@@ -109,12 +123,14 @@ export class Terrain3D {
       this.buildGround();
       this.buildWater();
       this.buildObjects();
+      this.buildTrenches();
       this.buildGrass(q.grass ?? 6000);
       this.version = terrain.version ?? 0;
+      this.hver = terrain.heightVersion ?? 0; this.hedit = terrain.heightEdits?.length ?? 0;
    }
 
    _color(x, z, out) {
-      const t = this.t, P = this.pal, h = t.heightAt(x, z), nrm = t.normalAt ? t.normalAt(x, z) : { y: 1 };
+      const t = this.t, P = this.pal, h = t.groundHeightAt ? t.groundHeightAt(x, z) : t.heightAt(x, z), nrm = t.normalAt ? t.normalAt(x, z) : { y: 1 };
       const slope = 1 - nrm.y, cls = t.groundAt ? t.groundAt(x, z) : 'medium';
       const n1 = fbm(x * 0.012, z * 0.012), n2 = fbm(x * 0.06 + 7, z * 0.06);
       out.copy(P.grass).lerp(P.grass2, Math.min(1, n1 * 1.3));
@@ -124,34 +140,52 @@ export class Terrain3D {
       out.lerp(P.rock, Math.max(0, Math.min(1, (slope - 0.3) * 4)));
       if (cls === 'road') out.lerp(P.road, 0.85);
       if (t.water != null) { const d = h - t.water; if (d < 1.6) out.lerp(P.sand, Math.max(0, Math.min(1, 1 - d / 1.6)) * 0.8); }
+      if (t.coast) {      // beach sand, darker seabed with depth (seen through the water)
+         const cs = t.coastS(x, z), b = t.coast.beach;
+         if (cls !== 'road') out.lerp(P.sand, clamp01((cs + b * 0.85) / (b * 0.4)) * 0.85);
+         if (t.water != null && h < t.water - 0.3) out.lerp(SEABED, clamp01((t.water - h) / 9) * 0.85);
+      }
       out.multiplyScalar(0.88 + n2 * 0.24);
       return out;
    }
 
    buildGround() {
-      const t = this.t, half = t.half ?? 500, step = this.q.veg < 0.5 ? 4 : 2, CH = 4;
-      const cells = Math.round(2 * half / step), per = cells / CH, col = new THREE.Color();
-      for (let cz = 0; cz < CH; cz++) for (let cx = 0; cx < CH; cx++) {
-         const n = per + 1, pos = new Float32Array(n * n * 3), clr = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2), nor = new Float32Array(n * n * 3);
-         for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-            const x = -half + (cx * per + i) * step, z = -half + (cz * per + j) * step, k = j * n + i;
-            pos[k * 3] = x; pos[k * 3 + 1] = t.heightAt(x, z); pos[k * 3 + 2] = z;
-            const nm = t.normalAt ? t.normalAt(x, z) : { x: 0, y: 1, z: 0 };
-            nor[k * 3] = nm.x; nor[k * 3 + 1] = nm.y; nor[k * 3 + 2] = nm.z;
-            this._color(x, z, col); clr[k * 3] = col.r; clr[k * 3 + 1] = col.g; clr[k * 3 + 2] = col.b;
-            uv[k * 2] = x / 9; uv[k * 2 + 1] = z / 9;
-         }
-         const idx = new Uint32Array(per * per * 6); let w = 0;
-         for (let j = 0; j < per; j++) for (let i = 0; i < per; i++) {
-            const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
-            idx[w++] = a; idx[w++] = c; idx[w++] = b; idx[w++] = b; idx[w++] = c; idx[w++] = d;
-         }
-         const g = new THREE.BufferGeometry();
-         g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-         g.setAttribute('color', new THREE.BufferAttribute(clr, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-         g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeBoundingSphere();
-         const m = new THREE.Mesh(g, this.groundMat); m.receiveShadow = true; this.group.add(m);
+      this.step = this.q.veg < 0.5 ? 4 : 2; this.CH = 4;
+      for (let cz = 0; cz < this.CH; cz++) for (let cx = 0; cx < this.CH; cx++) this._buildChunk(cx, cz);
+      this._buildRing();
+   }
+   /** One ground chunk; quads near a trench are left out (the trench ribbon mesh fills the hole). */
+   _buildChunk(cx, cz) {
+      const t = this.t, half = t.half ?? 500, step = this.step, CH = this.CH, col = new THREE.Color();
+      const per = Math.round(2 * half / step) / CH, n = per + 1, k0 = cz * CH + cx;
+      const old = this.chunks[k0];
+      if (old) { this.group.remove(old); old.geometry.dispose(); }
+      const gh = t.groundHeightAt ? (x, z) => t.groundHeightAt(x, z) : (x, z) => t.heightAt(x, z);
+      const hole = t.trenches?.length ? 2.8 + 0.75 * step : -Infinity;
+      const pos = new Float32Array(n * n * 3), clr = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2), nor = new Float32Array(n * n * 3);
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+         const x = -half + (cx * per + i) * step, z = -half + (cz * per + j) * step, k = j * n + i;
+         pos[k * 3] = x; pos[k * 3 + 1] = gh(x, z); pos[k * 3 + 2] = z;
+         const nm = t.normalAt ? t.normalAt(x, z) : { x: 0, y: 1, z: 0 };
+         nor[k * 3] = nm.x; nor[k * 3 + 1] = nm.y; nor[k * 3 + 2] = nm.z;
+         this._color(x, z, col); clr[k * 3] = col.r; clr[k * 3 + 1] = col.g; clr[k * 3 + 2] = col.b;
+         uv[k * 2] = x / 9; uv[k * 2 + 1] = z / 9;
       }
+      const idx = new Uint32Array(per * per * 6); let w = 0;
+      for (let j = 0; j < per; j++) for (let i = 0; i < per; i++) {
+         if (hole > 0 && t.trenchDist(-half + (cx * per + i + 0.5) * step, -half + (cz * per + j + 0.5) * step) < hole) continue;
+         const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
+         idx[w++] = a; idx[w++] = c; idx[w++] = b; idx[w++] = b; idx[w++] = c; idx[w++] = d;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(clr, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      g.setIndex(new THREE.BufferAttribute(w < idx.length ? idx.slice(0, w) : idx, 1)); g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, this.groundMat); m.receiveShadow = true; this.group.add(m);
+      this.chunks[k0] = m;
+   }
+   _buildRing() {
+      const t = this.t, half = t.half ?? 500, col = new THREE.Color();
       // outer ring to the horizon: coarse, follows edge heights falling off into gentle hills
       const R = 2200, segR = 24, segA = 64, pos = [], clr = [], idx = [];
       for (let r = 0; r <= segR; r++) for (let a = 0; a <= segA; a++) {
@@ -162,7 +196,10 @@ export class Terrain3D {
          const px = f === 0 ? Math.cos(ang) / sq * half * 0.995 : x, pz = f === 0 ? Math.sin(ang) / sq * half * 0.995 : z;
          const ex = Math.max(-half, Math.min(half, px)), ez = Math.max(-half, Math.min(half, pz));
          const h0 = t.heightAt(ex, ez), hill = (fbm(px * 0.004, pz * 0.004) - 0.4) * 60 * Math.min(1, f * 3);
-         pos.push(px, h0 * (1 - Math.min(1, f * 2)) + hill + (f === 0 ? -0.05 : 0), pz);
+         let y = h0 * (1 - Math.min(1, f * 2)) + hill + (f === 0 ? -0.05 : 0);
+         // coast maps: the ring drops under the sea on the seaward side -> open-water horizon
+         if (t.coast && f > 0) y += ((t.water ?? 0) - 12 - y) * clamp01(t.coastS(px, pz) / 80 + 0.25);
+         pos.push(px, y, pz);
          this._color(ex, ez, col); col.multiplyScalar(0.92); clr.push(col.r, col.g, col.b);
       }
       for (let r = 0; r < segR; r++) for (let a = 0; a < segA; a++) {
@@ -187,7 +224,7 @@ export class Terrain3D {
       const t = this.t, P = this.pal, objs = t.objects || [], veg = this.q.veg ?? 1;
       const kinds = { tree: [], pine: [], bush: [], rock: [] };
       for (const o of objs) {
-         if (o.kind === 'tree') ((o.seed ?? hash(o.x, o.z) * 1e4) % 3 < 1.2 || this.winter ? kinds.pine : kinds.tree).push(o);
+         if (o.kind === 'tree') ((o.seed ?? hash(o.x, o.z) * 1e4) % 3 < 3 * (P.pines ?? 0.4) || this.winter ? kinds.pine : kinds.tree).push(o);
          else if (o.kind === 'bush') kinds.bush.push(o);
          else if (o.kind === 'rock') kinds.rock.push(o);
       }
@@ -241,7 +278,8 @@ export class Terrain3D {
    buildStructures() {
       if (this.struct) { this.group.remove(this.struct); this.struct.geometry.dispose(); }
       const t = this.t, acc = newAcc(), box = new THREE.BoxGeometry(1, 1, 1);
-      const wallC = [C(0xb9ae94), C(0xa79b80), C(0xcfc6ad), C(0x9a8f7a)], roofC = [C(0x8a3f2a), C(0x6e3b2c), C(0x5b5148)];
+      const wallC = this.pal.walls ? this.pal.walls.map(C) : [C(0xb9ae94), C(0xa79b80), C(0xcfc6ad), C(0x9a8f7a)];
+      const roofC = this.pal.roofs ? this.pal.roofs.map(C) : [C(0x8a3f2a), C(0x6e3b2c), C(0x5b5148)];
       const roof = new THREE.BufferGeometry();
       // unit gable prism: ridge along x, width z -0.5..0.5, height 0..1
       roof.setAttribute('position', new THREE.Float32BufferAttribute([
@@ -250,6 +288,7 @@ export class Terrain3D {
          -0.5, 0, 0.5, -0.5, 0, -0.5, -0.5, 1, 0, 0.5, 0, -0.5, 0.5, 0, 0.5, 0.5, 1, 0], 3));
       roof.computeVertexNormals();
       for (const o of t.objects || []) {
+         if (FEATURE_KINDS[o.kind]) { this._feature(acc, o, box); continue; }
          if (o.kind !== 'house' && o.kind !== 'church' && o.kind !== 'wall' && o.kind !== 'fence') continue;
          o.d ??= 0.6; o.w ??= 2;
          const y = (o.kind === 'house' || o.kind === 'church') && o.y != null ? o.y - 0.4 : Math.min(t.heightAt(o.x - o.w / 2, o.z), t.heightAt(o.x + o.w / 2, o.z), t.heightAt(o.x, o.z - o.d / 2), t.heightAt(o.x, o.z + o.d / 2)) - 0.3;
@@ -304,6 +343,171 @@ export class Terrain3D {
       this.group.add(this.struct);
    }
 
+   /** Dragon's teeth, hedgehogs, wire and bridges, merged into the structures mesh. */
+   _feature(acc, o, box) {
+      const t = this.t, y = t.groundHeightAt ? t.groundHeightAt(o.x, o.z) : t.heightAt(o.x, o.z), r = hash(o.x, o.z);
+      if (o.kind === 'teeth') {
+         if (!this._teethGeo) { const g = this._teethGeo = new THREE.CylinderGeometry(0.2, 0.707, 1, 4, 1); g.rotateY(Math.PI / 4); g.translate(0, 0.5, 0); }
+         if (o.alive !== false) addGeo(acc, this._teethGeo, mat(o.x, y - 0.15, o.z, o.yaw, o.w, o.h + 0.15, o.d), CONC.clone().multiplyScalar(0.9 + r * 0.15), 0.12);
+         else for (let i = 0; i < 4; i++) {
+            const a = r * 6.28 + i * 1.7, d = 0.25 + hash(i, r) * 0.5;
+            addGeo(acc, box, matYXZ(o.x + Math.cos(a) * d, y + 0.08, o.z + Math.sin(a) * d, a, hash(r, i) - 0.5, hash(i, i + r) - 0.5, 0.5, 0.3, 0.4), CONC.clone().multiplyScalar(0.7), 0.3);
+         }
+      } else if (o.kind === 'hedgehog') {
+         // three perpendicular beams with the (1,1,1) diagonal pointing up: stands on three ends
+         const up = Q.setFromUnitVectors(V.set(1, 1, 1).normalize(), S.set(0, 1, 0)).clone(), q = new THREE.Quaternion();
+         const tilt = o.alive === false ? new THREE.Quaternion().setFromEuler(E2.set(1.1, o.yaw + 0.7, 0.3, 'YXZ')) : new THREE.Quaternion().setFromAxisAngle(V.set(0, 1, 0), o.yaw);
+         q.copy(tilt).multiply(up);
+         const s = o.h / 1.15, L = 2 * s;
+         for (const sc of [[L, 0.13, 0.13], [0.13, L, 0.13], [0.13, 0.13, L]])
+            addGeo(acc, box, M.compose(V.set(o.x, y + (o.alive === false ? 0.25 : 0.577 * s), o.z), q, S.set(...sc)).clone(), STEEL, 0.15);
+      } else if (o.kind === 'wire') {
+         const key = Math.round(o.w * 2) / 2;
+         (this._wireGeo ??= {})[key] ??= (() => {
+            const coils = Math.max(3, Math.round(key * 1.8)), N = coils * 10, pts = [];
+            for (let i = 0; i <= N; i++) { const a = i / N * coils * Math.PI * 2; pts.push(new THREE.Vector3(-key / 2 + key * i / N, 0.45 + Math.sin(a) * 0.42, Math.cos(a) * 0.42)); }
+            return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), N, 0.02, 3, false);
+         })();
+         const flat = o.alive === false;
+         addGeo(acc, this._wireGeo[key], mat(o.x, y + (flat ? -0.05 : 0), o.z, o.yaw, o.w / key, flat ? 0.2 : 1, flat ? 1.4 : 1), WIREC, 0.2);
+         const c = Math.cos(o.yaw), sn = Math.sin(o.yaw), n = Math.max(1, Math.round(o.w / 3));
+         if (!flat) for (let i = 0; i <= n; i++) {
+            const lx = -o.w / 2 + i * o.w / n, lz = (i % 2 ? 0.35 : -0.35);
+            addGeo(acc, box, mat(o.x + lx * c + lz * sn, y + 0.55, o.z - lx * sn + lz * c, o.yaw, 0.05, 1.2, 0.05, 0.08 * (i % 2 ? 1 : -1)), WOOD);
+         }
+      } else if (o.kind === 'bridge') this._bridge(acc, o, box);
+   }
+   _bridge(acc, o, box) {
+      const t = this.t, L = o.d, dx = (o.x1 - o.x0) / L, dz = (o.z1 - o.z0) / L, yaw = o.yaw, w = o.w, blown = o.alive === false;
+      const px = -dz, pz = dx;     // local x (across the deck)
+      const brk = [];
+      const n = Math.max(3, Math.round(L / 3));
+      for (let i = 0; i <= n; i++) brk.push(i / n);
+      brk.push(o.gap[0], o.gap[1]); brk.sort((a, b) => a - b);
+      const at = (s, lx) => [o.x0 + dx * L * s + px * lx, o.z0 + dz * L * s + pz * lx];
+      const yAt = (s) => o.y0 + (o.y1 - o.y0) * s;
+      for (let i = 0; i < brk.length - 1; i++) {
+         const s0 = brk[i], s1 = brk[i + 1], sm = (s0 + s1) / 2, len = (s1 - s0) * L;
+         if (len < 0.05) continue;
+         if (blown && sm > o.gap[0] && sm < o.gap[1]) continue;
+         const y = yAt(sm), [x, z] = at(sm, 0);
+         addGeo(acc, box, mat(x, y - 0.3, z, yaw, w, 0.6, len + 0.02), DECK, 0.1);
+         for (const sd of [-1, 1]) {
+            const [gx, gz] = at(sm, sd * w * 0.3), [rx, rz] = at(sm, sd * (w / 2 - 0.12));
+            addGeo(acc, box, mat(gx, y - 1.15, gz, yaw, 0.45, 1.1, len + 0.02), GIRDER, 0.1);
+            addGeo(acc, box, mat(rx, y + 1.0, rz, yaw, 0.1, 0.1, len + 0.02), STEEL);
+            const [qx, qz] = at(s0, sd * (w / 2 - 0.12));
+            addGeo(acc, box, mat(qx, y + 0.5, qz, yaw, 0.12, 1.0, 0.12), STEEL);
+         }
+      }
+      // piers (only for longer spans) and abutments
+      const wl = t.water;
+      const bottom = (s) => { const [x, z] = at(s, 0); return Math.min(t.groundHeightAt ? t.groundHeightAt(x, z) : t.heightAt(x, z), wl ?? Infinity) - 4; };
+      const piers = L > 24 ? [0.25, 0.75] : [];
+      for (const s of piers) {
+         const [x, z] = at(s, 0), top = yAt(s) - 1.7, bot = bottom(s);
+         if (top > bot) addGeo(acc, box, mat(x, (top + bot) / 2, z, yaw, w * 0.85, top - bot, 1.8), CONC.clone().multiplyScalar(0.8), 0.15);
+      }
+      for (const s of [0, 1]) {
+         const [x, z] = at(s, 0), top = yAt(s) - 0.6, bot = bottom(s);
+         addGeo(acc, box, mat(x, (top + bot) / 2, z, yaw, w + 1.2, top - bot, 2.2), CONC.clone().multiplyScalar(0.85), 0.15);
+      }
+      if (blown) {     // the two broken deck ends hang down into the gap, rubble in the water
+         const g0 = o.gap[0], g1 = o.gap[1], hang = 0.12 * L;
+         for (const [s, d] of [[g0, 1], [g1, -1]]) {      // d: direction into the gap (+ = towards x1)
+            const [x, z] = at(s + d * hang * 0.42 / L, 0);
+            addGeo(acc, box, matYXZ(x, yAt(s) - 0.3 - hang * 0.27, z, yaw, -d * 0.55, 0.06, w * 0.9, 0.5, hang), DECK.clone().multiplyScalar(0.8), 0.25);
+         }
+         const [cx, cz] = at((g0 + g1) / 2, 0), ry = (wl ?? yAt(0.5) - 3) - 0.6;
+         for (let i = 0; i < 6; i++) {
+            const a = hash(i, o.x) * 6.28, d = hash(o.z, i) * w * 0.6;
+            addGeo(acc, box, matYXZ(cx + Math.cos(a) * d, ry, cz + Math.sin(a) * d, a, hash(i, 2) - 0.5, hash(3, i) - 0.5, 2 + hash(i, 4) * 3, 0.8, 1.5 + hash(i, 5) * 2), CONC.clone().multiplyScalar(0.65), 0.3);
+         }
+      }
+   }
+
+   /** Trench ribbons: a fine strip mesh along each trench (exact steep walls and spoil parapet),
+    *  plank revetment with posts, a duckboard floor and sandbags on the enemy side. */
+   buildTrenches() {
+      for (const m of [this.trenchGround, this.trenchProps]) if (m) { this.group.remove(m); m.geometry.dispose(); }
+      this.trenchGround = this.trenchProps = null;
+      const t = this.t;
+      if (!t.trenches?.length) return;
+      const step = this.step ?? 2, gh = (x, z) => t.groundHeightAt(x, z), col = new THREE.Color();
+      const pos = [], clr = [], uv = [], idx = [], acc = newAcc(), box = new THREE.BoxGeometry(1, 1, 1);
+      for (const tr of t.trenches) {
+         const hw = tr.w / 2, R = hw + 2.8 + 1.5 * step + 0.3, P = tr.pts;
+         const outs = [R, hw + 2.9, hw + 2.6, hw + 2.2, hw + 1.8, hw + 1.4, hw + 1.0, hw + 0.6, hw + 0.25, hw + 0.03, hw - 0.17, hw * 0.45];
+         const across = [...outs.map((o) => -o), 0, ...outs.slice().reverse()];
+         // centre-line samples with mitred normals; ends extended by R
+         const smp = [], segN = [];
+         for (let i = 0; i < P.length - 1; i++) {
+            const L = Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1]) || 1;
+            segN.push([(P[i + 1][0] - P[i][0]) / L, (P[i + 1][1] - P[i][1]) / L, L]);
+         }
+         const push = (x, z, ux, uz, m = 1) => smp.push([x, z, -uz * m, ux * m]);
+         const [u0x, u0z] = segN[0];
+         push(P[0][0] - u0x * R, P[0][1] - u0z * R, u0x, u0z);
+         push(P[0][0] - u0x * (hw + 0.6), P[0][1] - u0z * (hw + 0.6), u0x, u0z);
+         for (let i = 0; i < segN.length; i++) {
+            const [ux, uz, L] = segN[i], k = Math.max(1, Math.round(L / 1));
+            if (i === 0) push(P[0][0], P[0][1], ux, uz);
+            for (let j = 1; j < k; j++) push(P[i][0] + ux * L * j / k, P[i][1] + uz * L * j / k, ux, uz);
+            if (i < segN.length - 1) {
+               const [vx, vz] = segN[i + 1]; let mx = ux + vx, mz = uz + vz; const ml = Math.hypot(mx, mz) || 1; mx /= ml; mz /= ml;
+               push(P[i + 1][0], P[i + 1][1], mx, mz, Math.min(2, 1 / Math.max(0.3, mx * ux + mz * uz)));
+            } else push(P[i + 1][0], P[i + 1][1], ux, uz);
+         }
+         const [ex, ez] = segN[segN.length - 1], Pe = P[P.length - 1];
+         push(Pe[0] + ex * (hw + 0.6), Pe[1] + ez * (hw + 0.6), ex, ez);
+         push(Pe[0] + ex * R, Pe[1] + ez * R, ex, ez);
+         const base = pos.length / 3, A = across.length;
+         for (const [cx, cz, nx, nz] of smp) for (const a of across) {
+            const x = cx + nx * a, z = cz + nz * a, h = gh(x, z);
+            pos.push(x, h, z); uv.push(x / 9, z / 9);
+            const dig = t.trenchDist(x, z);
+            if (dig < -0.1) col.copy(EARTH).lerp(EARTH2, hash(x * 2, z * 2) * 0.5);
+            else { this._color(x, z, col); if (dig < 2.8) col.lerp(EARTH2, clamp01(1 - dig / 2.8) * 0.55); }
+            clr.push(col.r, col.g, col.b);
+         }
+         for (let s = 0; s < smp.length - 1; s++) for (let a = 0; a < A - 1; a++) {
+            const i0 = base + s * A + a, i1 = i0 + 1, i2 = i0 + A, i3 = i2 + 1;
+            idx.push(i0, i1, i2, i1, i3, i2);
+         }
+         // revetment, posts, duckboards, sandbags per segment
+         for (let i = 0; i < segN.length; i++) {
+            const [ux, uz, L] = segN[i], nx = -uz, nz = ux, yaw = Math.atan2(ux, uz), k = Math.max(1, Math.round(L / 2)), pl = L / k;
+            const par = tr.segs[i]?.par || 0;
+            for (let j = 0; j < k; j++) {
+               const sm = (j + 0.5) * pl, cx = P[i][0] + ux * sm, cz = P[i][1] + uz * sm, floor = gh(cx, cz);
+               addGeo(acc, box, mat(cx, floor + 0.04, cz, yaw, hw * 0.8, 0.06, pl - 0.15), WOOD.clone().multiplyScalar(1.15), 0.2);
+               for (const sd of [-1, 1]) {
+                  const top = gh(cx + nx * sd * (hw + 0.35), cz + nz * sd * (hw + 0.35)), hgt = top - floor + 0.05;
+                  addGeo(acc, box, mat(cx + nx * sd * (hw - 0.06), floor + hgt / 2, cz + nz * sd * (hw - 0.06), yaw, 0.08, hgt, pl), WOOD, 0.25);
+                  const qx = cx - ux * pl / 2 + nx * sd * (hw - 0.12), qz = cz - uz * pl / 2 + nz * sd * (hw - 0.12);
+                  addGeo(acc, box, mat(qx, floor + (hgt + 0.25) / 2, qz, yaw, 0.16, hgt + 0.25, 0.16), WOOD.clone().multiplyScalar(0.8));
+               }
+            }
+            if (par !== 0) {
+               const nb = Math.max(1, Math.floor(L / 0.62));
+               for (let layer = 0; layer < 2; layer++) for (let b = 0; b < nb - layer; b++) {
+                  const s = (b + 0.5 + layer * 0.5) * L / nb, off = hw + 0.42;
+                  const x = P[i][0] + ux * s + nx * par * off, z = P[i][1] + uz * s + nz * par * off;
+                  addGeo(acc, box, mat(x, gh(x, z) + 0.1 + layer * 0.23, z, yaw + (hash(x, z) - 0.5) * 0.15, 0.42, 0.24, 0.58), BAG, 0.22);
+               }
+            }
+         }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(clr, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
+      this.trenchMat ??= Object.assign(this.groundMat.clone(), { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+      this.trenchGround = new THREE.Mesh(g, this.trenchMat); this.trenchGround.receiveShadow = true;
+      this.trenchProps = new THREE.Mesh(mergeAcc(acc), this.structMat ??= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }));
+      this.trenchProps.castShadow = this.trenchProps.receiveShadow = true;
+      this.group.add(this.trenchGround, this.trenchProps);
+   }
+
    // Grass: clumps of 9 thin blades, instanced in a field that wraps around the camera. The
    // vertex shader shrinks each clump to nothing between 34 and 54 m so the edge never pops.
    buildGrass(n) {
@@ -352,6 +556,21 @@ export class Terrain3D {
    }
    update(cam) {
       const t = this.t;
+      if (t.bridges) for (const b of t.bridges) if (b.alive === false && !b.blown) t.blowBridge(b);   // replicated (net) blow
+      if ((t.heightVersion ?? 0) !== this.hver) {
+         this.hver = t.heightVersion ?? 0;
+         const edits = t.heightEdits || [], size = 2 * (t.half ?? 500) / this.CH, half = t.half ?? 500, m = 2 * this.step;
+         const dirty = new Set();
+         for (; this.hedit < edits.length; this.hedit++) {
+            const e = edits[this.hedit];
+            const i0 = Math.max(0, Math.floor((e.x0 - m + half) / size)), i1 = Math.min(this.CH - 1, Math.floor((e.x1 + m + half) / size));
+            const j0 = Math.max(0, Math.floor((e.z0 - m + half) / size)), j1 = Math.min(this.CH - 1, Math.floor((e.z1 + m + half) / size));
+            for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) dirty.add(j * this.CH + i);
+         }
+         for (const k of dirty) this._buildChunk(k % this.CH, Math.floor(k / this.CH));
+         this.buildTrenches();
+         this.version = -1;      // re-place instances and structures on the new heights
+      }
       if ((t.version ?? 0) !== this.version) {
          this.version = t.version ?? 0;
          for (const k in this.inst) this._placeInstances(k);
@@ -368,7 +587,8 @@ export class Terrain3D {
          const x = bx + kx * span, z = bz + kz * span;
          let s = 0.8 + hash(x, z) * 0.6;
          if (Math.abs(x) > half || Math.abs(z) > half) s = 0;
-         else { const gc = t.groundAt ? t.groundAt(x, z) : 'medium'; if (gc === 'road' || gc === 'water' || gc === 'hard' || (t.normalAt && t.normalAt(x, z).y < 0.85)) s = 0; }
+         else { const gc = t.groundAt ? t.groundAt(x, z) : 'medium'; if (gc === 'road' || gc === 'water' || gc === 'hard' || (t.normalAt && t.normalAt(x, z).y < 0.85)) s = 0;
+            else if ((t.coast && t.coastS(x, z) > -t.coast.beach * 0.75) || (t.trenches?.length && t.trenchDist(x, z) < 0.6)) s = 0; }
          M.compose(V.set(x, t.heightAt(x, z) - 0.05, z), Q.setFromEuler(E.set(0, hash(z, x) * 6.28, 0)), S.set(s, s, s));
          im.setMatrixAt(i, M);
       }
