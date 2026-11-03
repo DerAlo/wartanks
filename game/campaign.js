@@ -443,14 +443,14 @@ export const OPS = {
          const send = (S) => {
             const list = waves[wave++]; if (!list) return;
             // the Pershing crew came off Shermans a few weeks ago and does not know the new gun yet
-            list.forEach(([c, dx], i) => S.after(i * 14, (S) => S.spawn(c, 2, bx + dx, 470, { yaw: 0, tag: c === 'm26' ? 'pershing' : 'wave', name: TANKS[c].short || TANKS[c].name, aiErr: c === 'm26' ? 1.8 : undefined,
-               order: c === 'm26' ? { kind: 'route', pin: true, pts: [[bx + dx, hz + 320], [bx + 30, hz + 250]] }      // the heavy duels from the wood's edge
+            list.forEach(([c, dx], i) => S.after(i * 14, (S) => S.spawn(c, 2, bx + dx, 470, { yaw: 0, tag: c === 'm26' ? 'pershing' : 'wave', name: TANKS[c].short || TANKS[c].name, aiErr: c === 'm26' ? 1.6 : undefined,
+               order: c === 'm26' ? { kind: 'route', pin: true, pts: [[bx + dx, hz + 300], [bx + 30, hz + 170]] }      // the heavy duels from range
                   : { kind: 'route', pin: true, pts: [[bx + dx, hz + 300], [bx + dx * 0.4, hz + 200], [bx + dx * 0.1, hz + 120], [bx + dx * 0.3, hz + 70]] } })));
             S.radio(['Feindpanzer im Süden – Shermans!', 'Zweite Welle, Jagdpanzer an den Flanken!', 'Schwerer Panzer dabei – ein Pershing!'][wave - 1], 'warn');
             if (wave === 3) S.show('b_pershing');
          };
          S.at(40, send); S.at(190, send); S.at(330, send);
-         S.at(320, (S) => S.refit(0.4, 'Ein Kübelwagen bringt Granaten und zwei Schlosser – schnell, die nächste Welle kommt!'));
+         S.at(320, (S) => S.refit(0.55, 'Ein Kübelwagen bringt Granaten und zwei Schlosser – schnell, die nächste Welle kommt!'));
          S.when(() => true, (S) => { S.progress('b_kills', S.dead('wave') + S.dead('pershing')); if (S.group('pershing').length && !S.alive('pershing')) S.done('b_pershing'); }, { repeat: true });
          S.when((S) => S.c.timer && S.c.timer.left <= 0, (S) => {
             S.done('hold'); S.show('back'); S.phase('retreat'); S.timer('Brücke wird gesprengt', 120);
@@ -562,7 +562,7 @@ export const OPS = {
          const send = (S) => {
             const list = W[wave++]; if (!list) return;
             list.forEach(([c, dx], i) => S.after(i * 18, (S) => {
-               S.spawn(c, 2, dx, -440, { yaw: Math.PI, tag: 'att', name: TANKS[c].short || TANKS[c].name, viewMul: 0.5, aiErr: 1.8,
+               S.spawn(c, 2, dx, -440, { yaw: Math.PI, tag: 'att', name: TANKS[c].short || TANKS[c].name, viewMul: 0.5, aiErr: 1.5,
                   order: { kind: 'route', pin: true, pts: [[dx * 0.8, -200], [dx * 0.6, -60], [dx * 0.3, 90], [cp.x, cp.z]] } });
             }));
             S.radio(wave === 1 ? 'Panther im Nebel – zwei Stück!' : wave === 2 ? 'Neue Welle, Panzer IV und Panther!' : 'Starke Kräfte, die ganze Brigade kommt!', 'warn');
