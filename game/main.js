@@ -44,7 +44,7 @@ export function startBattle(opts = {}) {
    const th = fogTheme(themeOf(world.mapId ?? opts.mapId), world.campaign?.fog || 0);   // misty ops (Arracourt)
    R.setTheme(th); sky.setTheme(th, R.sunDir);
    terrain3d = new Terrain3D(R.scene, world.terrain, th, q);
-   if (tanks3dM.Tanks3D) tanks3d = new tanks3dM.Tanks3D(R.scene, world);
+   if (tanks3dM.Tanks3D) tanks3d = G.tanks3d = new tanks3dM.Tanks3D(R.scene, world);
    if (fxM.FX) fx = new fxM.FX(R.scene, world, q);
    if (hudM.HUD) hud = new hudM.HUD(document.getElementById('hudc'), world, { armor: armorM, cam: tcam, R });
    getAudio();
@@ -58,7 +58,7 @@ export function startBattle(opts = {}) {
 export function stopBattle() {
    input.enabled = false; input.unlock();
    terrain3d?.dispose(); tanks3d?.dispose?.(); fx?.dispose?.(); hud?.dispose?.(); audio?.stop?.();
-   terrain3d = tanks3d = fx = hud = null; G.world = null; G.paused = false; G.aimTarget = null; G.fireReq = null;
+   terrain3d = tanks3d = G.tanks3d = fx = hud = null; G.world = null; G.paused = false; G.aimTarget = null; G.fireReq = null;
    document.getElementById('scope').classList.remove('on');
    const hc = document.getElementById('hudc'); hc.getContext('2d')?.clearRect(0, 0, hc.width, hc.height);
 }

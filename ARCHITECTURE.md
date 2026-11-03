@@ -362,7 +362,13 @@ nation. Works without localStorage (memory fallback).
 * Tank models: hull/turret from armour geometry, plus tracks with road wheels and animated
   treads (UV scroll), mantlet, barrel with muzzle brake, hatches, cupola, exhausts, tools,
   camouflage paint per nation, decals (balken cross / star / roundel as simple vector shapes),
-  damage: burnt texture on wreck, turret blown off on ammo-rack.
+  damage: burnt texture on wreck, turret blown off on ammo-rack. Shell hit marks (`hitmarks.js`,
+  fed by `tanks3d.js` from pen / he / noPen / ricochet events: `dstId, pos, normal, cal, from`,
+  all on the net whitelist): penetration / direct HE = dark hole with scorched rim, noPen /
+  ricochet = bright scrape along the shell path. Snapped to the rendered model by a short ray
+  along the plate normal, stored in the hull-body or turret frame (so they traverse with the
+  turret), up to 24 per tank (oldest dropped), wrecks included; all tanks share two
+  InstancedMeshes = 2 draw calls. `G.tanks3d` is exposed for tests.
 * Effects: muzzle blast + smoke + dust ring on the ground, shell tracer, impact sparks on armour,
   dirt splash on ground, ricochet sparks with a deflected tracer, penetration flash, fire &
   black smoke, ammo rack explosion, track dust while driving, track marks decals, tree falling,

@@ -2,8 +2,10 @@
 // hull = side profile extruded across the hull width (sides lean in by the side slope), turret =
 // top-view polygon whose faces lean in by their slope, + mantlet, barrel, running gear, tracks with
 // scrolling treads, fenders, hatches, cupola, exhausts, tools, nation camouflage and insignia.
-// Draw calls per tank: hull, turret, gun, 2 tracks, decals (shared materials per nation).
+// Draw calls per tank: hull, turret, gun, 2 tracks, decals (shared materials per nation); shell hit
+// marks for all tanks together: 2 (hitmarks.js).
 import * as THREE from '../vendor/three/three.module.min.js';
+import { HitMarks, isHitEvent } from './hitmarks.js';
 
 const DEG = Math.PI / 180;
 const hash = (a, b = 0) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
@@ -566,6 +568,7 @@ export class Tanks3D {
    constructor(scene, world) {
       this.scene = scene; this.world = world; this.models = new Map(); this.lastSeq = 0;
       this.group = new THREE.Group(); scene.add(this.group);
+      this.marks = new HitMarks(this.group); this.hitQ = [];
    }
    _model(t) {
       let m = this.models.get(t.id);
@@ -576,13 +579,17 @@ export class Tanks3D {
       const m = this._model(t); m.gunPivot.getWorldPosition(out); out.y += 0.35; return out;
    }
    // scope view: the sight sits inside the own turret, so the whole own model goes (WoT does the same)
-   setHidden(t, scoped) { const m = this.models.get(t?.id); if (m && scoped) m.root.visible = false; }
+   setHidden(t, scoped) { const m = this.models.get(t?.id); if (!m) return; m.scopeHide = scoped; if (scoped) m.root.visible = false; }
    update(dt, camera) {
       const w = this.world, sh = shared();
-      for (const ev of w.events?.list ?? w.events ?? []) {   // turret blow-off on ammo rack
-         if (!ev || (ev.seq ?? 0) <= this.lastSeq) continue; this.lastSeq = ev.seq ?? this.lastSeq;
-         if ((ev.type ?? ev.kind) === 'ammoRack') { const m = this.models.get(ev.dstId); if (m && !m.blow) m.blow = { vy: 9 + Math.random() * 4, vx: (Math.random() - 0.5) * 4, vz: (Math.random() - 0.5) * 4, spin: (Math.random() - 0.5) * 6, t: 0 }; }
+      let maxSeq = this.lastSeq;   // events is a ring buffer: not in seq order
+      for (const ev of w.events?.list ?? w.events ?? []) {   // turret blow-off on ammo rack, hit marks
+         if (!ev || (ev.seq ?? 0) <= this.lastSeq) continue; maxSeq = Math.max(maxSeq, ev.seq ?? 0);
+         const type = ev.type ?? ev.kind;
+         if (type === 'ammoRack') { const m = this.models.get(ev.dstId); if (m && !m.blow) m.blow = { vy: 9 + Math.random() * 4, vx: (Math.random() - 0.5) * 4, vz: (Math.random() - 0.5) * 4, spin: (Math.random() - 0.5) * 6, t: 0 }; }
+         else if (isHitEvent(type)) this.hitQ.push(ev);
       }
+      this.lastSeq = maxSeq;
       for (const t of w.tanks) {
          const m = this._model(t), r = m.root, b = m.body;
          r.visible = t.visible !== false && (t.spotted !== false || t.team === w.player?.team || !t.alive);
@@ -616,6 +623,14 @@ export class Tanks3D {
             else { B.vx = B.vz = B.spin = 0; B.vy = 0; }
          }
       }
+      // hit marks: placed on the model as posed this frame, then all drawn as two instanced batches
+      for (const ev of this.hitQ) { const t = w.tankById?.(ev.dstId) ?? w.tanks.find((q) => q.id === ev.dstId); if (!t) continue;
+         const m = this._model(t);
+         if (!m.root.visible) { m.root.position.set(t.pos.x, t.pos.y, t.pos.z); m.root.rotation.y = t.yaw; m.body.rotation.set(t.pitch || 0, 0, t.roll || 0, 'YXZ'); if (!m.blow) m.turret.rotation.y = t.turretYaw || 0; }
+         this.marks.add(m, ev);
+      }
+      this.hitQ.length = 0;
+      this.marks.update(this.models.values());
    }
    // emplacement wrecks: the bunker just goes black; the PaK tips over; the boat lists and sinks
    _siteWreck(m, t, dt) {
@@ -627,5 +642,5 @@ export class Tanks3D {
          m.root.position.y = t.pos.y - 5.5 * e; m.body.rotation.z = (t.roll || 0) + 0.35 * e; m.body.rotation.x = (t.pitch || 0) - 0.04 * e;
       }
    }
-   dispose() { this.scene.remove(this.group); for (const m of this.models.values()) for (const tr of m.tracks) { tr.material.map.dispose(); tr.material.dispose(); } }
+   dispose() { this.marks.dispose(); this.scene.remove(this.group); for (const m of this.models.values()) for (const tr of m.tracks) { tr.material.map.dispose(); tr.material.dispose(); } }
 }

@@ -68,9 +68,9 @@ try {
       await A.waitForTimeout(3000);
    }
    const host = await A.evaluate(() => { const w = __game.world, b = w.tanks.find((t) => t.human && t !== w.player);
-      return { bShots: b.stats.shots, bPos: [b.pos.x, b.pos.z], aShots: w.player.stats.shots, aPos: [w.player.pos.x, w.player.pos.z], bMoved: b.speed, net: __game.net.stats() }; });
+      return { bShots: b.stats.shots, bPos: [b.pos.x, b.pos.z], aShots: w.player.stats.shots, aPos: [w.player.pos.x, w.player.pos.z], bMoved: b.speed, net: __game.net.stats(), marks: [...__game.tanks3d.models.values()].reduce((n, m) => n + (m.marks?.length || 0), 0) }; });
    const cli = await B.evaluate(() => { const w = __game.world; const a = w.tanks.find((t) => t.human && t !== w.player);
-      return { aPos: [a.pos.x, a.pos.z], me: [w.player.pos.x, w.player.pos.z], fps: __game.fps, net: __game.net.stats(), shells: w.shells.length, ev: w.seq }; });
+      return { aPos: [a.pos.x, a.pos.z], me: [w.player.pos.x, w.player.pos.z], fps: __game.fps, net: __game.net.stats(), shells: w.shells.length, ev: w.seq, marks: [...__game.tanks3d.models.values()].reduce((n, m) => n + (m.marks?.length || 0), 0) }; });
    console.log('host view', JSON.stringify({ ...host, net: { up: host.net.up } }));
    console.log('client view', JSON.stringify({ ...cli, net: { down: cli.net.down, up: cli.net.up } }));
    const sec = 24;
