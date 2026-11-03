@@ -30,9 +30,9 @@
 // override the default base / spawn positions (used by coast maps whose north is sea).
 
 const SUMMER = {
-   fog: 0xb9c2b8, fogNear: 280, fogFar: 1200, sunDir: [0.55, 0.62, 0.35], sunColor: 0xffecd2, sunIntensity: 3.0,
-   skyLight: 0xbcd2ea, groundLight: 0x4f4630, hemiIntensity: 0.72, exposure: 1.0,
-   skyTop: 0x4a7cba, skyHor: 0xc6d2d0, skyLow: 0x7a7a62, cloud: 0.55,
+   fog: 0xbcc8cf, fogNear: 280, fogFar: 1200, sunDir: [0.55, 0.62, 0.35], sunColor: 0xffecd2, sunIntensity: 3.0,
+   skyLight: 0xc4daf2, groundLight: 0x6a6a52, hemiIntensity: 1.05, exposure: 1.25,
+   skyTop: 0x3f7ccc, skyHor: 0xbfd5e6, skyLow: 0x8a9488, cloud: 0.45,
 };
 
 export const MAPS = {
@@ -132,7 +132,7 @@ export const MAPS = {
       id: 'winter', name: 'Winterwald', desc: 'Verschneite Kiefernwälder um einen zugefrorenen See – das Eis trägt, bietet aber keine Deckung.',
       palette: 'winter', seed: 53,
       render: { ...SUMMER, fog: 0xd6dde3, fogNear: 200, fogFar: 1000, sunDir: [0.4, 0.45, 0.6], sunColor: 0xfff6ea, sunIntensity: 2.2,
-         skyLight: 0xdbe6f2, groundLight: 0x8a8f96, skyTop: 0x7e9cc0, skyHor: 0xdfe5ea, skyLow: 0xb8bec4, cloud: 0.8, exposure: 1.0 },
+         skyLight: 0xdbe6f2, groundLight: 0x8a8f96, skyTop: 0x7e9cc0, skyHor: 0xdfe5ea, skyLow: 0xb8bec4, cloud: 0.8, exposure: 1.2 },
       noise: { amp: 9, scale: 230, detail: 0.6, ridgedAmp: 6 },
       ground: { soft: 0.25, hard: 0.05 },
       features: [

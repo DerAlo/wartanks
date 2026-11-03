@@ -49,7 +49,7 @@ THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
    gl_FragColor.rgb = mix( gl_FragColor.rgb, fogC, fogFactor );
 #endif`;
 
-const GRADE = { saturation: 0.98, contrast: 1.08, vignette: 0.32, bloom: 0.14, bloomThreshold: 1.5, tint: null, shadowTint: [0.93, 0.98, 1.06] };
+const GRADE = { saturation: 1.06, contrast: 1.02, vignette: 0.16, bloom: 0.14, bloomThreshold: 1.5, tint: null, shadowTint: [0.96, 1.0, 1.06] };
 
 export class Renderer {
    constructor(canvas, q) {

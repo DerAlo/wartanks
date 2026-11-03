@@ -10,12 +10,12 @@ import * as THREE from '../vendor/three/three.module.min.js';
 
 const C = (h) => new THREE.Color(h);
 const PALETTES = {
-   summer: { grass: C(0x6b7a3a), grass2: C(0x857f45), dirt: C(0x7a6544), rock: C(0x7c776c), road: C(0x9a8a66), sand: C(0xb3a273), soft: C(0x5b5a34), snow: C(0xe8ecef), tree: C(0x3f5a26), tree2: C(0x56682c), pine: C(0x2c4422), bush: C(0x4c6229) },
+   summer: { grass: C(0x638436), grass2: C(0x7e8a44), dirt: C(0x7a6544), rock: C(0x7c776c), road: C(0x9a8a66), sand: C(0xb3a273), soft: C(0x5a6234), snow: C(0xe8ecef), tree: C(0x3e6426), tree2: C(0x56762e), pine: C(0x2c4422), bush: C(0x4c6229) },
    winter: { grass: C(0xdfe5ea), grass2: C(0xc9d2d8), dirt: C(0x8d8578), rock: C(0x6f6e6a), road: C(0xa59e8d), sand: C(0xcfcfc8), soft: C(0xb8c0c4), snow: C(0xf2f5f7), tree: C(0x3a4a2c), tree2: C(0x4a5a34), pine: C(0x24361f), bush: C(0x5a6648) },
    // Baltic coast: dune grass, pale sand, pines, red-brick towns with dark tile roofs
-   coast: { grass: C(0x76814a), grass2: C(0x928c5c), dirt: C(0x7c6a4c), rock: C(0x7d7a72), road: C(0x9d927a), sand: C(0xcfbe90), soft: C(0x958a5e), snow: C(0xe8ecef), tree: C(0x3d5628), tree2: C(0x52632e), pine: C(0x2a4224), bush: C(0x4f6230),
+   coast: { grass: C(0x6a8c48), grass2: C(0x8a9258), dirt: C(0x7c6a4c), rock: C(0x7d7a72), road: C(0x9d927a), sand: C(0xcfbe90), soft: C(0x958a5e), snow: C(0xe8ecef), tree: C(0x3d5628), tree2: C(0x52632e), pine: C(0x2a4224), bush: C(0x4f6230),
       walls: [0x8e4a36, 0x7c3e2e, 0x9b5a44, 0xa89e8a], roofs: [0x5a2a20, 0x4a3a34, 0x3f4448], pines: 0.8 },
-   steppe: { grass: C(0x8a8a48), grass2: C(0xa49a58), dirt: C(0x86704a), rock: C(0x8a8274), road: C(0xa8956a), sand: C(0xbfae7a), soft: C(0x6d6a3a), snow: C(0xe8ecef), tree: C(0x4d6229), tree2: C(0x657236), pine: C(0x33482a), bush: C(0x5f6b30) },
+   steppe: { grass: C(0x7f9046), grass2: C(0xa09c56), dirt: C(0x86704a), rock: C(0x8a8274), road: C(0xa8956a), sand: C(0xbfae7a), soft: C(0x6d6a3a), snow: C(0xe8ecef), tree: C(0x4d6229), tree2: C(0x657236), pine: C(0x33482a), bush: C(0x5f6b30) },
 };
 
 // one wind clock for grass and tree crowns (Terrain3D.update advances it)
