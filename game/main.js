@@ -135,6 +135,9 @@ function controls(world, p, dt) {
    const inp = p.input ??= {};
    inp.throttle = (k('KeyW') || k('ArrowUp') ? 1 : 0) - (k('KeyS') || k('ArrowDown') ? 1 : 0);
    inp.steer = (k('KeyA') || k('ArrowLeft') ? 1 : 0) - (k('KeyD') || k('ArrowRight') ? 1 : 0);
+   // reversing steers like a car (as in WoT): S+A backs the tank towards the left, so the hull
+   // turns the other way while rolling backwards. Only for the human; bots steer the raw hull yaw.
+   if ((p.speed ?? 0) < -0.3 || (inp.throttle < 0 && (p.speed ?? 0) < 0.3)) inp.steer = -inp.steer;
    inp.brake = k('Space');
    inp.fire = input.lmb && !G.noFire;
    // a click is kept for 0.3 s so a click just before the round is loaded still fires (an edge-
