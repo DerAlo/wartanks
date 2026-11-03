@@ -101,6 +101,39 @@ function prismPiece(name, prof, halfW, plates, cutPlates) {
    return finishPart(name, 'hull', null, faces, center);
 }
 
+/** Ship hull as convex slices along z, following the plan the renderer draws (tanks3d
+ *  shipSection: the bow tapers to a stem over its first quarter, the stern narrows a little,
+ *  the forecastle deck rises). Sides lean in from the bilge (75 % width) to the deck edge. */
+export function shipSection(H, z) {
+   const L0 = H.zMin + 2.4, L1 = H.zMax - 2.4, hw0 = H.w / 2;
+   const fb = Math.max(0, Math.min(1, (z - L0) / (L1 - L0)));                    // 0 bow … 1 stern
+   const bowK = Math.min(1, fb / 0.24), sternK = Math.min(1, (1 - fb) / 0.1);
+   const hw = hw0 * Math.sqrt(bowK) * (0.7 + 0.3 * Math.sqrt(sternK));
+   const deck = H.roofY + (fb < 0.32 ? 1.1 * (1 - fb / 0.32) ** 1.6 : 0);
+   return { hw: Math.max(0.05, hw), deck };
+}
+function shipHullParts(H, plates) {
+   const L0 = H.zMin + 2.4, L1 = H.zMax - 2.4, out = [], y0 = H.floorY + 0.2;
+   const zs = [0, 0.01, 0.03, 0.06, 0.1, 0.15, 0.2, 0.25, 0.32, 0.5, 0.7, 0.85, 0.92, 1].map((f) => L0 + (L1 - L0) * f);
+   const tS = plates.side?.t ?? 15, tR = plates.roof?.t ?? 12, tF = plates.floor?.t ?? 12;
+   for (let i = 0; i + 1 < zs.length; i++) {
+      const za = zs[i], zb = zs[i + 1], A = shipSection(H, za), B = shipSection(H, zb);
+      const d = Math.min(A.deck, B.deck);                // flat top per slice keeps every face planar
+      const ab = A.hw * 0.75, bb = B.hw * 0.75;
+      const v = { aLB: [-ab, y0, za], aRB: [ab, y0, za], aLT: [-A.hw, d, za], aRT: [A.hw, d, za], bLB: [-bb, y0, zb], bRB: [bb, y0, zb], bLT: [-B.hw, d, zb], bRT: [B.hw, d, zb] };
+      const center = [0, (y0 + d) / 2, (za + zb) / 2];
+      out.push(finishPart('hull', 'hull', null, [
+         makeFace([v.aRB, v.bRB, v.bRT, v.aRT], center, 'side', tS),
+         makeFace([v.aLB, v.aLT, v.bLT, v.bLB], center, 'side', tS),
+         makeFace([v.aLT, v.aRT, v.bRT, v.bLT], center, 'roof', tR),
+         makeFace([v.aLB, v.bLB, v.bRB, v.aRB], center, 'floor', tF),
+         makeFace([v.aLB, v.aRB, v.aRT, v.aLT], center, i === 0 ? 'nose' : 'side', i === 0 ? (plates.nose?.t ?? tS) : 0, { internal: i > 0 }),
+         makeFace([v.bLB, v.bLT, v.bRT, v.bRB], center, i === zs.length - 2 ? 'urp' : 'side', i === zs.length - 2 ? (plates.urp?.t ?? tS) : 0, { internal: i < zs.length - 2 }),
+      ], center));
+   }
+   return out;
+}
+
 function boxPart(name, frame, side, c, s, plate, t, internalFace = null) {
    // c centre [x,y,z], s full size [w,h,d]
    const [x, y, z] = c, hx = s[0] / 2, hy = s[1] / 2, hz = s[2] / 2;
@@ -139,7 +172,8 @@ export function buildArmor(cfg) {
       if (cr * area < -1e-9) cuts.add(+b.y.toFixed(4));
    }
    const ys = [...cuts].sort((p, q) => p - q);
-   const bounds = [null, ...ys, null];
+   const bounds = cfg.site === 'ship' ? [] : [null, ...ys, null];
+   if (cfg.site === 'ship') parts.push(...shipHullParts(H, plates));
    for (let k = 0; k + 1 < bounds.length; k++) {
       const lo = bounds[k], hi = bounds[k + 1];
       const piece = clipProfile(prof, lo, hi);

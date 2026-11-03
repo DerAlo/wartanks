@@ -709,7 +709,7 @@ const SITE_RAW = [
       mantlet: { w: 0.8, h: 0.6, d: 0.3, t: 12 },
       gun: { name: '10,5 cm SK C/32', cal: 105, len: 4.8, reload: 7.5, disp: 0.42, aim: 2.5, elev: 30, depr: -10, cap: 200,
          load: { AP: 100, HE: 100 },
-         ammo: [{ type: 'AP', name: 'Pzsprgr', pen: 120, dmg: 300, vel: 785 }, { type: 'HE', name: 'Sprgr L/4,4', pen: 45, dmg: 380, vel: 785 }] },
+         ammo: [{ type: 'AP', name: 'Pzsprgr', pen: 120, dmg: 260, vel: 785 }, { type: 'HE', name: 'Sprgr L/4,4', pen: 45, dmg: 300, vel: 785 }] },
       run: { wheels: 2, wheelR: 0.05, interleave: 0, rollers: 0, sprocket: 'rear', sprocketR: 0.05, idlerR: 0.05, trackW: 0.1, len: 1, h: 0.1, t: 15 },
       layout: { ammo: 'floor', fuel: 'floor' },
    },

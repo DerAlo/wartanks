@@ -477,20 +477,40 @@ export const OPS = {
       goals: ['Küstenstellung ausheben', 'Torpedoboot versenken oder vertreiben'],
       tip: 'Das Boot sieht weit. Deckung hinter Dünen und Häusern suchen, dann schießen.',
       script(S) {
-         const sea = S.T.shipSpot || { x: 60, z: -300, yaw: Math.PI / 2 };
+         // berth: alongside the mole's west face (deep water, 10 m off the stones), bow to the sea
+         const sea = S.T.shipSpot || { x: 279, z: -290, yaw: 0 };
          S.spawn('tboat', 2, sea.x, sea.z, { yaw: sea.yaw, tag: 'ship', name: 'Torpedoboot T 36', order: { kind: 'hold', x: sea.x, z: sea.z } });
-         for (const [x, z] of [[-160, -60], [-20, -80], [130, -70], [250, -40]]) S.spawn('pak40', 2, x, z, { tag: 'pak', order: { kind: 'hold', x, z } });
-         for (const [x, z] of [[-60, -110], [80, -120]]) S.spawn('pz4h', 2, x, z, { tag: 'def', name: 'Panzer IV', order: { kind: 'hold', x, z } });
-         for (const [x, z] of [[-80, 430], [80, 430]]) S.spawn('t34_85', 1, x, z, { tag: 'allies', name: 'T-34-85', order: { kind: 'advance', x: x * 0.5, z: -50 } });
+         // Kriegsmarine gun crews put ashore as infantry: brave, but no trained anti-tank gunners
+         for (const [x, z] of [[-160, -60], [-20, -80], [130, -70], [250, -40]]) S.spawn('pak40', 2, x, z, { tag: 'pak', aiErr: 2.3, order: { kind: 'hold', x, z } });
+         // the two Panzer IV wait behind the warehouses as a local reserve and only open up at close range
+         for (const [x, z] of [[-60, -110], [80, -120]]) S.spawn('pz4h', 2, x, z, { tag: 'def', name: 'Panzer IV', order: { kind: 'ambush', x, z, r: 150 } });
+         for (const [x, z] of [[-80, 430], [80, 430]]) S.spawn('t34_85', 1, x, z, { tag: 'allies', name: 'T-34-85', order: { kind: 'advance', x: x * 1.6, z: 160 } });
          S.obj('coast', 'Küstenstellung ausheben (PaK und Panzer)', { need: 6 });
          S.obj('ship', 'Das Torpedoboot versenken');
          S.obj('b_fast', 'Das Boot innerhalb von 10 Minuten versenken', { bonus: true });
          S.obj('b_allies', 'Beide T-34 überleben', { bonus: true });
-         S.goal(0, -60, 'Küstenstellung');
-         this.start = (S) => S.radio('Genossen, das Boot schießt schon! Rein in die Dünen, nicht stehen bleiben!');
+         // the open sand table in front of the position has one piece of cover: the wooded dune hill
+         // on the west flank; the artillery smokes the coast while the tanks get there
+         const [dx, dz] = S.hullDown(-175, 70, 25, -20, -80);
+         S.goal(dx, dz, 'Dünenhügel (Deckung)', 15);
+         for (const t of [...S.group('pak'), ...S.group('def')]) t.viewMul = 0.4;
+         S.at(75, (S) => { for (const t of [...S.group('pak'), ...S.group('def')]) t.viewMul = 1; S.radio('Der Nebel verweht – jetzt sehen sie uns!', 'warn'); });
+         this.start = (S) => S.radio('Die Artillerie schießt Nebel vor die Küste. Über den Waldrand auf den Dünenhügel im Westen – nicht über die freie Fläche!');
          S.every(20, (S) => { const sh = S.group('ship')[0]; if (sh?.alive && S.rng() < 0.4) S.radio('Einschläge vom Torpedoboot – Volltreffer in der Nähe!', 'warn'); });
+         // from the dunes the PaKs are taken one by one, nearest first; the T-34s work the flanks
+         S.when((S) => S.player && (Math.hypot(S.player.pos.x - dx, S.player.pos.z - dz) < 30 || S.time > 110), (S) => {
+            S.radio('Die Pak-Stellungen sind erkannt. Eine nach der anderen – Sprenggranaten!');
+            S.hunt(['pak', 'def'], 'Feindstellung');
+            S.group('allies').forEach((t, i) => S.order([t], { kind: 'route', pts: [[[-130, 110][i], [80, 130][i]], [[-140, 150][i], [0, 20][i]]] }));
+         });
          S.when(() => true, (S) => S.progress('coast', S.dead('pak') + S.dead('def')), { repeat: true });
-         S.when((S) => S.isDone('coast'), (S) => { const sh = S.group('ship')[0]; S.goal(sh.pos.x, sh.pos.z + 120, 'Mole'); S.radio('Die Küste ist frei. Jetzt das Boot – an die Mole und Feuer frei!'); });
+         S.when((S) => S.isDone('coast'), (S) => {
+            S._hunt = null; S.refit(0.45, 'Die Küste ist frei. Ein Werkstattzug flickt euch, dann ab zum Hafen!');
+            // fire from the corner of the quay warehouses, not from the open mole
+            const sh = S.group('ship')[0]; if (!sh?.alive) return;
+            S.goal(sh.pos.x - 45, sh.pos.z + 175, 'Hafen (Deckung der Lagerhäuser)', 15);
+            S.radio('Jetzt das Boot! Aus der Deckung der Lagerhäuser schießen – zielt auf Brücke und Geschütz!');
+         });
          S.when((S) => S.alive('allies') < 2, (S) => S.fail('b_allies'));
          S.when((S) => S.alive('ship') === 0, (S) => {
             S.done('ship'); if (S.time < 600) S.done('b_fast'); else S.fail('b_fast');
