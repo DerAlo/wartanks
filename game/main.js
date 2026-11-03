@@ -2,7 +2,8 @@
 // input into tank.input / tank.aimPoint, steps the sim at SIM_DT and draws. Exposes window.__game
 // for the playwright scripts.
 import * as THREE from '../vendor/three/three.module.min.js';
-import { loadQuality } from './gfxquality.js';
+import * as gfxM from './gfxquality.js';
+const { loadQuality } = gfxM;
 import { Renderer } from './render.js';
 import { Sky } from './sky.js';
 import { Terrain3D } from './terrain3d.js';
@@ -20,10 +21,10 @@ const params = new URLSearchParams(location.search);
 
 // optional modules: graceful while other parts are still being written
 async function opt(path) { try { return await import(path); } catch (e) { console.warn('[main] optional module missing', path, e.message); return {}; } }
-const [stateM, mapsM, tanks3dM, hudM, fxM, audioM, menuM, armorM, configM, terrainM] = await Promise.all(
-   ['./state.js', './maps.js', './tanks3d.js', './hud.js', './fx.js', './audio.js', './menu.js', './armor.js', './config.js', './terrain.js'].map(opt));
+const [stateM, mapsM, tanks3dM, hudM, fxM, audioM, menuM, armorM, configM, terrainM, progressM] = await Promise.all(
+   ['./state.js', './maps.js', './tanks3d.js', './hud.js', './fx.js', './audio.js', './menu.js', './armor.js', './config.js', './terrain.js', './progress.js'].map(opt));
 
-const G = window.__game = { R, q, tcam, input, world: null, fps: 0, frame: 0, mods: { stateM, mapsM, tanks3dM, hudM, fxM, audioM, menuM, armorM, configM } };
+const G = window.__game = { R, q, tcam, input, world: null, fps: 0, frame: 0, mods: { stateM, mapsM, tanks3dM, hudM, fxM, audioM, menuM, armorM, configM, progressM, gfxM } };
 let terrain3d = null, tanks3d = null, hud = null, fx = null, audio = null, menu = null;
 const tmpO = new THREE.Vector3(), tmpD = new THREE.Vector3(), pivot = new THREE.Vector3(), sight = new THREE.Vector3();
 
@@ -55,14 +56,15 @@ function StubWorld(opts) {
 export function startBattle(opts = {}) {
    stopBattle();
    for (const k in opts) if (opts[k] === undefined) delete opts[k];
-   const world = G.world = new (stateM.World || StubWorld)({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 1, ...opts });
+   const world = G.world = new (stateM.World || StubWorld)({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
+   G.battleOpts = { ...opts }; G.endT = 0; G.paused = false;
    const th = themeOf(world.mapId ?? opts.mapId);
    R.setTheme(th); sky.setTheme(th, R.sunDir);
    terrain3d = new Terrain3D(R.scene, world.terrain, th, q);
    if (tanks3dM.Tanks3D) tanks3d = new tanks3dM.Tanks3D(R.scene, world);
    if (fxM.FX) fx = new fxM.FX(R.scene, world, q);
    if (hudM.HUD) hud = new hudM.HUD(document.getElementById('hudc'), world, { armor: armorM, cam: tcam, R });
-   if (audioM.Audio && !audio) audio = new audioM.Audio();
+   getAudio();
    audio?.start?.(world);
    G.fx = fx; G.hud = hud; G.audio = audio;
    tcam.reset(world.player?.yaw ?? 0);
@@ -71,9 +73,37 @@ export function startBattle(opts = {}) {
 }
 export function stopBattle() {
    input.enabled = false; input.unlock();
-   terrain3d && R.scene.remove(terrain3d.group); tanks3d?.dispose?.(); fx?.dispose?.(); hud?.dispose?.(); audio?.stop?.();
-   terrain3d = tanks3d = fx = hud = null; G.world = null;
+   terrain3d?.dispose(); tanks3d?.dispose?.(); fx?.dispose?.(); hud?.dispose?.(); audio?.stop?.();
+   terrain3d = tanks3d = fx = hud = null; G.world = null; G.paused = false; G.aimTarget = null;
+   document.getElementById('scope').classList.remove('on');
+   const hc = document.getElementById('hudc'); hc.getContext('2d')?.clearRect(0, 0, hc.width, hc.height);
 }
+function getAudio() { if (audioM.Audio && !audio) audio = G.audio = new audioM.Audio(); return audio; }
+// battle over (world.phase won/lost/draw): short pause on the battlefield, then the results screen
+function finishBattle() {
+   const w = G.world; if (!w) return;
+   const snap = { ...G.battleOpts, mapId: w.mapId ?? G.battleOpts.mapId, playerCls: w.player?.cls ?? G.battleOpts.playerCls, phase: w.phase,
+      result: w.result ? { ...w.result } : null, stats: w.stats ? { ...w.stats } : null };
+   menu?.applyResult?.(snap);
+   G.lastResult = snap;
+   stopBattle();
+   if (menu) menu.showResults(snap);
+}
+function setPaused(on) {
+   if (!G.world || !menu) return;
+   G.paused = on; G.pauseT = performance.now();
+   input.enabled = !on; if (on) { input.unlock(); input.keys.clear(); input.lmb = input.rmb = false; }
+   menu.pause(on);
+}
+function leaveBattle() { stopBattle(); menu?.show('garage'); }
+G.finishBattle = finishBattle; G.setPaused = setPaused; G.leaveBattle = leaveBattle;
+addEventListener('keydown', (e) => {
+   if (e.code !== 'Escape' || !G.world || !menu) return;
+   if (performance.now() - (G.pauseT || 0) < 300) return;
+   if (document.getElementById('pz-settings')?.classList.contains('on')) { document.getElementById('pz-settings').classList.remove('on'); return; }
+   setPaused(!G.paused);
+});
+document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && G.world && !G.paused && input.enabled && G.world.phase !== 'won' && G.world.phase !== 'lost' && G.world.phase !== 'draw') setPaused(true); });
 G.startBattle = startBattle; G.stopBattle = stopBattle;
 
 // ---- aim: camera ray → first hit on terrain / objects / other tanks ----
@@ -106,7 +136,7 @@ function controls(world, p, dt) {
    if (input.wheel && tcam.wheel(input.wheel)) audio?.ui?.('scope');
    if (input.hit('ShiftLeft') || input.hit('ShiftRight')) { tcam.toggleScope(); audio?.ui?.('scope'); }
    tcam.setFreeLook(input.rmb);
-   tcam.look(input.dx, input.dy, input.sens);
+   tcam.look(input.dx, input.invert ? -input.dy : input.dy, input.sens);
    if (!p?.alive) return;
    const k = (c) => input.down(c);
    const inp = p.input ??= {};
@@ -130,8 +160,10 @@ function frame(now) {
    const dt = Math.min(0.1, (now - last) / 1000); last = now;
    fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { G.fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
    const world = G.world;
-   if (world) {
+   if (world && G.paused) { /* frozen: render only */ }
+   else if (world) {
       const p = world.player;
+      if (/^(won|lost|draw)$/.test(world.phase) || world.result) { G.endT += dt; if (G.endT > 4 && menu) { finishBattle(); return; } }
       controls(world, p, dt);
       if (p) {
          pivot.set(p.pos.x, p.pos.y + (p.cfg?.height ?? 2.4) + 0.4, p.pos.z);
@@ -150,7 +182,7 @@ function frame(now) {
       if (p) R.followShadow(p.pos.x, p.pos.z, p.pos.y);
       document.getElementById('scope').classList.toggle('on', tcam.scoped);
       if (tanks3d?.setHidden) tanks3d.setHidden(p, tcam.scoped);
-   }
+   } else menu?.update?.(dt);
    sky.update(R.camera, now / 1000);
    R.render();
    hud?.draw?.(dt);
@@ -159,7 +191,13 @@ function frame(now) {
 }
 
 document.getElementById('boot').remove();
-if (menuM.Menu) { menu = new menuM.Menu(document.getElementById('menu'), { startBattle, R, sky, mods: G.mods }); }
-if (params.has('autostart') || !menu) startBattle({ mapId: params.get('map') || undefined, playerCls: params.get('tank') || undefined, mode: params.get('mode') || undefined });
-else menu.show();
+if (menuM.Menu) {
+   try {
+      menu = G.menu = new menuM.Menu(document.getElementById('menu'), { startBattle, R, sky, input, q, mods: G.mods, themeOf, getAudio,
+         saveQuality: gfxM.saveQuality, loadQualityId: () => { try { return localStorage.getItem('wartanks.gfx.v1'); } catch { return null; } },
+         resume: () => setPaused(false), leave: leaveBattle });
+   } catch (e) { console.error('[main] menu failed', e); menu = null; }
+}
+if (params.has('autostart') || !menu) startBattle({ mapId: params.get('map') || undefined, playerCls: params.get('tank') || undefined, mode: params.get('mode') || undefined, difficulty: params.get('diff') || undefined });
+else menu.show(params.get('screen') || 'title');
 requestAnimationFrame(frame);

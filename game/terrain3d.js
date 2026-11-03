@@ -66,7 +66,7 @@ function lump(acc, r, x, y, z, sx, sy, sz, seed, shade) {
    const ico = new THREE.IcosahedronGeometry(r, 1), pa = ico.attributes.position;
    for (let i = 0; i < pa.count; i++) { const k = 0.82 + hash(pa.getX(i) * 5 + seed, pa.getZ(i) * 5 + pa.getY(i)) * 0.36; pa.setXYZ(i, pa.getX(i) * k, pa.getY(i) * k, pa.getZ(i) * k); }
    ico.computeVertexNormals();
-   const g = ico.toNonIndexed(); g.applyMatrix4(mat(x, y, z, seed, sx, sy, sz));
+   const g = ico.index ? ico.toNonIndexed() : ico; g.applyMatrix4(mat(x, y, z, seed, sx, sy, sz));
    const p = g.attributes.position.array, nn = g.attributes.normal.array;
    for (let i = 0; i < p.length; i += 3) {
       acc.p.push(p[i], p[i + 1], p[i + 2]); acc.n.push(nn[i], nn[i + 1], nn[i + 2]);
@@ -344,6 +344,12 @@ export class Terrain3D {
       this.group.add(im);
    }
 
+   dispose() {
+      this.scene.remove(this.group);
+      const seen = new Set();
+      this.group.traverse((o) => { for (const r of [o.geometry, ...(Array.isArray(o.material) ? o.material : [o.material])]) if (r && !seen.has(r)) { seen.add(r); r.map?.dispose?.(); r.dispose?.(); } });
+      this.detail?.dispose?.();
+   }
    update(cam) {
       const t = this.t;
       if ((t.version ?? 0) !== this.version) {
