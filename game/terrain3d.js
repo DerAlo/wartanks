@@ -38,7 +38,7 @@ function detailTexture() {
 
 // --- tiny geometry merger: non-indexed, position/normal/color ---
 function addGeo(acc, geo, matrix, color, jitter = 0) {
-   const g = geo.index ? geo.toNonIndexed() : geo;
+   const g = geo.index ? geo.toNonIndexed() : geo.clone();   // never transform the shared source (roof prism) in place
    g.applyMatrix4(matrix);
    const p = g.attributes.position.array, nn = g.attributes.normal.array;
    for (let i = 0; i < p.length; i += 3) {
