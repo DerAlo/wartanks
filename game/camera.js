@@ -3,7 +3,7 @@
 // The view direction (yaw/pitch, world) IS the aim ray; right mouse = free look (aim frozen).
 import * as THREE from '../vendor/three/three.module.min.js';
 
-const TP_DIST = [26, 19, 14, 10.5, 8];
+const TP_DIST = [30, 22, 16, 12, 9];
 export const MAGS = [2, 4, 8, 16];
 const BASE_FOV = 60;
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
@@ -58,7 +58,9 @@ export class TankCamera {
          fov = 2 * Math.atan(Math.tan(BASE_FOV * Math.PI / 360) / (this.zoom * 1.25)) * 180 / Math.PI;
       } else {
          // orbit: behind and above the pivot, looking along d; the tank sits low in frame
-         const up = 1.1 + this.dist * 0.07;
+         // WoT-like: camera raised above the orbit line so the own tank sits in the lower-middle
+         // third while the view (= aim) direction stays unchanged
+         const up = 1.6 + this.dist * 0.2;
          cam.position.set(pivot.x - d.x * this.dist, pivot.y + up - d.y * this.dist, pivot.z - d.z * this.dist);
          const g = heightAt(cam.position.x, cam.position.z) + 1.0;
          if (cam.position.y < g) cam.position.y = g;

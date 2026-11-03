@@ -59,22 +59,41 @@ const newAcc = () => ({ p: [], n: [], c: [] });
 const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), S = new THREE.Vector3(), E = new THREE.Euler();
 const mat = (x, y, z, ry = 0, sx = 1, sy = 1, sz = 1, rx = 0, rz = 0) => M.compose(V.set(x, y, z), Q.setFromEuler(E.set(rx, ry, rz)), S.set(sx, sy, sz)).clone();
 
-function treeGeo(kind, pal) {
-   const acc = newAcc(), trunk = C(0x4a3826);
-   if (kind === 'pine') {
-      addGeo(acc, new THREE.CylinderGeometry(0.18, 0.3, 4, 5), mat(0, 2, 0), trunk);
-      for (let i = 0; i < 3; i++) addGeo(acc, new THREE.ConeGeometry(2.6 - i * 0.65, 4.2 - i * 0.6, 7), mat(0, 3.6 + i * 2.4, 0, i), C(0xffffff), 0.25);
-   } else {
-      addGeo(acc, new THREE.CylinderGeometry(0.2, 0.35, 4.5, 5), mat(0, 2.2, 0), trunk);
-      const ico = new THREE.IcosahedronGeometry(2.6, 1), pa = ico.attributes.position;
-      for (let i = 0; i < pa.count; i++) { const k = 0.8 + hash(pa.getX(i) * 5, pa.getZ(i) * 5 + pa.getY(i)) * 0.4; pa.setXYZ(i, pa.getX(i) * k, pa.getY(i) * k, pa.getZ(i) * k); }
-      ico.computeVertexNormals();
-      addGeo(acc, ico, mat(0, 6, 0, 0, 1.15, 1, 1.15), C(0xffffff), 0.3);
-      addGeo(acc, ico.clone(), mat(1.3, 4.9, 0.6, 1, 0.75, 0.7, 0.75), C(0xffffff), 0.3);
-      addGeo(acc, ico.clone(), mat(-1.1, 5.1, -0.8, 2, 0.7, 0.7, 0.7), C(0xffffff), 0.3);
+// Trees: crown and trunk are separate instanced meshes (instance colour tints only the crown).
+// Crown = several jittered lumps with baked light/dark vertex shading; vertex colours ~1 so the
+// instance colour sets the hue.
+function lump(acc, r, x, y, z, sx, sy, sz, seed, shade) {
+   const ico = new THREE.IcosahedronGeometry(r, 1), pa = ico.attributes.position;
+   for (let i = 0; i < pa.count; i++) { const k = 0.82 + hash(pa.getX(i) * 5 + seed, pa.getZ(i) * 5 + pa.getY(i)) * 0.36; pa.setXYZ(i, pa.getX(i) * k, pa.getY(i) * k, pa.getZ(i) * k); }
+   ico.computeVertexNormals();
+   const g = ico.toNonIndexed(); g.applyMatrix4(mat(x, y, z, seed, sx, sy, sz));
+   const p = g.attributes.position.array, nn = g.attributes.normal.array;
+   for (let i = 0; i < p.length; i += 3) {
+      acc.p.push(p[i], p[i + 1], p[i + 2]); acc.n.push(nn[i], nn[i + 1], nn[i + 2]);
+      // underside darker, sun-ish top lighter, per-face speckle
+      const k = shade * (0.78 + (p[i + 1] - y) / (r * sy) * 0.16 + (hash(p[i] * 2.3, p[i + 2] * 1.9 + seed) - 0.5) * 0.22);
+      acc.c.push(k, k * 1.02, k * 0.94);
    }
-   // trunk stays brown: mark trunk vertices by colour (instance colour multiplies all, so pre-divide)
-   return mergeAcc(acc);
+}
+function treeGeo(kind) {
+   const crown = newAcc(), trunk = newAcc(), white = C(0xffffff);
+   if (kind === 'pine') {
+      addGeo(trunk, new THREE.CylinderGeometry(0.14, 0.32, 6, 6), mat(0, 3, 0), white, 0.15);
+      for (let i = 0; i < 5; i++) {
+         const cone = new THREE.ConeGeometry(2.7 - i * 0.48, 2.9 - i * 0.2, 9, 1, true), pa = cone.attributes.position;
+         for (let v = 0; v < pa.count; v++) if (pa.getY(v) < 0) { const k = 0.85 + hash(v, i) * 0.3; pa.setXYZ(v, pa.getX(v) * k, pa.getY(v) - hash(i, v) * 0.35, pa.getZ(v) * k); }
+         cone.computeVertexNormals();
+         addGeo(crown, cone, mat(0, 2.6 + i * 1.45, 0, i * 0.7), white.clone().multiplyScalar(0.8 + i * 0.06), 0.18);
+      }
+   } else {
+      addGeo(trunk, new THREE.CylinderGeometry(0.18, 0.36, 4.6, 6), mat(0, 2.3, 0), white, 0.15);
+      addGeo(trunk, new THREE.CylinderGeometry(0.07, 0.13, 2.4, 4), mat(0.6, 4.2, 0.2, 0, 1, 1, 1, 0, -0.7), white);
+      addGeo(trunk, new THREE.CylinderGeometry(0.07, 0.12, 2.2, 4), mat(-0.5, 4.3, -0.3, 0, 1, 1, 1, 0.3, 0.7), white);
+      const L = [[0, 6.3, 0, 2.2, 1.05], [1.4, 5.3, 0.5, 1.6, 0.9], [-1.3, 5.5, -0.6, 1.65, 0.92], [0.3, 5.1, -1.4, 1.5, 0.85],
+         [-0.4, 5.0, 1.4, 1.5, 0.88], [0.7, 7.3, 0.3, 1.4, 1.08], [-0.8, 6.9, 0.2, 1.3, 1.02]];
+      L.forEach(([x, y, z, r, sh], i) => lump(crown, r, x, y, z, 1.1, 0.85, 1.1, i * 1.7, sh));
+   }
+   return [mergeAcc(crown), mergeAcc(trunk)];
 }
 
 export class Terrain3D {
@@ -82,6 +101,7 @@ export class Terrain3D {
       this.scene = scene; this.t = terrain; this.q = q;
       this.group = new THREE.Group(); scene.add(this.group);
       const pid = theme.palette && PALETTES[theme.palette] ? theme.palette : (/winter|schnee/i.test(theme.id || '') ? 'winter' : /steppe/i.test(theme.id || '') ? 'steppe' : 'summer');
+      this.winter = pid === 'winter';
       this.pal = { ...PALETTES[pid], ...(theme.colors ? Object.fromEntries(Object.entries(theme.colors).map(([k, v]) => [k, C(v)])) : {}) };
       this.detail = detailTexture();
       this.groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.detail, roughness: 0.97, metalness: 0 });
@@ -167,7 +187,7 @@ export class Terrain3D {
       const t = this.t, P = this.pal, objs = t.objects || [], veg = this.q.veg ?? 1;
       const kinds = { tree: [], pine: [], bush: [], rock: [] };
       for (const o of objs) {
-         if (o.kind === 'tree') ((o.seed ?? hash(o.x, o.z) * 1e4) % 3 < 1.2 || this.pal === PALETTES.winter ? kinds.pine : kinds.tree).push(o);
+         if (o.kind === 'tree') ((o.seed ?? hash(o.x, o.z) * 1e4) % 3 < 1.2 || this.winter ? kinds.pine : kinds.tree).push(o);
          else if (o.kind === 'bush') kinds.bush.push(o);
          else if (o.kind === 'rock') kinds.rock.push(o);
       }
@@ -175,23 +195,25 @@ export class Terrain3D {
       const rockGeo = new THREE.DodecahedronGeometry(1, 0); rockGeo.translate(0, 0.25, 0);
       for (const g of [bushGeo, rockGeo]) g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));
       const defs = {
-         tree: [treeGeo('tree'), P.tree, 6.5, true], pine: [treeGeo('pine'), P.pine, 9, true],
-         bush: [bushGeo, P.bush, 1.6, false], rock: [rockGeo, P.rock, 1.4, true],
+         tree: [...treeGeo('tree'), P.tree, 6.5, true], pine: [...treeGeo('pine'), P.pine, 9, true],
+         bush: [bushGeo, null, P.bush, 1.6, false], rock: [rockGeo, null, P.rock, 1.4, true],
       };
       this.inst = {};
       for (const k in kinds) {
          const list = kinds[k].filter((o, i) => o.solid || k !== 'bush' || hash(i, 3) < Math.max(0.6, veg));
          if (!list.length) continue;
-         const [geo, color, nominal, shadow] = defs[k];
+         const [geo, trunkGeo, color, nominal, shadow] = defs[k];
          const im = new THREE.InstancedMesh(geo, this.vegMat, list.length);
+         let tm = null;
+         if (trunkGeo) { tm = new THREE.InstancedMesh(trunkGeo, this.trunkMat ??= new THREE.MeshStandardMaterial({ vertexColors: true, color: 0x4a3a2a, roughness: 0.95, flatShading: true }), list.length); tm.castShadow = true; tm.receiveShadow = true; this.group.add(tm); }
          im.castShadow = shadow; im.receiveShadow = true;
          const cc = new THREE.Color();
          list.forEach((o, i) => {
             const sz = (o.h || nominal) / nominal;
-            cc.copy(color).multiplyScalar(0.8 + hash(o.x, o.z) * 0.4); if (k === 'tree' && hash(o.z, o.x) > 0.5) cc.lerp(P.tree2, 0.6);
+            cc.copy(color).multiplyScalar(0.82 + hash(o.x, o.z) * 0.36); if (k === 'tree') cc.lerp(P.tree2, hash(o.z, o.x)); if (k === 'tree' && hash(o.x * 3, o.z) > 0.85) cc.lerp(C(0x8a7a34), 0.35);
             im.setColorAt(i, cc);
          });
-         this.inst[k] = { im, list };
+         this.inst[k] = { im, tm, list };
          this._placeInstances(k);
          this.group.add(im);
       }
@@ -199,7 +221,7 @@ export class Terrain3D {
    }
 
    _placeInstances(k) {
-      const { im, list } = this.inst[k], nominal = k === 'tree' ? 6.5 : k === 'pine' ? 9 : k === 'bush' ? 1.6 : 1.4;
+      const { im, tm, list } = this.inst[k], nominal = k === 'tree' ? 6.5 : k === 'pine' ? 9 : k === 'bush' ? 1.6 : 1.4;
       list.forEach((o, i) => {
          const y = this.t.heightAt(o.x, o.z), r = hash(o.x * 1.3, o.z);
          let sx, sy, sz;
@@ -210,9 +232,10 @@ export class Terrain3D {
             if (k === 'tree' || k === 'pine') M.compose(V.set(o.x, y + 0.4, o.z), Q.setFromEuler(E.set(Math.PI / 2 - 0.08, o.fallYaw ?? r * 6.28, 0, 'YXZ')), S.set(sx, sy, sz));
             else M.compose(V.set(o.x, y - 0.3, o.z), Q.identity(), S.set(sx, 0.25 * sy, sz));
          } else M.compose(V.set(o.x, y - (k === 'rock' ? 0.3 : 0.1), o.z), Q.setFromEuler(E.set(0, o.yaw ?? r * 6.28, 0)), S.set(sx, sy, sz));
-         im.setMatrixAt(i, M);
+         im.setMatrixAt(i, M); tm?.setMatrixAt(i, M);
       });
       im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere?.();
+      if (tm) { tm.instanceMatrix.needsUpdate = true; tm.computeBoundingSphere?.(); }
    }
 
    buildStructures() {
@@ -227,13 +250,25 @@ export class Terrain3D {
          -0.5, 0, 0.5, -0.5, 0, -0.5, -0.5, 1, 0, 0.5, 0, -0.5, 0.5, 0, 0.5, 0.5, 1, 0], 3));
       roof.computeVertexNormals();
       for (const o of t.objects || []) {
-         if (o.kind !== 'house' && o.kind !== 'wall' && o.kind !== 'fence') continue;
+         if (o.kind !== 'house' && o.kind !== 'church' && o.kind !== 'wall' && o.kind !== 'fence') continue;
          o.d ??= 0.6; o.w ??= 2;
-         const y = Math.min(t.heightAt(o.x - o.w / 2, o.z), t.heightAt(o.x + o.w / 2, o.z), t.heightAt(o.x, o.z - o.d / 2), t.heightAt(o.x, o.z + o.d / 2)) - 0.3;
+         const y = (o.kind === 'house' || o.kind === 'church') && o.y != null ? o.y - 0.4 : Math.min(t.heightAt(o.x - o.w / 2, o.z), t.heightAt(o.x + o.w / 2, o.z), t.heightAt(o.x, o.z - o.d / 2), t.heightAt(o.x, o.z + o.d / 2)) - 0.3;
          const r = hash(o.x, o.z), yaw = o.yaw || 0, cos = Math.cos(yaw), sin = Math.sin(yaw);
          const at = (lx, ly, lz) => [o.x + lx * cos + lz * sin, y + ly, o.z - lx * sin + lz * cos];
-         if (o.kind === 'house') {
-            const h = o.h || 6, wc = wallC[Math.floor(r * 4)], rc = roofC[Math.floor(hash(o.z, o.x) * 3)];
+         if (o.kind === 'church' && o.alive !== false) {
+            const h = o.h || 11, wc = C(0xcac2ab), rc = C(0x5b5148), tw = Math.min(o.w, o.d) * 0.45;
+            // nave along the long side, tower at one end
+            const long = o.d >= o.w, L = long ? o.d : o.w, W = long ? o.w : o.d, ry = long ? yaw + Math.PI / 2 : yaw;
+            addGeo(acc, box, mat(...at(0, h * 0.3, 0), ry, L, h * 0.6 + 0.4, W), wc, 0.06);
+            addGeo(acc, roof, mat(...at(0, h * 0.6 + 0.2, 0), ry, L + 0.6, h * 0.35, W + 0.6), rc, 0.12);
+            const tl = long ? [0, 0, L / 2 - tw / 2] : [L / 2 - tw / 2, 0, 0];
+            addGeo(acc, box, mat(...at(tl[0], h * 0.75, tl[2]), yaw, tw, h * 1.5, tw), wc, 0.05);
+            const spire = new THREE.ConeGeometry(tw * 0.75, h * 0.7, 4); spire.rotateY(Math.PI / 4);
+            addGeo(acc, spire, mat(...at(tl[0], h * 1.5 + h * 0.35, tl[2]), yaw), C(0x4c5a52));
+            continue;
+         }
+         if (o.kind === 'house' || o.kind === 'church') {
+            const h = o.h || 6, wc = wallC[(o.style ?? Math.floor(r * 4)) % 4], rc = roofC[Math.floor(hash(o.z, o.x) * 3)];
             if (o.alive === false) {
                addGeo(acc, box, mat(...at(0, h * 0.12, 0), yaw, o.w, h * 0.3, o.d), wc.clone().multiplyScalar(0.6), 0.4);
                addGeo(acc, box, mat(...at(o.w * 0.3, h * 0.25, 0), yaw, 0.6, h * 0.5, o.d * 0.9, 0, 0.1), wc.clone().multiplyScalar(0.7), 0.3);
@@ -242,7 +277,10 @@ export class Terrain3D {
             const wallH = h * 0.62;
             addGeo(acc, box, mat(...at(0, wallH / 2 + 0.3, 0), yaw, o.w, wallH + 0.6, o.d), wc, 0.08);
             addGeo(acc, box, mat(...at(0, 0.35, 0), yaw, o.w + 0.15, 0.7, o.d + 0.15), C(0x6c6558));
-            addGeo(acc, roof, mat(...at(0, wallH + 0.6, 0), yaw, o.w + 0.6, h - wallH, o.d + 0.6), rc, 0.15);
+            if (o.roof === 'hip') {
+               const hip = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1); hip.rotateY(Math.PI / 4); hip.translate(0, 0.5, 0);
+               addGeo(acc, hip, mat(...at(0, wallH + 0.6, 0), yaw, o.w + 0.7, h - wallH, o.d + 0.7), rc, 0.15);
+            } else addGeo(acc, roof, mat(...at(0, wallH + 0.6, 0), yaw, o.w + 0.6, h - wallH, o.d + 0.6), rc, 0.15);
             // windows: dark insets on both long sides
             const nw = Math.max(1, Math.floor(o.w / 3.2));
             for (let i = 0; i < nw; i++) for (const s of [-1, 1]) {
@@ -266,26 +304,42 @@ export class Terrain3D {
       this.group.add(this.struct);
    }
 
+   // Grass: clumps of 9 thin blades, instanced in a field that wraps around the camera. The
+   // vertex shader shrinks each clump to nothing between 34 and 54 m so the edge never pops.
    buildGrass(n) {
-      if (!n || this.pal === PALETTES.winter) return;
+      const winter = this.winter;
+      if (!n) return;
+      if (winter) n = Math.round(n * 0.35);
       const g = new THREE.BufferGeometry(), p = [], c = [];
-      for (let b = 0; b < 5; b++) {
-         const a = b * 2.4, ox = Math.cos(a) * 0.18, oz = Math.sin(a) * 0.18, w = 0.045, h = 0.22 + hash(b, 1) * 0.22;
-         const dx = Math.cos(a + 1.57) * w, dz = Math.sin(a + 1.57) * w, lean = 0.15;
+      for (let b = 0; b < 9; b++) {
+         const a = b * 2.39996 + hash(b, 7), rr = 0.05 + hash(b, 2) * 0.16, ox = Math.cos(a) * rr, oz = Math.sin(a) * rr;
+         const w = 0.018 + hash(b, 5) * 0.01, h = (0.13 + hash(b, 1) * 0.17) * (winter ? 0.8 : 1);
+         const fa = a + 1.57 + hash(b, 3), dx = Math.cos(fa) * w, dz = Math.sin(fa) * w, lean = 0.05 + hash(b, 4) * 0.09;
          const A = [ox - dx, 0, oz - dz], B = [ox + dx, 0, oz + dz], T = [ox + Math.cos(a) * lean, h, oz + Math.sin(a) * lean];
          p.push(...A, ...B, ...T, ...B, ...A, ...T);   // both windings: no back-face normal flip
-         for (let k = 0; k < 2; k++) c.push(0.62, 0.66, 0.58, 0.62, 0.66, 0.58, 0.98, 1.02, 0.9);
+         const v = 0.92 + hash(b, 6) * 0.14;
+         for (let k = 0; k < 2; k++) c.push(0.7 * v, 0.72 * v, 0.66 * v, 0.7 * v, 0.72 * v, 0.66 * v, 1.0 * v, 1.02 * v, 0.92 * v);
       }
       g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
       g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(p.length).map((_, i) => i % 3 === 1 ? 1 : 0), 3)); // up-facing: lit like the ground
       const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+      m.onBeforeCompile = (sh) => {
+         sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `
+            vec3 transformed = vec3(position);
+            #ifdef USE_INSTANCING
+               vec3 gOrg = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+               transformed *= 1.0 - smoothstep(34.0, 54.0, distance(gOrg.xz, cameraPosition.xz));
+            #endif`);
+      };
       const im = this.grass = new THREE.InstancedMesh(g, m, n);
       im.frustumCulled = false;
       this.grassSpan = 110; this.grassBase = new Float32Array(n * 2); this.grassCell = new Int32Array(n * 2).fill(-99999);
-      const col = new THREE.Color();
+      const col = new THREE.Color(), straw = C(0xb7a77a);
       for (let i = 0; i < n; i++) {
          this.grassBase[i * 2] = hash(i, 0.31) * this.grassSpan; this.grassBase[i * 2 + 1] = hash(0.71, i) * this.grassSpan;
-         col.copy(this.pal.grass).lerp(this.pal.grass2, hash(i, 9)).multiplyScalar(1.05); im.setColorAt(i, col);
+         if (winter) col.copy(straw).multiplyScalar(0.8 + hash(i, 9) * 0.25);
+         else col.copy(this.pal.grass).lerp(this.pal.grass2, hash(i, 9) * 0.7).multiplyScalar(0.98 + hash(i, 4) * 0.1);
+         im.setColorAt(i, col);
       }
       this.group.add(im);
    }

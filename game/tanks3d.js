@@ -10,7 +10,7 @@ const hash = (a, b = 0) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5
 
 // ---------------- textures / materials (shared) ----------------
 const CAMO = {
-   de: { base: '#b39a5c', spots: ['#5c6236', '#6e4a2c'], style: 'streak' },
+   de: { base: '#a8935e', spots: ['#737149', '#7d6044'], style: 'streak' },
    su: { base: '#4a5034', spots: ['#41472e', '#555b3c'], style: 'plain' },
    us: { base: '#585a39', spots: ['#4e5133', '#62643f'], style: 'plain' },
    uk: { base: '#6b6847', spots: ['#4d4a34', '#7a7452'], style: 'blotch' },
@@ -19,7 +19,7 @@ function camoTexture(n) {
    const c = CAMO[n] || CAMO.de, cv = document.createElement('canvas'); cv.width = cv.height = 256;
    const g = cv.getContext('2d'); g.fillStyle = c.base; g.fillRect(0, 0, 256, 256);
    for (let i = 0; i < (c.style === 'plain' ? 26 : 34); i++) {
-      g.fillStyle = c.spots[i % 2]; g.globalAlpha = c.style === 'plain' ? 0.35 : 0.95;
+      g.fillStyle = c.spots[i % 2]; g.globalAlpha = c.style === 'plain' ? 0.35 : c.style === 'streak' ? 0.62 : 0.8;
       const x = hash(i, 1) * 256, y = hash(i, 2) * 256, r = 10 + hash(i, 3) * 26;
       g.beginPath();
       for (let k = 0; k < 9; k++) {
