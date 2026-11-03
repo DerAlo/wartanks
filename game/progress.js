@@ -8,6 +8,8 @@
 //   calcRewards(world) -> { xp, credits, freeXP, breakdown }     (player, from world.stats + result)
 //   applyRewards(p, tankId, rewards)
 //   exportProfile(p) -> string, importProfile(str) -> profile (throws on garbage)
+//   recordCampaign(p, opId, result) / campaignUnlocked(p, opId, order)   campaign ('Feldzug') records:
+//   p.campaign[opId] = { done, stars, bestTime, tries }
 import { TANKS, TANK_LIST, NATION_ORDER } from './config.js';
 
 const KEY = 'wartanks.profile.v1';
@@ -24,7 +26,7 @@ export function techTree() {
 const prevOf = (id) => { const ch = techTree()[TANKS[id].nation]; const i = ch.indexOf(id); return i > 0 ? ch[i - 1] : null; };
 
 export function newProfile() {
-   const p = { v: 1, credits: 150000, freeXP: 0, tanks: {}, selected: null, battles: 0, wins: 0 };
+   const p = { v: 1, credits: 150000, freeXP: 0, tanks: {}, selected: null, battles: 0, wins: 0, campaign: {} };
    for (const id of TANK_LIST) p.tanks[id] = { xp: 0, owned: false, researched: false, battles: 0, wins: 0, dmg: 0, kills: 0 };
    for (const ch of Object.values(techTree())) if (ch.length) { p.tanks[ch[0]].owned = p.tanks[ch[0]].researched = true; p.selected ??= ch[0]; }
    return p;
@@ -36,6 +38,9 @@ function sanitize(p) {
    for (const id of TANK_LIST) if (p.tanks?.[id]) out.tanks[id] = { ...base.tanks[id], ...p.tanks[id] };
    if (!TANKS[out.selected] || !out.tanks[out.selected].owned) out.selected = base.selected;
    out.credits = Math.max(0, +out.credits || 0); out.freeXP = Math.max(0, +out.freeXP || 0);
+   out.campaign = {};                                   // old profiles have none
+   if (p.campaign && typeof p.campaign === 'object') for (const [id, r] of Object.entries(p.campaign)) if (r && typeof r === 'object')
+      out.campaign[id] = { done: !!r.done, stars: Math.max(0, Math.min(3, r.stars | 0)), bestTime: Number.isFinite(r.bestTime) ? r.bestTime : null, tries: r.tries | 0 };
    return out;
 }
 export function loadProfile() {
@@ -104,6 +109,29 @@ export function applyRewards(p, tankId, r) {
    if (r.dmg) t.dmg += r.dmg; if (r.kills) t.kills += r.kills;
    saveProfile(p);
    return p;
+}
+
+// ---------- campaign ('Feldzug'): one record per operation ----------
+/** Store the outcome of a campaign battle (world.result with .campaign); keeps the best stars / time. */
+export function recordCampaign(p, opId, result) {
+   if (!opId) return p;
+   p.campaign ??= {};
+   const r = p.campaign[opId] ??= { done: false, stars: 0, bestTime: null, tries: 0 };
+   r.tries++;
+   if (result?.outcome === 'win') {
+      r.done = true;
+      r.stars = Math.max(r.stars, Math.max(0, Math.min(3, result.campaign?.stars | 0)));
+      const t = result.time;
+      if (Number.isFinite(t) && (r.bestTime == null || t < r.bestTime)) r.bestTime = Math.round(t);
+   }
+   saveProfile(p);
+   return p;
+}
+/** First operation is always open; op n+1 opens once op n has been won. `order` = OP_LIST. */
+export function campaignUnlocked(p, opId, order = []) {
+   const i = order.indexOf(opId);
+   if (i <= 0) return true;
+   return !!p.campaign?.[order[i - 1]]?.done;
 }
 
 const b64e = (s) => (typeof btoa === 'function' ? btoa(unescape(encodeURIComponent(s))) : Buffer.from(s, 'utf8').toString('base64'));

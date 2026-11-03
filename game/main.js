@@ -199,6 +199,6 @@ if (menuM.Menu) {
          resume: () => setPaused(false), leave: leaveBattle });
    } catch (e) { console.error('[main] menu failed', e); menu = null; }
 }
-if (params.has('autostart') || !menu) startBattle({ mapId: params.get('map') || undefined, playerCls: params.get('tank') || undefined, mode: params.get('mode') || undefined, difficulty: params.get('diff') || undefined });
+if (params.has('autostart') || !menu) startBattle({ mapId: params.get('map') || undefined, playerCls: params.get('tank') || undefined, mode: params.get('mode') || undefined, difficulty: params.get('diff') || undefined, op: params.get('op') || undefined });
 else menu.show(params.get('screen') || 'title');
 requestAnimationFrame(frame);

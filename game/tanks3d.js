@@ -206,7 +206,7 @@ function buildHull(S) {
    if (S.mantlet && S.mantlet.mount === 'hull') { const m = S.mantlet; A.box(m.x, m.y, m.z, m.w, m.h, m.d, PAINT); }
    return A.build();
 }
-function buildTurret(S) {
+function buildTurret(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
    const A = new Acc(), T = S.turret, base = T.base, top = T.top, n = base.length;
    const ctr = [base.reduce((s, p) => s + p[0], 0) / n, T.h / 2, base.reduce((s, p) => s + p[1], 0) / n];
    const B = base.map(([x, z]) => [x, 0, z]), U = top.map(([x, z]) => [x, T.h, z]);
@@ -227,7 +227,7 @@ function buildTurret(S) {
    if (S.mantlet && S.mantlet.mount !== 'hull') { const m = S.mantlet; A.box(m.x, m.y, m.z, m.w, m.h, m.d, PAINT); }
    return A.build();
 }
-function buildGun(S) {
+function buildGun(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
    const A = new Acc(), G = S.gun, r = Math.max(0.04, G.cal / 1000 * 0.72);
    const m = S.mantlet, start = m ? -(Math.abs(m.z - G.pivot.z) + m.d / 2) : 0;   // barrel leaves the mantlet face
    A.cyl(0, 0, start + 0.1, r * 2.3, r * 2.5, 0.45, PAINT, 'z', 12);
@@ -282,8 +282,258 @@ function geometryFor(cfg, key) {
    GEO_CACHE.set(key, g); return g;
 }
 
+// ---------------- campaign emplacements (cfg.site): bunker, PaK 40, Torpedoboot ----------------
+// Same frame and armour data as the tanks (cfg.hull profile / mantlet / gun pivot / turret), so the
+// visible concrete, shield and hull sit where the shells test; earth, trails and superstructure are
+// decoration around that volume. No tracks; vertex colours on one shared material.
+const CONC = [0.56, 0.55, 0.51], CONC_D = [0.44, 0.43, 0.4], EARTH = [0.19, 0.16, 0.11], GRASS = [0.22, 0.3, 0.12], GRASS2 = [0.3, 0.36, 0.15];
+const FELD = [0.4, 0.42, 0.36], PAKG = [0.5, 0.48, 0.38], RUBBER = [0.1, 0.1, 0.1];
+const KM = [0.6, 0.62, 0.63], KM_D = [0.46, 0.48, 0.5], KM_DECK = [0.36, 0.36, 0.35], KM_BOOT = [0.12, 0.12, 0.13], KM_RED = [0.45, 0.16, 0.12], GLASS = [0.1, 0.13, 0.15];
+// convex 2D polygon (u,v) extruded between a0 and a1; map(u, v, a) -> [x, y, z]
+function extrude(A, poly, a0, a1, map, col) {
+   const P0 = poly.map(([u, v]) => map(u, v, a0)), P1 = poly.map(([u, v]) => map(u, v, a1)), n = poly.length;
+   const ctr = [0, 0, 0]; for (const p of P0.concat(P1)) { ctr[0] += p[0] / (2 * n); ctr[1] += p[1] / (2 * n); ctr[2] += p[2] / (2 * n); }
+   for (let i = 0; i < n; i++) { const j = (i + 1) % n; A.quad(P0[i], P0[j], P1[j], P1[i], col, ctr); }
+   for (let i = 1; i < n - 1; i++) { A.tri(P0[0], P0[i], P0[i + 1], col, ctr); A.tri(P1[0], P1[i], P1[i + 1], col, ctr); }
+}
+const alongX = (z, y, x) => [x, y, z], alongZ = (x, y, z) => [x, y, z];
+function tufts(A, n, seed, area, yAt) {   // grass tufts: small cones, deterministic
+   for (let i = 0; i < n; i++) {
+      const x = area.x0 + (area.x1 - area.x0) * hash(seed, i), z = area.z0 + (area.z1 - area.z0) * hash(seed + 7, i), y = yAt(x, z);
+      if (y == null || !Number.isFinite(y)) continue;
+      const h = 0.18 + hash(seed + 3, i) * 0.3;
+      A.cyl(x, y + h / 2 - 0.03, z, 0.13 + hash(seed + 5, i) * 0.12, 0.01, h, hash(seed + 9, i) > 0.5 ? GRASS : GRASS2, 'y', 5);
+   }
+}
+function spokedWheel(A, x, y, z, r, w) {
+   const tyre = new THREE.TorusGeometry(r - 0.06, 0.07, 6, 18), rim = new THREE.TorusGeometry(r - 0.13, 0.025, 4, 18);
+   A.geo(tyre, mat(x, y, z, 0, Math.PI / 2, 0, 1, 1, w / 0.14), RUBBER);
+   A.geo(rim, mat(x, y, z, 0, Math.PI / 2, 0), STEEL);
+   A.cyl(x, y, z, 0.09, 0.09, w + 0.06, STEEL, 'x', 10);
+   for (let k = 0; k < 8; k++) A.box(x, y, z, 0.035, (r - 0.15) * 2, 0.05, STEEL, k * Math.PI / 8);
+}
+
+function buildBunker(S) {
+   const A = new Acc(), H = S.hull, P = H.profile, hw = H.w / 2, zF = H.zMin, zB = H.zMax, top = H.roofY;
+   hullPiece(A, P, hw, 0, 0, CONC);                                                   // the concrete block = the armour volume
+   // steel embrasure band (plate 'emb' of the profile), with the slit and the gun ball in it
+   const bandY0 = 0.9, bandY1 = 1.45, by = (bandY0 + bandY1) / 2, bz = zF - 0.025;
+   A.box(0, by, bz, H.w + 0.02, bandY1 - bandY0, 0.05, STEEL);
+   for (let k = 0; k < 12; k++) for (const yy of [bandY0 + 0.06, bandY1 - 0.06]) A.cyl(-hw + 0.2 + k * (H.w - 0.4) / 11, yy, bz - 0.03, 0.025, 0.025, 0.03, DARK, 'z', 5);
+   A.box(0, by, bz - 0.02, 1.4, 0.32, 0.03, BLACK);                                  // the slit
+   for (const s of [-1, 1]) A.box(s * 0.75, by, bz - 0.05, 0.08, 0.4, 0.08, DARK);
+   A.box(0, top + 0.02, zF + 0.6, H.w * 0.98, 0.04, 0.6, CONC_D);                    // weathered lip over the chamfer
+   // earth cover: roof cap, side berms, a low slope in front of the lower plate; the rear stays open (door)
+   hullPiece(A, [[zF + 0.45, top - 0.02], [zB - 0.15, top - 0.02], [zB - 0.55, top + 0.42], [zF + 0.9, top + 0.42]], hw + 0.25, top, 50 * DEG, EARTH);
+   for (const s of [-1, 1]) extrude(A, [[hw - 0.02, 0], [hw + 2.1, 0], [hw + 0.25, top + 0.05], [hw - 0.02, top + 0.05]].map(([x, y]) => [s * x, y]), zF + 0.15, zB - 0.25, alongZ, EARTH);
+   extrude(A, [[zF + 0.01, 0], [zF - 1.3, 0], [zF + 0.01, 0.62]], -hw - 0.6, hw + 0.6, alongX, EARTH);
+   tufts(A, 52, 11, { x0: -hw - 1.6, x1: hw + 1.6, z0: zF - 1, z1: zB - 0.4 }, (x, z) => {
+      const ax = Math.abs(x);
+      if (ax < hw + 0.1 && z > zF + 0.95 && z < zB - 0.6) return top + 0.42;
+      if (ax > hw + 0.3 && ax < hw + 1.9 && z > zF + 0.3 && z < zB - 0.4) return (top + 0.05) * (1 - (ax - hw - 0.25) / 1.85);
+      if (z < zF - 0.1 && z > zF - 1.2 && ax < hw) return 0.62 * (1 - (zF - z) / 1.3);
+      return null;
+   });
+   // rear: steel door (plate 'urp' is the whole rear face), vent, observation cupola, periscope
+   A.box(0.9, 0.95, zB + 0.03, 0.95, 1.85, 0.06, STEEL);
+   A.box(0.9 + 0.32, 1.0, zB + 0.07, 0.06, 0.06, 0.12, DARK);
+   A.box(-1.3, 1.7, zB + 0.03, 0.5, 0.3, 0.05, BLACK);
+   A.cyl(-1.2, top + 0.52, 0.6, 0.48, 0.55, 0.25, STEEL, 'y', 12);
+   A.cyl(-1.2, top + 0.7, 0.6, 0.38, 0.46, 0.14, DARK, 'y', 12);
+   A.cyl(1.3, top + 0.62, 1.2, 0.05, 0.05, 0.5, DARK, 'y', 6);
+   return A.build();
+}
+function buildPakBase(S) {   // static carriage: wheels, axle, split trails with spades, lower shield flap
+   const A = new Acc(), T = S.track, r = S.cfg.run?.wheelR ?? 0.4, wx = T.x, az = S.cfg.run?.z ?? 0;
+   for (const s of [-1, 1]) spokedWheel(A, s * wx, r, az, r, T.w);
+   A.cyl(0, r, az, 0.06, 0.06, wx * 2, DARK, 'x', 8);
+   for (const s of [-1, 1]) {
+      const x0 = s * 0.22, x1 = s * 0.95, z0 = az + 0.15, z1 = az + 2.7, y0 = r + 0.02, y1 = 0.12, L = Math.hypot(x1 - x0, z1 - z0, y1 - y0);
+      const ry = Math.atan2(x1 - x0, z1 - z0), rx = Math.atan2(y0 - y1, Math.hypot(x1 - x0, z1 - z0));
+      A.box((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, 0.12, 0.16, L, PAKG, rx, ry, 0);
+      A.box(x1, 0.14, z1, 0.4, 0.3, 0.06, DARK, -0.5, ry, 0);                   // spade
+      A.cyl(x1 + s * 0.05, 0.28, z1 - 0.25, 0.03, 0.03, 0.3, DARK, 'x', 6);
+   }
+   A.box(0, 0.22, az - 0.2, 1.5, 0.24, 0.03, PAKG);                                // lower shield flap
+   return A.build();
+}
+function buildPakUpper(S) {   // traversing part about the gun pivot: double shield, cradle, recuperator, breech, crew
+   const A = new Acc(), H = S.hull, P = H.profile, M = S.mantlet, gp = S.gun.pivot, hw = H.w / 2;
+   const o = (x, y, z) => [x - gp.x, y - gp.y, z - gp.z];                            // hull frame -> pivot frame
+   // main shield = the sloped front plate of the armour profile, with the gun gap at the top
+   const f0 = P[0], f1 = P[1], tz = 0.02;
+   const plate = (xa, xb, ya, yb) => {
+      const za = f0[0] + (f1[0] - f0[0]) * (ya - f0[1]) / (f1[1] - f0[1]), zb = f0[0] + (f1[0] - f0[0]) * (yb - f0[1]) / (f1[1] - f0[1]);
+      extrude(A, [[za, ya], [zb, yb], [zb + tz, yb], [za + tz, ya]], xa, xb, (z, y, x) => o(x, y, z), PAKG);
+   };
+   plate(-hw, -0.2, f0[1], f1[1]); plate(0.2, hw, f0[1], f1[1]); plate(-0.2, 0.2, f0[1], gp.y - 0.12);
+   // second (spaced) plate = the mantlet box, its top edge stepped like the real shield
+   if (M) {
+      A.box(...o(-M.w / 4 - 0.12, M.y, M.z), M.w / 2 - 0.24, M.h, M.d, PAKG);
+      A.box(...o(M.w / 4 + 0.12, M.y, M.z), M.w / 2 - 0.24, M.h, M.d, PAKG);
+      A.box(...o(0, M.y - M.h / 2 + 0.17, M.z), 0.24, 0.34, M.d, PAKG);
+      for (const s of [-1, 1]) A.box(...o(s * (M.w / 2 - 0.1), M.y + M.h / 2 + 0.04, M.z), 0.2, 0.08, M.d, PAKG);
+      A.box(...o(0.6, M.y + 0.15, M.z - 0.03), 0.1, 0.1, 0.02, BLACK);              // sight port
+   }
+   A.box(0, -0.14, 0.35, 0.24, 0.2, 1.7, PAKG);                                          // cradle
+   A.cyl(0, -0.08, -0.35, 0.07, 0.07, 1.4, DARK, 'z', 8);                              // recuperator
+   A.box(0, 0, 0.55, 0.3, 0.3, 0.45, DARK);                                            // breech block
+   A.box(0.24, -0.02, 0.15, 0.08, 0.16, 0.22, DARK);                                   // sight
+   A.box(0, -0.33, 0.2, 0.36, 0.25, 0.5, PAKG);                                        // upper carriage
+   // crew: gunner and loader crouched behind the shield
+   for (const [x, z, h] of [[-0.45, 0.25, 0.85], [0.55, 0.5, 1.0]]) {
+      A.box(...o(x, h * 0.45, z), 0.36, h * 0.55, 0.3, FELD);
+      A.box(...o(x, h * 0.18, z + 0.15), 0.32, 0.3, 0.45, FELD);
+      A.cyl(...o(x, h * 0.85, z), 0.13, 0.13, 0.2, [0.75, 0.6, 0.48], 'y', 8);
+      A.cyl(...o(x, h * 0.93, z), 0.19, 0.16, 0.12, FELD, 'y', 10);
+   }
+   return A.build();
+}
+
+// ship hull: plan half-width and sheer along z (−z = bow); the deck rises toward the forecastle
+function shipSection(S, z) {
+   const H = S.hull, L0 = H.zMin + 2.4, L1 = H.zMax - 2.4, hw0 = H.w / 2;
+   const fb = Math.max(0, Math.min(1, (z - L0) / (L1 - L0)));                    // 0 bow … 1 stern
+   const bowK = Math.min(1, fb / 0.24), sternK = Math.min(1, (1 - fb) / 0.1);
+   const hw = hw0 * Math.sqrt(bowK) * (0.7 + 0.3 * Math.sqrt(sternK));
+   const deck = H.roofY + (fb < 0.32 ? 1.1 * (1 - fb / 0.32) ** 1.6 : 0);
+   return { hw: Math.max(0.05, hw), deck };
+}
+function buildShipHull(S) {
+   const A = new Acc(), H = S.hull, cfg = S.cfg, wl = cfg.draft ?? 3, N = 44, z0 = H.zMin + 2.4, z1 = H.zMax - 2.4;
+   const slope = Math.tan((H.slope || 4 * DEG)), st = [];
+   for (let i = 0; i <= N; i++) {
+      const z = z0 + (z1 - z0) * i / N, { hw, deck } = shipSection(S, z);
+      // section: keel, bilge, waterline, deck edge (sides lean in by the armour side slope)
+      st.push({ z, deck, pts: [[0, 0.2], [hw * 0.55, 0.35], [hw * 0.92, wl * 0.6], [hw, wl], [Math.max(0.04, hw - (deck - wl) * slope), deck]] });
+   }
+   const colAt = (y) => y < wl - 0.3 ? KM_RED : y < wl + 0.3 ? KM_BOOT : KM_D;
+   for (let i = 0; i < N; i++) {
+      const a = st[i], b = st[i + 1], ctr = [0, (a.deck + 0.2) / 2, (a.z + b.z) / 2];
+      for (let k = 0; k < a.pts.length - 1; k++) for (const s of [-1, 1]) {
+         const p = (S2, j) => [s * S2.pts[j][0], S2.pts[j][1], S2.z];
+         A.quad(p(a, k), p(a, k + 1), p(b, k + 1), p(b, k), colAt((a.pts[k][1] + a.pts[k + 1][1]) / 2), ctr);
+      }
+      const dk = (S2, s) => [s * S2.pts[4][0], S2.deck, S2.z];
+      A.quad(dk(a, -1), dk(a, 1), dk(b, 1), dk(b, -1), KM_DECK, [0, -10, (a.z + b.z) / 2]);
+   }
+   // raked stem (bow) and transom stern
+   const bow = st[0], sb = st[N], rake = 2.0, stem = (y) => [0, y, bow.z - rake * (y / bow.deck) ** 2];
+   for (const s of [-1, 1]) for (let k = 0; k < 4; k++) {
+      const a = bow.pts[k], b = bow.pts[k + 1];
+      A.quad([s * a[0], a[1], bow.z], [s * b[0], b[1], bow.z], stem(b[1]), stem(a[1]), colAt((a[1] + b[1]) / 2), [0, 3, bow.z + 3]);
+   }
+   for (const s of [-1, 1]) A.tri([s * bow.pts[4][0], bow.deck, bow.z], stem(bow.deck), [0, bow.deck, bow.z], KM_DECK, [0, -10, bow.z]);
+   for (let k = 0; k < 4; k++) { const a = sb.pts[k], b = sb.pts[k + 1]; A.quad([-a[0], a[1], sb.z], [a[0], a[1], sb.z], [b[0], b[1], sb.z], [-b[0], b[1], sb.z], colAt((a[1] + b[1]) / 2), [0, 3, sb.z - 3]); }
+   // bulwark strake along the deck edge, hawse pipes
+   for (const s of [-1, 1]) for (let i = 0; i < N; i++) {
+      const a = st[i], b = st[i + 1], x = s * (a.pts[4][0] + b.pts[4][0]) / 2;
+      A.box(x, (a.deck + b.deck) / 2 + 0.3, (a.z + b.z) / 2, 0.06, 0.6, Math.hypot(b.z - a.z, b.pts[4][0] - a.pts[4][0]) + 0.03, KM, 0, -s * Math.atan2(b.pts[4][0] - a.pts[4][0], b.z - a.z), 0);
+   }
+   for (const s of [-1, 1]) A.box(s * (shipSection(S, z0 + 5).hw - 0.02), st[0].deck - 0.9, z0 + 5, 0.12, 0.6, 0.5, BLACK);
+   return A.build();
+}
+function buildShipTop(S) {
+   const A = new Acc(), H = S.hull, T = S.turret;
+   const D = (z) => shipSection(S, z).deck;
+   // bridge superstructure behind the forward turret
+   const zb = T ? T.z + 5.5 : -20;
+   A.box(0, D(zb + 3) + 1.4, zb + 3, 6.6, 2.8, 7, KM);
+   A.box(0, D(zb + 3) + 3.6, zb + 2.2, 5.4, 1.8, 4.6, KM);
+   A.box(0, D(zb + 3) + 4.0, zb - 0.12, 5.0, 0.55, 0.1, GLASS);
+   for (const s of [-1, 1]) A.box(s * 2.72, D(zb + 3) + 4.0, zb + 2.2, 0.1, 0.55, 4.2, GLASS);
+   A.box(0, D(zb + 3) + 4.75, zb + 2.0, 7.2, 0.15, 5.2, KM_D);                          // bridge roof with wings
+   A.cyl(0, D(zb + 3) + 5.3, zb + 2.6, 0.9, 0.9, 0.9, KM_D, 'y', 12);                   // rangefinder
+   A.box(0, D(zb + 3) + 5.5, zb + 2.6, 4.2, 0.35, 0.4, KM_D);
+   // tripod mast with yard and radar
+   const zm = zb + 7.5, dm = D(zm);
+   A.cyl(0, dm + 9, zm, 0.2, 0.3, 18, KM_D, 'y', 8);
+   for (const s of [-1, 1]) A.geo(new THREE.CylinderGeometry(0.13, 0.17, 10, 6), mat(s * 1.3, dm + 4.8, zm + 1.0, 0.1, 0, s * 0.14), KM_D);
+   A.box(0, dm + 13.5, zm, 7, 0.14, 0.14, KM_D);
+   A.box(0, dm + 10.5, zm - 0.35, 2.2, 1.1, 0.2, KM_D);
+   // two raked funnels with black caps
+   for (const [z, h] of [[zb + 13, 5.4], [zb + 23.5, 4.8]]) {
+      A.box(0, D(z) + 0.5, z, 3.6, 1.0, 5, KM);
+      A.geo(new THREE.CylinderGeometry(1.2, 1.35, h, 14), mat(0, D(z) + 1 + h / 2, z + 0.35, 0.12, 0, 0, 1, 1, 1.5), KM);
+      A.geo(new THREE.CylinderGeometry(1.24, 1.24, 0.5, 14), mat(0, D(z) + 0.9 + h, z + 0.35 + h * 0.06, 0.12, 0, 0, 1, 1, 1.5), BLACK);
+   }
+   // torpedo tube triples, searchlight platform, boats, 3,7 / 2 cm AA, depth charges
+   for (const z of [zb + 18.3, zb + 29]) {
+      A.cyl(0, D(z) + 0.4, z, 1.0, 1.1, 0.4, KM_D, 'y', 10);
+      for (let k = -1; k <= 1; k++) A.cyl(k * 0.62, D(z) + 0.9, z, 0.28, 0.28, 7, KM, 'z', 8);
+   }
+   A.box(0, D(zb + 34) + 1.2, zb + 34, 3.5, 2.4, 4, KM);
+   A.cyl(0, D(zb + 34) + 2.85, zb + 34, 0.8, 0.8, 0.9, KM_D, 'y', 10);
+   for (const s of [-1, 1]) {
+      A.box(s * 3.2, D(zb + 9) + 1.55, zb + 9, 1.3, 0.8, 6, [0.72, 0.72, 0.68]);
+      for (const z of [zb + 11, zb + 27, zb + 37]) {
+         A.cyl(s * 3.0, D(z) + 0.45, z, 0.45, 0.45, 0.9, KM_D, 'y', 8);
+         A.box(s * 3.0, D(z) + 1.1, z, 0.9, 0.6, 0.05, KM);
+         A.cyl(s * 3.0, D(z) + 1.25, z - 0.8, 0.045, 0.045, 1.6, BLACK, 'z', 5);
+      }
+   }
+   const zs = H.zMax - 4.5;
+   for (const s of [-1, 1]) for (let k = 0; k < 4; k++) A.cyl(s * 2.4, D(zs) + 0.45, zs - k * 0.8, 0.32, 0.32, 0.55, BLACK, 'x', 8);
+   // aft 10,5 cm mounts (decoration, trained aft) + flag staff and jack staff
+   for (const z of [zb + 41, zb + 50]) {
+      A.cyl(0, D(z) + 0.2, z, 1.6, 1.7, 0.4, KM_D, 'y', 12);
+      A.box(0, D(z) + 1.4, z, 3.0, 2.0, 3.6, KM);
+      A.box(0, D(z) + 1.8, z + 2.0, 2.4, 1.2, 0.8, KM);
+      A.cyl(0, D(z) + 1.4, z + 4.2, 0.1, 0.08, 4.4, KM_D, 'z', 8);
+   }
+   A.cyl(0, D(H.zMax - 2.6) + 2.5, H.zMax - 2.6, 0.05, 0.05, 5, KM_D, 'y', 5);
+   A.cyl(0, D(H.zMin + 3) + 1.8, H.zMin + 3, 0.04, 0.04, 3.6, KM_D, 'y', 5);
+   return A.build();
+}
+// the war ensign on the stern staff (our own simple design: cross and canton, no emblems)
+function ensignTexture() {
+   const cv = document.createElement('canvas'); cv.width = 128; cv.height = 80; const g = cv.getContext('2d');
+   g.fillStyle = '#ece8de'; g.fillRect(0, 0, 128, 80); g.fillStyle = '#111'; g.fillRect(0, 34, 128, 12); g.fillRect(38, 0, 12, 80);
+   g.fillStyle = '#9c2a22'; g.fillRect(0, 0, 34, 30);
+   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+let SITE_SHARED = null;
+function siteShared() {
+   return (SITE_SHARED ??= {
+      mat: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0.06, flatShading: true }),
+      ship: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.62, metalness: 0.22, flatShading: true }),
+      wreck: new THREE.MeshStandardMaterial({ color: 0x3a3532, vertexColors: true, roughness: 1, metalness: 0.05, flatShading: true }),
+      flag: new THREE.MeshStandardMaterial({ map: ensignTexture(), side: THREE.DoubleSide, roughness: 0.9 }),
+   });
+}
+function siteGeometry(cfg, key) {
+   const ck = 'site:' + cfg.site + ':' + (cfg.id || '') + ':' + key; if (GEO_CACHE.has(ck)) return GEO_CACHE.get(ck);
+   const S = shapeOf(cfg), k = cfg.site, g = { S };
+   if (k === 'bunker') { g.hull = buildBunker(S); g.gun = buildGun(S, CONC_D, STEEL); }
+   else if (k === 'pak') { g.hull = buildPakBase(S); g.upper = buildPakUpper(S); g.gun = buildGun(S, PAKG, PAKG.map((v) => v * 0.8)); }
+   else { g.hull = buildShipHull(S); g.top = buildShipTop(S); g.turret = S.turret ? buildTurret(S, KM, KM_D) : null; g.gun = buildGun(S, KM, KM_D); }
+   GEO_CACHE.set(ck, g); return g;
+}
+export function buildSiteModel(cfg, key = cfg?.id || 'site') {
+   const sh = siteShared(), g = siteGeometry(cfg, key), S = g.S, m0 = cfg.site === 'ship' ? sh.ship : sh.mat;
+   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+   const hull = new THREE.Mesh(g.hull, m0); body.add(hull);
+   const extra = [];
+   if (g.top) { const t = new THREE.Mesh(g.top, m0); body.add(t); extra.push(t); }
+   const turret = new THREE.Group(); body.add(turret);
+   let tmesh = null;
+   const gp = S.gun.pivot || { x: 0, y: 1, z: -1 };
+   const gunPivot = new THREE.Group(); turret.add(gunPivot);
+   if (S.turret) { turret.position.set(S.turret.x, S.turret.y, S.turret.z); tmesh = new THREE.Mesh(g.turret, m0); turret.add(tmesh); gunPivot.position.set(gp.x, gp.y, gp.z); }
+   else turret.position.set(gp.x, gp.y, gp.z);
+   if (g.upper) { const u = new THREE.Mesh(g.upper, m0); turret.add(u); extra.push(u); }
+   const gun = new THREE.Mesh(g.gun, m0); gunPivot.add(gun);
+   if (cfg.site === 'ship') {
+      const f = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.5), sh.flag), z = S.hull.zMax - 2.6;
+      f.position.set(0, shipSection(S, z).deck + 4.2, z + 1.25); f.rotation.y = Math.PI / 2; body.add(f);
+   }
+   root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+   return { root, body, hull, turret, tmesh, gunPivot, gun, tracks: [], extra, S, mat0: m0, site: cfg.site, treadL: 0, treadR: 0, recoil: 0, deadT: 0 };
+}
+
 // ---------------- model ----------------
 export function buildTankModel(cfg, key = cfg?.id || 'x') {
+   if (cfg?.site) return buildSiteModel(cfg, key);
    const sh = shared(), g = geometryFor(cfg, key), S = g.S, mat0 = sh.camo[S.nation] || sh.camo.de;
    const root = new THREE.Group();
    const body = new THREE.Group(); root.add(body);              // pitch/roll
@@ -304,7 +554,9 @@ export function buildTankModel(cfg, key = cfg?.id || 'x') {
       turret.add(new THREE.Mesh(g.decT, sh.decal));
    }
    const gp = S.gun.pivot || { x: 0, y: 0.3, z: -0.6 };
-   const gunPivot = new THREE.Group(); gunPivot.position.set(gp.x, gp.y, gp.z); turret.add(gunPivot);
+   const gunPivot = new THREE.Group(); turret.add(gunPivot);
+   if (S.turret) gunPivot.position.set(gp.x, gp.y, gp.z);
+   else turret.position.set(gp.x, gp.y, gp.z);        // casemate: the gun traverses about its own pivot (armor.gunWorld)
    const gun = new THREE.Mesh(g.gun, mat0); gunPivot.add(gun);
    root.traverse((o) => { if (o.isMesh) { o.castShadow = o.material !== sh.decal; o.receiveShadow = true; } });
    return { root, body, hull, turret, tmesh, gunPivot, gun, tracks, S, mat0, treadL: 0, treadR: 0, recoil: 0 };
@@ -343,7 +595,7 @@ export class Tanks3D {
          const yr = dt > 0 ? dy / dt : 0, hw = m.S.W / 2 - m.S.track.w / 2, v = t.speed || 0;
          if (t.alive !== false) {
             m.treadL += (v + yr * hw) * dt; m.treadR += (v - yr * hw) * dt;
-            m.tracks[0].material.map.offset.x = m.treadL / 0.6; m.tracks[1].material.map.offset.x = m.treadR / 0.6;
+            if (m.tracks.length) { m.tracks[0].material.map.offset.x = m.treadL / 0.6; m.tracks[1].material.map.offset.x = m.treadR / 0.6; }
          }
          // recoil
          if (t.lastFire !== m.lastFire) { m.lastFire = t.lastFire; if (t.lastFire != null) m.recoil = 1; }
@@ -353,14 +605,26 @@ export class Tanks3D {
          if (dead !== !!m.dead) {
             m.dead = dead; const mm = dead ? sh.wreck : m.mat0;
             m.hull.material = m.gun.material = mm; if (m.tmesh) m.tmesh.material = mm;
+            if (m.extra) for (const e of m.extra) e.material = mm;
             for (const tr of m.tracks) tr.material.color.setScalar(dead ? 0.35 : 1);
          }
+         if (m.site) this._siteWreck(m, t, dt);
          if (m.blow && m.blow.t < 6) {
             const B = m.blow; B.t += dt; B.vy -= 9.81 * dt;
             const tp = m.turret.position;
             if (m.S.turret && tp.y + B.vy * dt > m.S.turret.y - 0.3 || B.vy > 0) { tp.x += B.vx * dt; tp.y += B.vy * dt; tp.z += B.vz * dt; m.turret.rotation.x += B.spin * dt; m.turret.rotation.z += B.spin * 0.6 * dt; }
             else { B.vx = B.vz = B.spin = 0; B.vy = 0; }
          }
+      }
+   }
+   // emplacement wrecks: the bunker just goes black; the PaK tips over; the boat lists and sinks
+   _siteWreck(m, t, dt) {
+      if (t.alive !== false) { m.deadT = 0; m.root.position.y = t.pos.y; return; }
+      m.deadT = Math.min(60, m.deadT + dt); const k = Math.min(1, m.deadT / 2.5);
+      if (m.site === 'pak') { m.body.rotation.z = 0.55 * k; m.body.position.y = -0.15 * k; m.turret.rotation.x = -0.12 * k; }
+      else if (m.site === 'ship') {
+         const s = Math.min(1, m.deadT / 40), e = s * s * (3 - 2 * s);
+         m.root.position.y = t.pos.y - 5.5 * e; m.body.rotation.z = (t.roll || 0) + 0.35 * e; m.body.rotation.x = (t.pitch || 0) - 0.04 * e;
       }
    }
    dispose() { this.scene.remove(this.group); for (const m of this.models.values()) for (const tr of m.tracks) { tr.material.map.dispose(); tr.material.dispose(); } }
