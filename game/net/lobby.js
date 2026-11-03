@@ -171,7 +171,7 @@ export async function makeBackend(mode) {
 // without access to the matchmaking channels. After a host migration the game moves the host
 // (_setHost) and adds the players the old host knew under other ids (_add).
 function sessionTransport(base, members, onLeave) {
-   const set = new Set(members);
+   const set = new Set(members), soft = new Set();   // soft: the transport timed the peer out; heard again -> back in
    let join = null, leave = null, rejoin = null, live = true, hostId = base.hostId;
    const peers = () => base.peers().filter(id => set.has(id));
    return {
@@ -190,14 +190,18 @@ function sessionTransport(base, members, onLeave) {
       },
       on(channel, fn) {
          if (channel === 'room' || channel === 'chat') { console.warn('net: channel "' + channel + '" belongs to matchmaking'); return; }
-         base.on(channel, (d, from) => { if (live && set.has(from)) fn(d, from); });
+         base.on(channel, (d, from) => {
+            if (live && soft.has(from)) { soft.delete(from); set.add(from); join?.(from); }
+            if (live && set.has(from)) fn(d, from);
+         });
       },
       onPeerJoin(fn) { join = fn; },
       onPeerLeave(fn) { leave = fn; },
       onRejoin(fn) { rejoin = fn; },                    // host: fn(oldId, newId), a captain is back
       leave() { if (live) onLeave(); },
       _join(id) { if (live && set.has(id)) join?.(id); },
-      _leave(id) { if (live && set.delete(id)) leave?.(id); },      // at most once per player
+      _leave(id, timedOut) { if (live && set.delete(id)) { if (timedOut) soft.add(id); else soft.delete(id); leave?.(id); } },   // at most once per player
+
       _rejoin(oldId, newId) { if (!live) return; set.delete(oldId); set.add(newId); rejoin?.(oldId, newId); },
       _add(ids) { if (live) for (const id of ids) if (typeof id === 'string' && id !== base.selfId) set.add(id); },
       _setHost(id) { hostId = id; },
@@ -570,7 +574,7 @@ export class Lobby {
       // a player's route changed (relay <-> direct): the host tells everybody
       rt.onRoute?.(() => { if (this.isHost) this._sync(); else this.cb.onRoom?.(); });
       rt.onPeerLeave((id) => {
-         this.session?.transport._leave(id);
+         this.session?.transport._leave(id, true);
          if (!this.room) return;
          if (this.isHost) {
             const p = this.room.players.find(x => x.id === id);

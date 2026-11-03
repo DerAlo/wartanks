@@ -340,19 +340,36 @@ nation. Works without localStorage (memory fallback).
 60 fps on a desktop GPU with 14 tanks: instancing for trees/rocks/grass, at most a few hundred
 draw calls, no per-frame allocations in hot paths (pools), shadows from one directional light.
 
-## Multiplayer (`net/`)
+## Multiplayer (`net/`, contract: `game/net/CONTRACT.md`)
 
-Same model as warships `game3d/net/CONTRACT.md` (host-authoritative, MQTT brokers + WebRTC,
-co-op vs bots and PvP, rejoin, host migration later). Transport files (`mqtt.js`, `relay.js`,
-`transport.js`, `transport_rtc.js`) are copied from warships unchanged except the topic root
-`wt3d/1`. The game side (`codec.js`, `command.js`, `host.js`, `replica.js`, `setup.js`,
-`game.js`, `lobby.js`, `mpui.js`) is written for tanks after the singleplayer game works.
+Same model as warships `game3d/net/`: serverless, host-authoritative. Players meet over public
+MQTT brokers (topic root `wt3d/1`); data goes over WebRTC where possible, otherwise encrypted
+through the brokers. Co-op vs bots (up to 5 humans, `coop.js`) and PvP up to 5 v 5 (`pvp.js`,
+free places are bots), battle types `standard` and `encounter`.
+
+- `lobby.js` + `mpui.js` (menu "Mehrspieler", "Feldkarte" UI): rooms, password, tanks, teams,
+  ready, start; calls `window.__game.startNetGame(session)` (main.js) on every peer.
+- `game.js`: session -> `net` (`G.net`). Host builds the World (`setup.js`: roster, ids 1..n,
+  captains marked `human`, no BotAI on them) and wraps `world.update` with `NetHost.step`
+  (`host.js`: commands, 20 Hz per-client snapshots filtered by spotting, event batches, 4 Hz sync,
+  per-client end). Clients build the same World from `start` and replace `world.update` with
+  `Replica.update` (`replica.js`: interpolation, local turret prediction, local shell flight);
+  the own tank's `fire/setAmmo/useConsumable` become command actions (`command.js`). Binary
+  snapshot layout in `codec.js`.
+- World team 1 is the host's team; sides follow `world.player.team`, so rendering / HUD need
+  no change. Pause does not stop a net game. At the end every peer applies its own rewards via
+  progress.js (`menu.applyResult`), then `net.finish` hands the result (PvP table) to the lobby.
+- Not done: host migration (a lost host ends the match).
 
 ## Tests
 
 `npm test` (= `node --test "tests/*.test.mjs"`; node ≥ 22 no longer accepts a bare directory) — sim tests (armour ray tests, effective thickness, ricochet/overmatch,
 pen falloff, determinism of terrain, a bot battle runs to an end without errors). Playwright
 screenshot scripts in `tests/*.mjs` for the browser (Chrome via playwright).
+`tests/net.test.mjs`: co-op 3 humans, PvP 2v2 and a full 1v1 match at 80 ms over `makeMemoryHub`
+(ids, replica error, captains' shots, no visibility leaks, end/rewards per client).
+`tests/playwright.mp.mjs [local|relay]`: two pages, lobby -> match, client drives and fires;
+`tests/playwright.mplobby.mjs`: lobby flow.
 
 `tests/sim.mjs` runs a headless battle: `runBattle({ map, diff, seed, mode, player })` →
 `{ w, ms, time, result, alive, counts (per event type), shots, hits, pens, dmg }`; CLI

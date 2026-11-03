@@ -36,7 +36,11 @@ export class NetHost {
       this.shells = new Map();               // shell id -> ricochet count sent
       this.objAlive = world.terrain.objects.map((o) => o.alive !== false); this.objVer = world.terrain.version;
       this.snapT = 0; this.syncT = 0; this.meT = 0; this.ended = false;
-      transport.on('cmd', (d, from) => { const c = this.byPeer(from); if (c?.joined) applyCmd(world, this.tank(c), c.st, d); });
+      transport.on('cmd', (d, from) => {
+         const c = this.byPeer(from); if (!c) return;
+         if (!c.joined && c.lost && !this.ended) this.back(c);       // the route came back after a timeout
+         if (c.joined) applyCmd(world, this.tank(c), c.st, d);
+      });
       transport.on('sync', (d, from) => this.onSync(d, from));
       transport.onRejoin?.((oldId, newId) => { const c = this.byPeer(oldId); if (c) { c.peer = newId; c.joined = false; c.rejoin = true; c.st = { seq: 0, done: 0, fireT: 0 }; } });
    }
@@ -55,7 +59,7 @@ export class NetHost {
          const deadObj = [];
          this.w.terrain.objects.forEach((o, i) => { if (o.alive === false) deadObj.push([i, R2(o.fallYaw || 0)]); });
          this.T.send('sync', { ...this.start, k: 'start', self: c.i, rejoin: late ? 1 : 0, deadObj, slots: this.start.slots.map(({ peer, ...s }) => s) }, from);
-         if (!c.joined) { c.joined = true; c.rejoin = false; setHuman(this.w, this.tank(c), true); this.opts.onLog?.(`${c.name} ist im Gefecht.`); }
+         if (!c.joined) { c.joined = true; c.rejoin = false; c.lost = false; setHuman(this.w, this.tank(c), true); this.opts.onLog?.(`${c.name} ist im Gefecht.`); }
       } else if (d.k === 'bye' && c) this.drop(c, 'hat das Gefecht verlassen');
    }
    /** Peer gone (bye or transport): its tank goes back to the AI. */
@@ -66,7 +70,14 @@ export class NetHost {
       if (t) { setHuman(this.w, t, false); }
       this.opts.onLog?.(`${c.name} ${why}.`);
    }
-   peerLeft(id) { const c = this.byPeer(id); if (c) this.drop(c, 'hat die Verbindung verloren'); }
+   peerLeft(id) { const c = this.byPeer(id); if (c?.joined) { this.drop(c, 'hat die Verbindung verloren'); c.lost = true; } }
+   /** A captain the transport had given up is heard again: the tank is his again (no new start needed). */
+   back(c) {
+      const t = this.tank(c);
+      c.joined = true; c.lost = false;
+      if (t?.alive) setHuman(this.w, t, true);
+      this.opts.onLog?.(`${c.name} ist wieder verbunden.`);
+   }
 
    step(dt) {
       const w = this.w;

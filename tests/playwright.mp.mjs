@@ -17,13 +17,13 @@ for (let i = 0; i < 50; i++) { try { await fetch(base); break; } catch { await n
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 let code = 0;
 try {
-   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+   const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } });
    const errs = { A: [], B: [] };
    const mk = async (tag) => {
       const p = await ctx.newPage();
       p.on('console', (m) => { if (m.type() === 'error') errs[tag].push(m.text()); if (/\[net\]/.test(m.text())) console.log(tag, m.text()); });
       p.on('pageerror', (e) => errs[tag].push('pageerror: ' + e.message));
-      await p.goto(base + '?net=' + NET);
+      await p.goto(base + '?q=low&net=' + NET);
       await p.waitForFunction(() => window.__game?.menu, null, { timeout: 30000 });
       return p;
    };
@@ -51,7 +51,7 @@ try {
    await B.click('#mp-ready');
    await A.waitForFunction(() => document.querySelector('#mp-players .mp-row:not(.me)')?.dataset.ready === '1', null, { timeout: 30000 });
    await A.click('#mp-start');
-   for (const p of [A, B]) await p.waitForFunction(() => window.__game?.world && window.__game.net, null, { timeout: 30000 });
+   for (const p of [A, B]) await p.waitForFunction(() => window.__game?.world && window.__game.net, null, { timeout: 90000 });
    console.log('match running on both pages', await B.evaluate(() => ({ host: __game.net.isHost, via: __game.net.transport.link?.(__game.net.transport.hostId)?.via })));
    // wait for the countdown, then drive and fire
    await A.waitForFunction(() => __game.world.phase === 'playing', null, { timeout: 120000 });

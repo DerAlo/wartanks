@@ -57,9 +57,12 @@ export function startNetGame(session, api) {
          xp: r.xp || 0, credits: r.credits || 0, stats: { dmg: s.dmg | 0, kills: s.kills | 0, shots: s.shots | 0, hits: s.hits | 0, pens: s.pens | 0, spotted: s.spotted | 0, assist: s.assist | 0 },
          pvp: net.pvp || net.host?.result?.pvp });
    };
+   let started = false;
    session.transport.onPeerLeave?.((id) => {
       if (net.isHost) net.host?.peerLeft(id);
-      else if (id === T.hostId && !net.ended) abort('Der Gastgeber hat das Spiel verlassen.');
+      // client: a host that is gone for good says `abort` or stays silent (HOST_SILENT); a route that
+      // timed out under load may come back, so the transport's leave alone does not end the match
+      else if (id === T.hostId && !net.ended && !started) abort('Der Gastgeber hat das Spiel verlassen.');
    });
 
    if (net.isHost) {
@@ -77,7 +80,6 @@ export function startNetGame(session, api) {
    }
 
    // ---- client
-   let started = false;
    const t0 = Date.now();
    let lastHost = Date.now();
    const hello = () => {

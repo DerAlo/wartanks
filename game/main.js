@@ -93,7 +93,7 @@ G.startBattle = startBattle; G.stopBattle = stopBattle;
 G.startNetGame = async (session) => {
    const { startNetGame } = await import('./net/game.js');
    const onEnd = session.onEnd;
-   const s = { ...session, onEnd: (r) => { G.net = null; if (G.world) stopBattle(); onEnd?.(r); } };
+   const s = { ...session, onEnd: (r) => { console.log('[net] end:', r.aborted ? 'aborted' : r.outcome, r.reason); G.net = null; if (G.world) stopBattle(); onEnd?.(r); } };
    G.net = startNetGame(s, { startBattle, stopBattle, log: (t) => console.log('[net]', t) });
    return G.net;
 };
