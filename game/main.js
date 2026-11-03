@@ -35,28 +35,11 @@ function themeOf(mapId) {
 }
 
 
-// TEMPORARY stub until state.js / terrain.js land: noise terrain + one drivable tank.
-function StubWorld(opts) {
-   const h = (x, z) => 18 * Math.sin(x * 0.011) * Math.cos(z * 0.009) + 6 * Math.sin(x * 0.043 + z * 0.031);
-   const terrain = terrainM.makeTerrain ? terrainM.makeTerrain(opts.seed ?? 1234, opts.mapId || 'steppe') : { half: 500, version: 0, water: null, heightAt: h,
-      normalAt(x, z) { const e = 1, nx = h(x - e, z) - h(x + e, z), nz = h(x, z - e) - h(x, z + e), l = Math.hypot(nx, 2 * e, nz); return { x: nx / l, y: 2 * e / l, z: nz / l }; },
-      groundAt: (x, z) => Math.abs(z - 40 * Math.sin(x * 0.01)) < 4 ? 'road' : 'medium',
-      raycast(ox, oy, oz, dx, dy, dz, max) { for (let d = 0; d < max; d += 0.5) if (oy + dy * d < h(ox + dx * d, oz + dz * d)) return d; return null; },
-      objects: [] };
-   if (!terrainM.makeTerrain) for (let i = 0; i < 600; i++) { const x = Math.sin(i * 12.9898) * 480, z = Math.sin(i * 78.233) * 480; terrain.objects.push({ id: i, kind: i % 5 === 0 ? 'bush' : i % 13 === 0 ? 'rock' : i % 29 === 0 ? 'house' : 'tree', x, z, yaw: i, w: i % 29 === 0 ? 10 : 3, d: i % 29 === 0 ? 7 : 3, h: i % 29 === 0 ? 7 : undefined, solid: true, alive: true, seed: i }); }
-   const TK = configM.TANKS || {}, ids = configM.TANK_LIST || [];
-   const mk = (id, team, x, z, cls = ids[0]) => ({ id, team, cls, cfg: TK[cls] || { height: 2.4 }, pos: { x, y: terrain.heightAt(x, z), z }, yaw: 0, pitch: 0, roll: 0, turretYaw: 0, gunPitch: 0, speed: 0, hp: 1000, maxHP: 1000, alive: true, reload: 0, reloadMax: 6, input: {}, pose() { return this; } });
-   const sp = terrain.spawns?.team1?.[0] || { x: 0, z: 100 }, player = mk(1, 1, sp.x, sp.z, opts.playerCls || 'tiger1'), tanks = [player];
-   ids.forEach((c, i) => { const t = mk(10 + i, 2, sp.x - 76 + i * 9.5, sp.z - 22, c); t.yaw = 0.5; t.turretYaw = -0.4; tanks.push(t); });
-   return { terrain, tanks, player, shells: [], events: [], time: 0, phase: 'playing', mapId: opts.mapId,
-      update(dt) { this.time += dt; const p = player, i = p.input; p.speed += ((i.throttle || 0) * 12 - p.speed) * dt * 0.8; p.yaw += (i.steer || 0) * dt * 0.7;
-         p.pos.x -= Math.sin(p.yaw) * p.speed * dt; p.pos.z -= Math.cos(p.yaw) * p.speed * dt; p.pos.y = terrain.heightAt(p.pos.x, p.pos.z); } };
-}
-
 export function startBattle(opts = {}) {
    stopBattle();
    for (const k in opts) if (opts[k] === undefined) delete opts[k];
-   const world = G.world = new (stateM.World || StubWorld)({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
+   if (!stateM.World) { console.error('[main] state.js missing: no battle possible'); menu?.show('garage'); return; }
+   const world = G.world = new stateM.World({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
    G.battleOpts = { ...opts }; G.endT = 0; G.paused = false;
    const th = themeOf(world.mapId ?? opts.mapId);
    R.setTheme(th); sky.setTheme(th, R.sunDir);
@@ -82,7 +65,7 @@ function getAudio() { if (audioM.Audio && !audio) audio = G.audio = new audioM.A
 // battle over (world.phase won/lost/draw): short pause on the battlefield, then the results screen
 function finishBattle() {
    const w = G.world; if (!w) return;
-   const snap = { ...G.battleOpts, mapId: w.mapId ?? G.battleOpts.mapId, playerCls: w.player?.cls ?? G.battleOpts.playerCls, phase: w.phase,
+   const snap = { ...G.battleOpts, mode: w.mode ?? G.battleOpts.mode ?? 'standard', mapId: w.mapId ?? G.battleOpts.mapId, playerCls: w.player?.cls ?? G.battleOpts.playerCls, phase: w.phase,
       result: w.result ? { ...w.result } : null, stats: w.stats ? { ...w.stats } : null };
    menu?.applyResult?.(snap);
    G.lastResult = snap;
@@ -117,7 +100,7 @@ function aimRay(world, p) {
       const cx = t.pos.x - tmpO.x, cy = t.pos.y + 1.3 - tmpO.y, cz = t.pos.z - tmpO.z;
       const along = cx * tmpD.x + cy * tmpD.y + cz * tmpD.z;
       if (along < 0 || along > best) continue;
-      const r = (t.cfg?.radius ?? 4), d2 = cx * cx + cy * cy + cz * cz - along * along;
+      const r = (t.radius ?? t.cfg?.radius ?? 4), d2 = cx * cx + cy * cy + cz * cz - along * along;
       if (d2 > r * r) continue;
       let hitD = along - Math.sqrt(r * r - d2) * 0.6;
       if (armorM.rayArmor && t.armor) {
@@ -166,8 +149,8 @@ function frame(now) {
       if (/^(won|lost|draw)$/.test(world.phase) || world.result) { G.endT += dt; if (G.endT > 4 && menu) { finishBattle(); return; } }
       controls(world, p, dt);
       if (p) {
-         pivot.set(p.pos.x, p.pos.y + (p.cfg?.height ?? 2.4) + 0.4, p.pos.z);
-         if (tanks3d?.sightPos) tanks3d.sightPos(p, sight); else sight.set(p.pos.x, p.pos.y + (p.cfg?.height ?? 2.4), p.pos.z);
+         pivot.set(p.pos.x, p.pos.y + (p.height ?? p.cfg?.height ?? 2.4) + 0.4, p.pos.z);
+         if (tanks3d?.sightPos) tanks3d.sightPos(p, sight); else sight.set(p.pos.x, p.pos.y + (p.height ?? p.cfg?.height ?? 2.4), p.pos.z);
          if (G.camOverride) { const o = G.camOverride; R.camera.position.set(o[0], o[1], o[2]); R.camera.lookAt(o[3], o[4], o[5]); }
          else tcam.update(dt, pivot, sight, (x, z) => world.terrain.heightAt(x, z));
          aimRay(world, p);
