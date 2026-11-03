@@ -30,9 +30,9 @@
 // override the default base / spawn positions (used by coast maps whose north is sea).
 
 const SUMMER = {
-   fog: 0xb9c2b8, fogNear: 280, fogFar: 1200, sunDir: [0.55, 0.62, 0.35], sunColor: 0xfff1d6, sunIntensity: 2.6,
-   skyLight: 0xc9dcf0, groundLight: 0x5a5236, hemiIntensity: 0.95, exposure: 1.05,
-   skyTop: 0x5f8fc4, skyHor: 0xc6d2d0, skyLow: 0x7a7a62, cloud: 0.55,
+   fog: 0xb9c2b8, fogNear: 280, fogFar: 1200, sunDir: [0.55, 0.62, 0.35], sunColor: 0xffecd2, sunIntensity: 3.0,
+   skyLight: 0xbcd2ea, groundLight: 0x4f4630, hemiIntensity: 0.72, exposure: 1.0,
+   skyTop: 0x4a7cba, skyHor: 0xc6d2d0, skyLow: 0x7a7a62, cloud: 0.55,
 };
 
 export const MAPS = {

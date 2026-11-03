@@ -18,6 +18,63 @@ const PALETTES = {
    steppe: { grass: C(0x8a8a48), grass2: C(0xa49a58), dirt: C(0x86704a), rock: C(0x8a8274), road: C(0xa8956a), sand: C(0xbfae7a), soft: C(0x6d6a3a), snow: C(0xe8ecef), tree: C(0x4d6229), tree2: C(0x657236), pine: C(0x33482a), bush: C(0x5f6b30) },
 };
 
+// one wind clock for grass and tree crowns (Terrain3D.update advances it)
+const WIND = { uWind: { value: 0 } };
+const NOISE_GLSL = `
+float tHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float tNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+   return mix(mix(tHash(i), tHash(i + vec2(1.0, 0.0)), f.x), mix(tHash(i + vec2(0.0, 1.0)), tHash(i + vec2(1.0, 1.0)), f.x), f.y); }`;
+/** Ground shading on top of the baked vertex colours: two detail-texture scales (no visible tiling),
+ *  macro patches (lush / dry / dark soil) that break the uniform field at distance, rock strata on
+ *  steep slopes, detail fading with distance (no moire), and the detail map doubles as bump map. */
+function patchGround(mat, opt) {
+   mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uDry = { value: opt.dry }; sh.uniforms.uRock = { value: opt.rock };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+varying vec3 vTWP;
+varying float vTUp;`)
+         .replace('#include <fog_vertex>', `#include <fog_vertex>
+vTWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vTUp = normal.y;`);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vTWP;
+varying float vTUp;
+uniform float uDry;
+uniform vec3 uRock;` + NOISE_GLSL)
+         .replace('#include <map_fragment>', `
+            float tDist = length(vTWP - cameraPosition);
+            float tNear = 1.0 - smoothstep(40.0, 420.0, tDist);
+            float d1 = texture2D(map, vMapUv).r, d2 = texture2D(map, vTWP.zx * 0.0241 + 0.37).r, d3 = texture2D(map, vTWP.xz * 0.0063 + 0.11).r;
+            float det = mix(mix(d1, d2, 0.4), d3, 0.25 + 0.35 * (1.0 - tNear)) / 0.56;
+            diffuseColor.rgb *= mix(1.0, det, 0.45 + 0.55 * tNear);
+            vec2 q = vTWP.xz;
+            float m1 = tNoise(q / 190.0) * 0.6 + tNoise(q / 63.0) * 0.4, m2 = tNoise(q / 47.0 + 17.0) * 0.65 + tNoise(q / 13.0) * 0.35;
+            diffuseColor.rgb *= 0.84 + 0.32 * m1;
+            float dry = smoothstep(0.52, 0.78, m2) * uDry;
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.08, 1.03, 0.86), dry);
+            diffuseColor.rgb *= 1.0 - 0.18 * smoothstep(0.6, 0.85, 1.0 - m2) * uDry;
+            float slope = 1.0 - vTUp;
+            float strata = tNoise(vec2(vTWP.x * 0.21 + vTWP.z * 0.13, vTWP.y * 2.1)) * 0.6 + tNoise(vTWP.xz * 0.9) * 0.4;
+            diffuseColor.rgb = mix(diffuseColor.rgb, uRock * (0.62 + 0.6 * strata), smoothstep(0.32, 0.55, slope) * 0.85);`);
+   };
+   mat.customProgramCacheKey = () => 'pz-ground';
+}
+function patchWind(mat, amp, key) {
+   mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uWind = WIND.uWind;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+uniform float uWind;`)
+         .replace('#include <begin_vertex>', `#include <begin_vertex>
+            #ifdef USE_INSTANCING
+               vec2 wOrg = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;
+               float wk = max(position.y - ${amp[1].toFixed(2)}, 0.0) * ${amp[0].toFixed(4)};
+               float wph = uWind * 1.7 + dot(wOrg, vec2(0.071, 0.053));
+               transformed.x += (sin(wph) * 0.7 + sin(wph * 2.3 + 1.1) * 0.3) * wk;
+               transformed.z += sin(wph * 0.8 + 2.0) * 0.5 * wk;
+            #endif`);
+   };
+   mat.customProgramCacheKey = () => key;
+}
+
 function hash(x, z) { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); }
 function vnoise(x, z) {
    const xi = Math.floor(x), zi = Math.floor(z); let fx = x - xi, fz = z - zi;
@@ -118,8 +175,10 @@ export class Terrain3D {
       this.chunks = [];
       this.pal = { ...PALETTES[pid], ...(theme.colors ? Object.fromEntries(Object.entries(theme.colors).map(([k, v]) => [k, C(v)])) : {}) };
       this.detail = detailTexture();
-      this.groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.detail, roughness: 0.97, metalness: 0 });
-      this.vegMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });   // smooth: faceted crowns read as flat planes in the x8/x16 scope
+      this.groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.detail, bumpMap: this.detail, bumpScale: 2.2, roughness: 0.97, metalness: 0 });
+      patchGround(this.groundMat, { dry: this.winter ? 0.25 : pid === 'steppe' ? 0.8 : 0.6, rock: this.pal.rock.clone().multiplyScalar(this.winter ? 1.15 : 1) });
+      this.vegMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+      patchWind(this.vegMat, [0.03, 2.5], 'pz-veg');   // smooth: faceted crowns read as flat planes in the x8/x16 scope
       this.buildGround();
       this.buildWater();
       this.buildObjects();
@@ -528,13 +587,18 @@ export class Terrain3D {
       g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(p.length).map((_, i) => i % 3 === 1 ? 1 : 0), 3)); // up-facing: lit like the ground
       const m = new THREE.MeshLambertMaterial({ vertexColors: true });
       m.onBeforeCompile = (sh) => {
-         sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `
+         sh.uniforms.uWind = WIND.uWind;
+         sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+uniform float uWind;`).replace('#include <begin_vertex>', `
             vec3 transformed = vec3(position);
             #ifdef USE_INSTANCING
                vec3 gOrg = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+               float gph = uWind * 2.6 + gOrg.x * 0.13 + gOrg.z * 0.09;
+               transformed.xz += vec2(sin(gph), sin(gph * 0.7 + 1.3) * 0.6) * position.y * 0.35;
                transformed *= 1.0 - smoothstep(34.0, 54.0, distance(gOrg.xz, cameraPosition.xz));
             #endif`);
       };
+      m.customProgramCacheKey = () => 'pz-grass';
       const im = this.grass = new THREE.InstancedMesh(g, m, n);
       im.frustumCulled = false;
       this.grassSpan = 110; this.grassBase = new Float32Array(n * 2); this.grassCell = new Int32Array(n * 2).fill(-99999);
@@ -554,8 +618,9 @@ export class Terrain3D {
       this.group.traverse((o) => { for (const r of [o.geometry, ...(Array.isArray(o.material) ? o.material : [o.material])]) if (r && !seen.has(r)) { seen.add(r); r.map?.dispose?.(); r.dispose?.(); } });
       this.detail?.dispose?.();
    }
-   update(cam) {
+   update(cam, dt = 1 / 60) {
       const t = this.t;
+      WIND.uWind.value += dt;
       if (t.bridges) for (const b of t.bridges) if (b.alive === false && !b.blown) t.blowBridge(b);   // replicated (net) blow
       if ((t.heightVersion ?? 0) !== this.hver) {
          this.hver = t.heightVersion ?? 0;

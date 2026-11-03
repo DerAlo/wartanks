@@ -14,7 +14,7 @@ const SIM_DT = 1 / 60;
 const q = loadQuality();
 const canvas = document.getElementById('gl');
 const R = new Renderer(canvas, q);
-const sky = new Sky(R.scene);
+const sky = R.sky = new Sky(R.scene);
 const input = new Input(canvas);
 const tcam = new TankCamera(R.camera);
 const params = new URLSearchParams(location.search);
@@ -221,7 +221,7 @@ function frame(now) {
       G.acc += dt; let n = 0;
       while (G.acc >= SIM_DT && n++ < 6) { world.update(SIM_DT); G.acc -= SIM_DT; }
       if (n >= 6) G.acc = 0;
-      terrain3d?.update(R.camera.position);
+      terrain3d?.update(R.camera.position, dt);
       tanks3d?.update(dt, R.camera);
       fx?.update(dt, R.camera);
       audio?.update?.(dt, world, R.camera, tcam);
