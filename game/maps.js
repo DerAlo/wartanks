@@ -1,0 +1,147 @@
+// game/maps.js — map themes: German names, terrain generation recipe (height features, ground,
+// objects) and the look (palette + lighting/sky read by render.js / sky.js / terrain3d.js).
+//
+// Layout coordinates are metres on the 1000 × 1000 m map (x east, z south). Team 1 spawns in the
+// south (z > 0), team 2 in the north. Features marked `sym` are mirrored through the map centre
+// ((x, z) -> (-x, -z)) so both sides get the same tactical options.
+//
+// Feature kinds (terrain.js):
+//   hill   { x, z, r, h }                  smooth bump (h < 0 = hollow)
+//   ridge  { x0, z0, x1, z1, w, h, gaps? } elongated crest, hull-down line; gaps = [t, width] cuts
+//   plateau{ x, z, r, h }                  flat-topped rise (r = top radius, soft edge 40 m)
+//   flat   { x, z, r, y? }                 flatten to the local mean (village ground)
+//   river  { pts:[[x,z]...], w, depth, fords:[t...], bridge:[t...] }  water channel
+//   lake   { x, z, r, depth, frozen? }
+//   road   { pts:[[x,z]...], w }           ground 'road', gently smoothed
+//   forest { x, z, r, density, bushes }    trees (+ bushes) in a circle
+//   village{ x, z, r, houses, walls, church? }
+//   rocks  { x, z, r, n }
+//   bushes { x, z, r, n }
+//   farm   { x, z, yaw }                   2–3 houses + fences
+//   field  { x, z, r }                     soft ground (ploughed field)
+//   valley { k, max }                      terrain rises with distance from the river (k m per m)
+
+const SUMMER = {
+   fog: 0xb9c2b8, fogNear: 280, fogFar: 1200, sunDir: [0.55, 0.62, 0.35], sunColor: 0xfff1d6, sunIntensity: 2.6,
+   skyLight: 0xc9dcf0, groundLight: 0x5a5236, hemiIntensity: 0.95, exposure: 1.05,
+   skyTop: 0x5f8fc4, skyHor: 0xc6d2d0, skyLow: 0x7a7a62, cloud: 0.55,
+};
+
+export const MAPS = {
+   steppe: {
+      id: 'steppe', name: 'Steppe', desc: 'Offenes, welliges Grasland mit langen Hügelkämmen – Hull-Down-Stellungen und weite Schussbahnen.',
+      palette: 'steppe', seed: 11,
+      render: { ...SUMMER, fog: 0xc8c6b0, skyHor: 0xd4d0b8, sunColor: 0xfff0d0, cloud: 0.35, fogFar: 1350 },
+      noise: { amp: 5, scale: 260, detail: 0.6, ridgedAmp: 4 },
+      ground: { soft: 0.18, hard: 0.1 },
+      features: [
+         { kind: 'ridge', sym: true, x0: -380, z0: 150, x1: 60, z1: 120, w: 70, h: 9, gaps: [[0.45, 40]] },
+         { kind: 'ridge', sym: true, x0: 140, z0: 40, x1: 420, z1: 70, w: 60, h: 11 },
+         { kind: 'hill', x: 0, z: 0, r: 90, h: 8 },
+         { kind: 'hill', sym: true, x: -300, z: -40, r: 110, h: 14 },
+         { kind: 'hill', sym: true, x: 330, z: 300, r: 80, h: -4 },
+         { kind: 'road', pts: [[-500, 260], [-200, 180], [0, 30], [200, -170], [500, -260]], w: 7 },
+         { kind: 'farm', sym: true, x: 230, z: 220, yaw: 0.3 },
+         { kind: 'forest', sym: true, x: -150, z: 330, r: 55, density: 0.35, bushes: 0.6 },
+         { kind: 'forest', sym: true, x: 420, z: -120, r: 50, density: 0.3, bushes: 0.5 },
+         { kind: 'rocks', sym: true, x: -60, z: 70, r: 35, n: 7 },
+         { kind: 'rocks', sym: true, x: 300, z: 90, r: 30, n: 5 },
+         { kind: 'bushes', sym: true, x: 80, z: 140, r: 60, n: 18 },
+         { kind: 'bushes', sym: true, x: -280, z: 120, r: 70, n: 20 },
+         { kind: 'field', sym: true, x: 120, z: 330, r: 90 },
+      ],
+      scatter: { trees: 40, bushes: 140, rocks: 20 },
+   },
+   dorf: {
+      id: 'dorf', name: 'Dorf', desc: 'Ein Dorf mit Kirche, engen Gassen und Steinmauern im Zentrum, Hügel an der Ostflanke.',
+      palette: 'summer', seed: 23,
+      render: { ...SUMMER },
+      noise: { amp: 4, scale: 220, detail: 0.5, ridgedAmp: 2 },
+      ground: { soft: 0.12, hard: 0.08 },
+      features: [
+         { kind: 'flat', x: 0, z: 0, r: 170 },
+         { kind: 'village', x: 0, z: 0, r: 150, houses: 34, walls: 14, church: true },
+         { kind: 'hill', x: 360, z: 0, r: 150, h: 22 },
+         { kind: 'ridge', x0: 300, z0: -260, x1: 300, z1: 260, w: 60, h: 6 },
+         { kind: 'hill', x: -380, z: 0, r: 130, h: -5 },
+         { kind: 'ridge', sym: true, x0: -420, z0: 200, x1: -150, z1: 230, w: 60, h: 7 },
+         { kind: 'road', pts: [[0, 500], [0, -500]], w: 8 },
+         { kind: 'road', pts: [[-500, 40], [-150, 20], [150, -20], [500, -40]], w: 7 },
+         { kind: 'farm', sym: true, x: -260, z: 330, yaw: -0.2 },
+         { kind: 'forest', sym: true, x: 250, z: 380, r: 70, density: 0.45, bushes: 0.5 },
+         { kind: 'forest', x: 420, z: 0, r: 70, density: 0.3, bushes: 0.7 },
+         { kind: 'field', sym: true, x: -250, z: 150, r: 100 },
+         { kind: 'bushes', sym: true, x: -150, z: 260, r: 60, n: 16 },
+         { kind: 'rocks', x: 380, z: 60, r: 40, n: 6 },
+      ],
+      scatter: { trees: 70, bushes: 110, rocks: 10 },
+   },
+   waldhuegel: {
+      id: 'waldhuegel', name: 'Waldhügel', desc: 'Bewaldete Hügel, Lichtungen und Hohlwege – Tarnung, Buschwerk und kurze Gefechte.',
+      palette: 'summer', seed: 37,
+      render: { ...SUMMER, fog: 0xaeb9ae, fogNear: 220, fogFar: 1050, sunIntensity: 2.4, skyHor: 0xbfcac4, cloud: 0.7 },
+      noise: { amp: 12, scale: 200, detail: 0.7, ridgedAmp: 9 },
+      ground: { soft: 0.2, hard: 0.08 },
+      features: [
+         { kind: 'hill', sym: true, x: -220, z: 60, r: 140, h: 24 },
+         { kind: 'hill', sym: true, x: 260, z: 200, r: 120, h: 16 },
+         { kind: 'ridge', sym: true, x0: -60, z0: 230, x1: 220, z1: 100, w: 55, h: 10 },
+         { kind: 'hill', x: 0, z: 0, r: 80, h: -6 },
+         { kind: 'road', pts: [[-500, -100], [-200, -40], [0, 0], [200, 40], [500, 100]], w: 6 },
+         { kind: 'forest', sym: true, x: -220, z: 60, r: 120, density: 0.75, bushes: 0.8 },
+         { kind: 'forest', sym: true, x: 260, z: 220, r: 90, density: 0.6, bushes: 0.8 },
+         { kind: 'forest', sym: true, x: 380, z: -300, r: 90, density: 0.55, bushes: 0.6 },
+         { kind: 'forest', sym: true, x: 40, z: 300, r: 60, density: 0.5, bushes: 0.6 },
+         { kind: 'farm', sym: true, x: -60, z: 120, yaw: 0.8 },
+         { kind: 'bushes', sym: true, x: 100, z: 60, r: 70, n: 25 },
+         { kind: 'rocks', sym: true, x: -140, z: -20, r: 40, n: 8 },
+      ],
+      scatter: { trees: 260, bushes: 220, rocks: 30 },
+   },
+   flusstal: {
+      id: 'flusstal', name: 'Flusstal', desc: 'Ein Fluss teilt das Tal: Furten, eine Brücke und Kämme an beiden Ufern.',
+      palette: 'summer', seed: 41,
+      render: { ...SUMMER, fog: 0xb4c2c4, skyHor: 0xc4d2d6, cloud: 0.6 },
+      noise: { amp: 6, scale: 240, detail: 0.6, ridgedAmp: 4 },
+      ground: { soft: 0.15, hard: 0.1 },
+      water: 0,
+      features: [
+         { kind: 'valley', k: 0.045, max: 280 },
+         { kind: 'river', pts: [[-520, -40], [-250, 20], [-60, -15], [120, 20], [300, -20], [520, 30]], w: 34, depth: 4.5,
+            fords: [0.22, 0.78], bridge: [0.5] },
+         { kind: 'ridge', sym: true, x0: -450, z0: 170, x1: -60, z1: 200, w: 70, h: 12 },
+         { kind: 'ridge', sym: true, x0: 120, z0: 140, x1: 450, z1: 170, w: 60, h: 9 },
+         { kind: 'road', pts: [[-40, 500], [-10, 150], [0, 0], [10, -150], [40, -500]], w: 7 },
+         { kind: 'village', sym: true, x: 260, z: 300, r: 70, houses: 9, walls: 5 },
+         { kind: 'forest', sym: true, x: -330, z: 330, r: 80, density: 0.5, bushes: 0.6 },
+         { kind: 'bushes', sym: true, x: -180, z: 70, r: 80, n: 30 },
+         { kind: 'bushes', sym: true, x: 230, z: 60, r: 60, n: 20 },
+         { kind: 'rocks', sym: true, x: 420, z: 80, r: 40, n: 7 },
+      ],
+      scatter: { trees: 80, bushes: 120, rocks: 15 },
+   },
+   winter: {
+      id: 'winter', name: 'Winterwald', desc: 'Verschneite Kiefernwälder um einen zugefrorenen See – das Eis trägt, bietet aber keine Deckung.',
+      palette: 'winter', seed: 53,
+      render: { ...SUMMER, fog: 0xd6dde3, fogNear: 200, fogFar: 1000, sunDir: [0.4, 0.45, 0.6], sunColor: 0xfff6ea, sunIntensity: 2.2,
+         skyLight: 0xdbe6f2, groundLight: 0x8a8f96, skyTop: 0x7e9cc0, skyHor: 0xdfe5ea, skyLow: 0xb8bec4, cloud: 0.8, exposure: 1.0 },
+      noise: { amp: 9, scale: 230, detail: 0.6, ridgedAmp: 6 },
+      ground: { soft: 0.25, hard: 0.05 },
+      features: [
+         { kind: 'lake', x: 0, z: 0, r: 130, depth: 3, frozen: true },
+         { kind: 'hill', sym: true, x: -300, z: 120, r: 130, h: 20 },
+         { kind: 'ridge', sym: true, x0: 120, z0: 160, x1: 430, z1: 90, w: 60, h: 11 },
+         { kind: 'hill', sym: true, x: 260, z: 340, r: 90, h: 10 },
+         { kind: 'road', pts: [[-500, 300], [-250, 250], [-180, 120], [-200, -100], [-80, -300], [0, -500]], w: 6 },
+         { kind: 'forest', sym: true, x: -300, z: 120, r: 120, density: 0.65, bushes: 0.4 },
+         { kind: 'forest', sym: true, x: 330, z: -150, r: 100, density: 0.6, bushes: 0.4 },
+         { kind: 'forest', sym: true, x: 100, z: 330, r: 70, density: 0.5, bushes: 0.4 },
+         { kind: 'farm', sym: true, x: -120, z: 240, yaw: 1.2 },
+         { kind: 'rocks', sym: true, x: 200, z: 40, r: 50, n: 9 },
+         { kind: 'bushes', sym: true, x: -100, z: 140, r: 60, n: 14 },
+      ],
+      scatter: { trees: 200, bushes: 90, rocks: 25 },
+   },
+};
+export const MAP_LIST = Object.keys(MAPS);
+export default MAPS;

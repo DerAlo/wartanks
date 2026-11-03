@@ -53,6 +53,18 @@ terrain.spawns    // { team1:[{x,z,yaw}], team2:[...] }
 terrain.version   // bump when destructible state changes (renderer rebuilds instances)
 ```
 
+Implemented extras: `terrain.groundIdxAt(x,z)` (0 road,1 hard,2 medium,3 soft,4 water),
+`terrain.waterDepth(x,z)`, `terrain.objectsNear(x,z,r)` (reused array, alive solid objects),
+`terrain.raycastGround/raycastObjects(...)`, `terrain.lastHit` `{type:'ground'|'object', obj}`
+after `raycast`, `terrain.destroyObject(o, dirX, dirZ)` (sets `alive=false`, `fallYaw`, bumps
+`version`), `terrain.bases` `{team1, team2, neutral}`, `terrain.inBush(x,z)`,
+`terrain.bushesOnLine(ax,az,bx,bz)`. Objects carry `y` (ground height at their centre), `r`
+(collision radius; trees: trunk), `shots` (blocks shells/LOS: house, church, rock, wall, wreck),
+and houses `roof`/`style`. Extra kind `church`. Trees and bushes do not stop shells. Frozen lakes
+(Winterwald) are hard ground at level 0 with `terrain.water = null`.
+`maps.js` exports `MAPS` (id → theme: `name`, `desc`, `palette`, `render` {fog, sun, sky...},
+generation recipe) and `MAP_LIST`.
+
 Themes in `maps.js` (at least 5): e.g. *Steppe* (open rolling, ridges for hull-down),
 *Dorf* (village, stone houses, walls, church, narrow streets), *Waldhügel* (forest, hills,
 bushes), *Flusstal* (river with fords and a bridge, valley), *Winter* (snowy, frozen lake,
