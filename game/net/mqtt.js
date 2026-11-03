@@ -103,7 +103,11 @@ export class MqttClient {
          if (body[1] !== 0) { this.stat.lastError = 'connack ' + body[1]; try { this._ws.close(); } catch (e) { /* closing anyway */ } return; }
          this.open = true; this._pause = 500; this.stat.connects++; this._pong = Date.now();
          if (this.subs.size) this._subscribe([...this.subs]);
+         let pingAt = Date.now();
          this._ping = setInterval(() => {
+            // a frozen page (long task) has not read the socket meanwhile: no verdict on the broker yet
+            if (Date.now() - pingAt > KEEPALIVE * 1000) this._pong = Date.now();
+            pingAt = Date.now();
             // a broker that stopped answering pings is dead even when the socket looks open
             if (Date.now() - this._pong > KEEPALIVE * 1500) { try { this._ws.close(); } catch (e) { /* closing anyway */ } this._down(); this._again(); return; }
             this._raw(new Uint8Array([0xC0, 0]));
@@ -113,7 +117,7 @@ export class MqttClient {
          const tl = (body[0] << 8) | body[1];
          let o = 2 + tl;
          if (head & 6) o += 2;
-         this.stat.received++;
+         this.stat.received++; this._pong = Date.now();      // any packet shows the broker alive
          this.cb.onMessage?.(td.decode(body.subarray(2, 2 + tl)), body.slice(o));
       } else if (type === 13) this._pong = Date.now();      // PINGRESP
    }

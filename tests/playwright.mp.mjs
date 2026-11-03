@@ -21,6 +21,7 @@ try {
    const errs = { A: [], B: [] };
    const mk = async (tag) => {
       const p = await ctx.newPage();
+      await p.addInitScript(() => { window.__netDebug = true; let last = performance.now(); setInterval(() => { const t = performance.now(); if (t - last > 700) console.log('[net] stall ' + Math.round(t - last) + ' ms ' + (window.__game?.world ? 'world' : 'menu') + (window.__stallTag ? ' ' + window.__stallTag : '')); last = t; }, 100); });
       p.on('console', (m) => { if (m.type() === 'error') errs[tag].push(m.text()); if (/\[net\]/.test(m.text())) console.log(tag, m.text()); });
       p.on('pageerror', (e) => errs[tag].push('pageerror: ' + e.message));
       await p.goto(base + '?q=low&net=' + NET);
@@ -54,8 +55,13 @@ try {
    for (const p of [A, B]) await p.waitForFunction(() => window.__game?.world && window.__game.net, null, { timeout: 90000 });
    console.log('match running on both pages', await B.evaluate(() => ({ host: __game.net.isHost, via: __game.net.transport.link?.(__game.net.transport.hostId)?.via })));
    // wait for the countdown, then drive and fire
+   const diag = () => Promise.all([A, B].map((p) => p.evaluate(() => ({ ph: __game.world?.phase, cd: __game.world?.countdown, t: __game.world?.time, fps: __game.fps, net: !!__game.net, warm: __game.R?.warming, progs: __game.R?.renderer.info.programs?.length, fr: __game.frame }))));
+   const dt = setInterval(async () => { try { console.log('diag', JSON.stringify(await diag())); } catch { /* closing */ } }, 10000);
+   // software GL renders both pages at a few frames a second here: skip the countdown on the host
+   await A.evaluate(() => { const w = __game.world; if (w.phase === 'countdown') w.countdown = Math.min(w.countdown, 0.05); });
    await A.waitForFunction(() => __game.world.phase === 'playing', null, { timeout: 120000 });
    await B.waitForFunction(() => __game.world.phase === 'playing', null, { timeout: 120000 });
+   clearInterval(dt);
    for (const p of [A, B]) await p.evaluate(() => { const i = __game.input; i.enabled = true; i.keys.add('KeyW'); i.keys.add('KeyA'); });
    for (let k = 0; k < 8; k++) {
       for (const p of [A, B]) await p.evaluate(() => { const w = __game.world, me = w.player; if (me.reload <= 0) me.fire(w); });

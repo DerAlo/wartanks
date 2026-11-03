@@ -197,10 +197,10 @@ export async function makeRoomTransport(o) {
    const idBytes = te.encode(selfId);
    // strictly growing over the instances of one page, so a peer can tell a re-join from a late packet
    const epoch = Math.max(Date.now(), makeRoomTransport._last + 1 || 0); makeRoomTransport._last = epoch;
-   const handlers = new Map(), peers = new Map(), bye = new Map();
+   const handlers = new Map(), peers = new Map(), bye = new Map(), gone = new Map();
    const nB = bus.size, nextAt = new Array(nB).fill(0), timers = new Array(nB).fill(null), rr = new Array(nB).fill(0), soon = new Array(nB).fill(false);
    const st = { relayOut: 0, relayIn: 0, relayBytesOut: 0, relayBytesIn: 0, directOut: 0, directIn: 0, directBytesOut: 0, directBytesIn: 0, dups: 0, held: 0, nacks: 0, resent: 0, resets: 0, badCrypto: 0, directFail: 0, rx: {} };
-   let onJoin = null, onLeave = null, onRoute = null, left = false, carrier = null, hiN = 0, hiAt = 0;
+   let onJoin = null, onLeave = null, onRoute = null, left = false, carrier = null, hiN = 0, hiAt = 0, tickAt = now();
    let txChain = Promise.resolve(), rxChain = Promise.resolve();
 
    const mkPeer = (id) => ({
@@ -211,9 +211,14 @@ export async function makeRoomTransport(o) {
       rtt: null, pingAt: 0,
    });
    const via = (p) => p.direct ? 'direct' : 'relay';
-   function drop(p) {
+   function drop(p, why) {
       if (peers.get(p.id) !== p) return;
+      if (globalThis.__netDebug) console.log('[net] relay drop', p.id, why, Math.round(now() - Math.max(p.relayAt, p.directAt, p.born)));
       peers.delete(p.id);
+      // timed out: keep its streams, so the same instance heard again goes on where it was (a fresh
+      // peer would count from 1 again while the other side, which may never have dropped us, skips
+      // every frame up to its old sequence numbers as a duplicate: the link stays dead both ways)
+      if (why === 'dead') gone.set(p.id, p); else gone.delete(p.id);
       if (p.joined && !left) onLeave?.(p.id);
    }
    // A peer's traffic moves to the direct channel only after a question sent over that channel
@@ -385,10 +390,16 @@ export async function makeRoomTransport(o) {
       let p = peers.get(from);
       if (p && bundle.epoch < p.epoch) return;           // a late packet of an earlier visit
       if ((bye.get(from) || 0) >= bundle.epoch) return;  // said goodbye already (slow duplicate)
-      if (p && p.epoch && bundle.epoch > p.epoch) { drop(p); p = null; }      // the peer came back as a new instance
+      if (p && p.epoch && bundle.epoch > p.epoch) { drop(p, 'epoch'); p = null; }      // the peer came back as a new instance
       if (!p) {
          if (o.admit && !o.admit(from)) return;
-         p = mkPeer(from); peers.set(from, p);
+         const z = gone.get(from);
+         gone.delete(from);
+         if (z && z.epoch === bundle.epoch) {             // timed out earlier, same instance: revive it
+            p = z; p.joined = false; p.direct = false; p.up = false; p.born = now(); p.gapAt = 0;
+            if (globalThis.__netDebug) console.log('[net] relay revive', from);
+         } else p = mkPeer(from);
+         peers.set(from, p);
          if (now() - hiAt > 400) sayHi();                // let the newcomer know us at once
       }
       p.epoch = bundle.epoch;
@@ -398,7 +409,7 @@ export async function makeRoomTransport(o) {
       for (const raw of bundle.frames) {
          const f = readFrame(raw);
          if (!f) continue;
-         if (f.kind === K_BYE) { bye.set(from, bundle.epoch); drop(p); return; }
+         if (f.kind === K_BYE) { bye.set(from, bundle.epoch); drop(p, 'bye'); return; }
          if (f.kind === K_PROBE || f.kind === K_PROBED) {     // not part of any stream; only count when they came over the channel itself
             if (b < 0 && f.kind === K_PROBE) sendDirect(makeBundle(epoch, p.txSeq, [makeFrame(K_PROBED, 0, '', undefined)]), p.id);
             if (b < 0 && f.kind === K_PROBED && p.up) setDirect(p, true);
@@ -462,12 +473,16 @@ export async function makeRoomTransport(o) {
    // ------------------------------------------------------------ housekeeping
    function tick() {
       if (left) return;
-      const t = now();
+      const t = now(), late = t - tickAt - TICK_MS;
+      tickAt = t;
+      // this page was frozen (long task, background tab): what the peers sent meanwhile still waits
+      // in the socket queue, so the silence is ours, not theirs
+      if (late > 1000) for (const p of peers.values()) { p.relayAt += late; p.directAt += late; p.born += late; }
       if (t - hiAt >= HI_MS) sayHi();
       for (const p of [...peers.values()]) {
          if (p.direct && t - p.directAt > STALL_MS) setDirect(p, false, true);
          if (p.up && !p.direct && carrier && t - p.probeAt >= PROBE_MS) probe(p);
-         if (!p.direct && t - Math.max(p.relayAt, p.directAt, p.born) > DEAD_MS) { drop(p); continue; }
+         if (!p.direct && t - Math.max(p.relayAt, p.directAt, p.born) > DEAD_MS) { drop(p, 'dead'); continue; }
          if (!p.joined) continue;
          if (t - p.pingAt >= PING_MS) { p.pingAt = t; sendLatest(p, '', t, K_PING); }
          // something is missing: frames wait behind a gap, or the sender is ahead of what arrived

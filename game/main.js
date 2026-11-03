@@ -51,6 +51,7 @@ export function startBattle(opts = {}) {
    audio?.start?.(world);
    G.fx = fx; G.hud = hud; G.audio = audio;
    tcam.reset(world.player?.yaw ?? 0);
+   R.warm?.();
    input.enabled = true; menu?.hide?.();
    G.acc = 0;
 }

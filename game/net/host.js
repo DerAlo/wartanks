@@ -13,12 +13,12 @@ const SNAP_DT = 1 / 20, SYNC_DT = 1 / 4, ME_DT = 1;
 const R2 = (v) => Math.round(v * 100) / 100;
 // event fields worth the wire (consumers: hud kill feed / hit markers, fx, audio)
 const EV_KEYS = ['srcId', 'dstId', 'dmg', 'dmgSelf', 'pos', 'dir', 'normal', 'ammo', 'cal', 'module', 'crew', 'state', 'side', 'cause', 'what',
-   'plateName', 'part', 'effT', 'pen', 'angleDeg', 'overmatch', 'from', 'team', 'capId', 'progress', 'objId', 'phase', 'outcome', 'reason'];
+   'plateName', 'part', 'effT', 'pen', 'angleDeg', 'overmatch', 'from', 'team', 'capId', 'progress', 'objId', 'phase', 'outcome', 'reason', 'wreck'];
 function slimEvent(e) {
    const o = {};
    for (const k of EV_KEYS) {
       const v = e[k];
-      if (v == null) continue;
+      if (v == null || v === false) continue;
       o[k] = typeof v === 'number' ? R2(v) : typeof v === 'object' ? { x: R2(v.x), y: R2(v.y), z: R2(v.z) } : v;
    }
    return o;

@@ -13,6 +13,8 @@ export class Renderer {
       r.shadowMap.enabled = true;
       r.shadowMap.type = THREE.PCFSoftShadowMap;
       r.info.autoReset = false;
+      // the checks read the shader logs back synchronously: seconds of a frozen page per battle start
+      r.debug.checkShaderErrors = /[?&]debug/.test(globalThis.location?.search || '');
       this.scene = new THREE.Scene();
       this.scene.fog = new THREE.Fog(0xb9c2b8, 250, 1100);
       this.camera = new THREE.PerspectiveCamera(60, 1, 0.3, 4000);
@@ -55,7 +57,27 @@ export class Renderer {
       sun.position.set(x + d.x * 400, fy + d.y * 400, z + d.z * 400);
       sun.target.updateMatrixWorld();
    }
+   /** Compile the scene's shaders off the main thread (KHR_parallel_shader_compile) before the first
+    *  frame draws them: a first render compiles and links them synchronously, which froze a page for
+    *  seconds to minutes (software GL, two tabs) and starved the netcode of its heartbeats. Rendering
+    *  waits for it (at most 20 s); the simulation does not. */
+   warm() {
+      const id = this._warmId = (this._warmId || 0) + 1, done = () => { if (this._warmId === id) this.warming = false; };
+      this.warming = true;
+      setTimeout(done, 20000);
+      // three's compileAsync, minus its crash on a material disposed or recompiled while waiting
+      let mats;
+      try { mats = this.renderer.compile(this.scene, this.camera); } catch (e) { done(); return; }
+      const props = this.renderer.properties;
+      const poll = () => {
+         if (this._warmId !== id) return;
+         try { for (const m of mats) { const pr = props.get(m).currentProgram; if (!pr || pr.isReady()) mats.delete(m); } } catch (e) { mats.clear(); }
+         if (mats.size) setTimeout(poll, 10); else done();
+      };
+      poll();
+   }
    render() {
+      if (this.warming) return;
       this.renderer.info.reset();
       this.renderer.render(this.scene, this.camera);
    }
