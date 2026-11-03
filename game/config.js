@@ -438,7 +438,7 @@ const RAW = [
          rear: [['urp', 50, 0, 0.9], ['lrp', 50, -30, null]], floorT: 20, side: { t: 95 } },
       turret: { z: -0.6, ringR: 0.74, h: 0.78, roofT: 20, oct: [1.95, 0.85, 1.1, 0.35, 0.35], f: [152, 0], cheek: [152, 10], s: [95, 5], rr: [95, 5], r: [95, 0], traverse: 22 },
       mantlet: { w: 0.5, h: 0.35, d: 0.1, t: 50 },
-      gun: gun(G.qf75),
+      gun: gun(G.hv77),
       run: { wheels: 11, wheelR: 0.18, interleave: 0, rollers: 0, sprocket: 'rear', sprocketR: 0.4, idlerR: 0.4, trackW: 0.56, len: 7.4, h: 1.6, t: 20, style: 'allround' },
       layout: { ammo: 'sponson', fuel: 'rear' },
    },

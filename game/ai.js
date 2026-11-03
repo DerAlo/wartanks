@@ -283,7 +283,7 @@ export class BotAI {
       const late = w.timeLeft != null && w.timeLeft < LATE_T;
       const capping = t.capId != null && w.caps.some((c) => c.id === t.capId && c.capper === t.team);
       const wantHunt = !this.returning && !capping && (nEnemy <= 2 || nOwn >= nEnemy + 3
-         || (late && this.role === 'defend' && (w.timeLeft < 150 || nEnemy <= 3)) || (late && w.timeLeft < 110));
+         || (late && this.role === 'defend' && (w.timeLeft < 200 || nEnemy <= 3)) || (late && w.timeLeft < 180));
       // a remembered spot that turns out empty is forgotten
       for (const [id, k] of mem) if (Math.hypot(k.x - t.pos.x, k.z - t.pos.z) < 30 && !w.tankById(id)?.spotted) mem.delete(id);
       if (wantHunt && w.time - this.lastEnemySeen > 6 && (!this.hunting || this.huntT <= 0)) {
@@ -314,7 +314,10 @@ export class BotAI {
       if (!this.returning && arrived && (quiet > (this.role === 'snipe' || this.role === 'defend' ? 70 : 25) || (this.stage === 0 && this.holdT > 45))) {
          this.stage++; this.setDest(this.chooseDest());
       }
-      if (!this.returning && t.hp < t.maxHP * 0.3 && !this.retreating) { this.retreating = true; this.setDest(this.chooseDest()); }
+      // low HP falls back - except at the very end or against a lone survivor, where hiding only runs the clock out
+      const mayRetreat = (w.timeLeft == null || w.timeLeft > 110) && nEnemy > 1;
+      if (!this.returning && t.hp < t.maxHP * 0.3 && !this.retreating && mayRetreat) { this.retreating = true; this.setDest(this.chooseDest()); }
+      else if (this.retreating && !mayRetreat) { this.retreating = false; this.setDest(this.chooseDest()); }
       // re-plan on long paths occasionally
       this.repath -= 0.25;
       if (this.repath <= 0 && !arrived) { this.repath = 20; this.setDest(this.dest); }
@@ -438,10 +441,27 @@ export class BotAI {
       // engage stance: stop and fight unless flanking / retreating
       const engaging = e && e.alive && !this.retreating && !(this.flankT > 0) && (this.role !== 'flank' || this.stage > 0 || Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z) < 160)
          && this.role !== 'push' && !this.returning;
-      const hold = atDest || (engaging && t.reload < 1.5 + (t.cfg.cls === 'TD' ? 3 : 0));
+      // gun cannot bear (depression / casemate arc) for a while: at point blank back off,
+      // further out stop holding and close in instead of sitting there with the gun at its stop
+      const dE = e && e.alive ? Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z) : 1e9;
+      this.blockT = t.gunBlocked && dE < 400 ? (this.blockT || 0) + dt : 0;
+      const blocked = this.blockT > 2;
+      if (blocked && dE >= 25 && (atDest || !this.path) && !(this.reposT > w.time)) {
+         this.reposT = w.time + 6; const k = Math.min(0.5, 60 / dE);
+         this.setDest({ x: t.pos.x + (e.pos.x - t.pos.x) * k, z: t.pos.z + (e.pos.z - t.pos.z) * k });
+         inp.throttle = 0; return;
+      }
+      const hold = !(blocked && dE >= 25) && (atDest || (engaging && t.reload < 1.5 + (t.cfg.cls === 'TD' ? 3 : 0)));
       // unstick
       if (this.unstickT > 0) {
          this.unstickT -= dt; inp.throttle = -0.8; inp.steer = this.unstickDir; return;
+      }
+      // point blank and the gun cannot depress / traverse onto the target: back off nose-on until it can
+      if (this.blockT > 1.5 && dE < 25) this.backT = 2.5;
+      if (this.backT > 0 && dE < 40) {
+         this.backT -= dt;
+         const dy = angleDelta(t.yaw, yawTo(t.pos.x, t.pos.z, e.pos.x, e.pos.z));
+         inp.throttle = -1; inp.steer = clamp(dy * 2, -1, 1); return;
       }
       if (!hold && Math.abs(t.speed) < 0.6 && Math.abs(inp.throttle) > 0.3) {
          this.stuckT += dt;
@@ -463,6 +483,7 @@ export class BotAI {
          } else inp.steer = 0;
          return;
       }
+      if (!wp) { inp.throttle = 0; inp.steer = 0; return; }
       wantYaw = yawTo(t.pos.x, t.pos.z, wp.x, wp.z);
       let dy = angleDelta(t.yaw, wantYaw);
       // simple ally avoidance: veer away from tanks just ahead
