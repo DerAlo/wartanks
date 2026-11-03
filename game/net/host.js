@@ -2,12 +2,14 @@
 // commands, sends snapshots (20 Hz), event batches, sync (4 Hz), per-player stats (1 Hz) and the end.
 // See CONTRACT.md "Wire protocol".
 //
-//   host = new NetHost(world, transport, start, { onLog })
+//   host = new NetHost(world, transport, start, { onLog, onSuccessor(peer), self })
+//     self: the host's own slot (0; a successor after a host migration runs the match from its slot)
 //   host.step(dt)          after every world.update(SIM_DT) (game.js wraps world.update)
 //   host.dispose()
 import { encodeSnap, visibleTo } from './codec.js';
 import { applyCmd, tickFire } from './command.js';
 import { setHuman } from './setup.js';
+import { packState, MIG_DT } from './migrate.js';
 
 const SNAP_DT = 1 / 20, SYNC_DT = 1 / 4, ME_DT = 1;
 const R2 = (v) => Math.round(v * 100) / 100;
@@ -30,8 +32,10 @@ const MIRROR = { 'Alle Gegner zerstört': 'Eigenes Team vernichtet', 'Eigenes Te
 export class NetHost {
    constructor(world, transport, start, opts = {}) {
       this.w = world; this.T = transport; this.start = start; this.opts = opts;
-      // remote captains (slot 0 is the host itself)
-      this.cl = start.slots.map((s, i) => ({ i, peer: s.peer, tid: s.tid, wteam: s.wteam, team: s.team, name: s.name, joined: false, st: { seq: 0, done: 0, fireT: 0 }, rejoin: false })).slice(1);
+      // remote captains (every slot but the host's own)
+      this.self = opts.self ?? 0;
+      this.cl = start.slots.map((s, i) => ({ i, peer: s.peer, tid: s.tid, wteam: s.wteam, team: s.team, name: s.name, joined: false, st: { seq: 0, done: 0, fireT: 0 }, rejoin: false })).filter((c) => c.i !== this.self);
+      this.succ = null; this.migT = 0; this.migs = 0; this.migBytes = 0;
       this.items = []; this.batch = 0; this.lastSeq = world.seq;
       this.shells = new Map();               // shell id -> ricochet count sent
       this.shellTo = new Map();              // PvP: shell id -> bits of the World teams told of it (1, 2)
@@ -85,7 +89,8 @@ export class NetHost {
       const w = this.w;
       for (const c of this.cl) if (c.joined) tickFire(w, this.tank(c), c.st, dt);
       this.harvest();
-      this.snapT += dt; this.syncT += dt; this.meT += dt;
+      this.snapT += dt; this.syncT += dt; this.meT += dt; this.migT += dt;
+      if (this.migT >= MIG_DT && !this.ended) { this.migT = 0; this.pickSuccessor(); this.sendMig(); }
       if (this.snapT >= SNAP_DT) { this.snapT %= SNAP_DT; this.flush(); this.snaps(); }
       if (this.syncT >= SYNC_DT) { this.syncT %= SYNC_DT; this.sync(); }
       if (this.meT >= ME_DT) { this.meT %= ME_DT; for (const c of this.cl) if (c.joined) this.T.send('sync', { k: 'me', s: this.tank(c).stats }, c.peer); }
@@ -183,7 +188,7 @@ export class NetHost {
    sync() {
       const w = this.w, to = this.peers();
       if (!to.length) return;
-      this.T.send('sync', { k: 'st', t: this.tick(), ph: w.phase, cd: R2(w.countdown), tl: w.timeLeft == null ? null : R2(w.timeLeft),
+      this.T.send('sync', { k: 'st', hs: this.succ || undefined, t: this.tick(), ph: w.phase, cd: R2(w.countdown), tl: w.timeLeft == null ? null : R2(w.timeLeft),
          caps: w.caps.map((c) => [R2(c.progress), c.capper ?? 0, c.n ?? 0]) }, to);
    }
    /** Result per player: outcome for its own team, its own stats; PvP: the table of all captains. */
@@ -192,7 +197,7 @@ export class NetHost {
       this.flush();
       const w = this.w, res = w.result || {};
       const pl = this.start.slots.map((s) => { const t = w.tankById(s.tid); return [s.name, s.team ?? s.wteam, Math.round(t.stats.dmg), t.stats.kills, t.alive ? 1 : 0]; });
-      const ht = this.start.slots[0].team ?? 1, lobbyTeam = (wt) => (wt === 1 ? ht : 3 - ht);
+      const me = this.start.slots[this.self], ht = me.team ?? 1, lobbyTeam = (wt) => (wt === me.wteam ? ht : 3 - ht);
       for (const c of this.cl) {
          if (!c.joined) continue;
          const t = this.tank(c), outcome = outcomeFor(w.winner ?? res.winner, t.team);
@@ -200,8 +205,28 @@ export class NetHost {
          this.T.send('sync', { k: 'end', outcome, reason, winner: w.winner, time: R2(w.time), s: t.stats, alive: t.alive ? 1 : 0,
             pvp: this.start.mode === 'pvp' ? { win: w.winner ? lobbyTeam(w.winner) : 0, my: c.team ?? lobbyTeam(t.team), pl } : undefined }, c.peer);
       }
-      this.result = { pvp: this.start.mode === 'pvp' ? { win: w.winner ? lobbyTeam(w.winner) : 0, my: this.start.slots[0].team ?? 1, pl } : undefined };
+      this.result = { pvp: this.start.mode === 'pvp' ? { win: w.winner ? lobbyTeam(w.winner) : 0, my: ht, pl } : undefined };
    }
-   /** Host leaves before the end. */
-   abort() { if (!this.ended) { this.ended = true; this.T.send('sync', { k: 'abort' }); } }
+   /** Host leaves before the end: with a successor the match goes on under it (`left`, after a last
+    *  full state); otherwise it is over for everybody (`abort`). Returns true for a hand-over. */
+   abort() {
+      if (this.ended) return false;
+      this.ended = true;
+      if (this.succ && this.byPeer(this.succ)?.joined) { this.sendMig(); this.T.send('sync', { k: 'left' }); return true; }
+      this.T.send('sync', { k: 'abort' });
+      return false;
+   }
+   // ---- host migration: the successor is the first connected captain in slot order
+   pickSuccessor() {
+      const c = this.cl.find((x) => x.joined);
+      const id = c ? c.peer : null;
+      if (id !== this.succ) { this.succ = id; this.opts.onSuccessor?.(id); }
+   }
+   sendMig() {
+      if (!this.succ) return;
+      const m = packState(this.w, { pl: this.start.slots.map((s, i) => [i === this.self ? this.T.selfId : this.cl.find((c) => c.i === i)?.peer ?? s.peer, this.cl.find((c) => c.i === i)?.joined ? 1 : 0]),
+         host: this.self });
+      this.migs++; this.migBytes += JSON.stringify(m).length;
+      this.T.send('mig', m, this.succ);
+   }
 }
