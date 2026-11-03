@@ -113,7 +113,80 @@ const CSS = `
 .pz-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .pz-grid div { background: var(--khaki); padding: 8px 10px; } .pz-grid b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
 .pz-grid .gold { background: var(--olive); color: var(--paper); } .pz-grid .gold .pz-k { color: var(--khaki); }
+/* campaign: operations list (index cards on a dark map table), briefing sheet, results */
+#pz-camp { background: radial-gradient(ellipse at 50% 40%, rgba(20,22,14,.55), rgba(10,11,7,.88)); pointer-events: auto; }
+#pz-brief { background: linear-gradient(90deg, rgba(10,11,7,.82) 0, rgba(10,11,7,.5) 46%, rgba(10,11,7,0) 62%, rgba(10,11,7,0) 70%, rgba(10,11,7,.6) 100%); }
+.pz-ops { position: absolute; left: 50%; top: 92px; bottom: 24px; transform: translateX(-50%); width: min(1180px, 94vw); overflow-y: auto; }
+.pz-ops-h { display: flex; align-items: baseline; gap: 18px; color: var(--khaki); margin: 0 4px 14px; }
+.pz-ops-h h1 { margin: 0; font-size: 40px; color: var(--paper); letter-spacing: .22em; }
+.pz-ops-h .sp { flex: 1; } .pz-ops-h .tot { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; } .pz-ops-h .tot b { color: var(--signal-hi); font-size: 18px; }
+.pz-opgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.pz-op { position: relative; background: var(--paper); color: var(--ink); border: 1px solid var(--khaki-3); border-left: 8px solid var(--nat, var(--olive));
+   padding: 14px 16px 12px 16px; cursor: pointer; box-shadow: 0 6px 22px rgba(0,0,0,.4); transition: transform .12s, box-shadow .12s; min-height: 150px; }
+.pz-op:hover { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(0,0,0,.5); border-left-color: var(--signal); }
+.pz-op .no { font: 700 12px var(--font-stencil); letter-spacing: .3em; color: var(--ink-3); }
+.pz-op .nm { font: 700 24px/1.05 var(--font-stencil); letter-spacing: .06em; margin: 6px 0 6px; text-transform: uppercase; }
+.pz-op .pl { font-size: 13px; color: var(--ink-2); } .pz-op .dt { font: 600 12px var(--font-cond); letter-spacing: .12em; color: var(--signal-lo); text-transform: uppercase; margin-top: 2px; }
+.pz-op .ins { position: absolute; right: 12px; top: 12px; width: 34px; height: 34px; }
+.pz-op .ft { display: flex; align-items: center; gap: 10px; margin-top: 12px; border-top: 1px solid var(--rule); padding-top: 8px; font-size: 12px; color: var(--ink-3); }
+.pz-op .ft .sp { flex: 1; }
+.pz-op.lock { cursor: default; filter: grayscale(.85); opacity: .62; } .pz-op.lock:hover { transform: none; border-left-color: var(--nat, var(--olive)); }
+.pz-op .lk { display: inline-block; font: 700 12px var(--font-stencil); letter-spacing: .2em; color: var(--bad); border: 2px solid var(--bad); padding: 2px 8px; transform: rotate(-6deg); }
+.pz-op .done { position: absolute; right: 56px; top: 14px; font: 700 11px var(--font-stencil); letter-spacing: .2em; color: var(--olive); border: 2px solid var(--olive); padding: 1px 6px; transform: rotate(4deg); }
+.pz-stars { display: inline-flex; gap: 2px; font-size: 18px; line-height: 1; letter-spacing: 0; } .pz-stars i { font-style: normal; color: rgba(0,0,0,.18); } .pz-stars i.on { color: var(--signal); text-shadow: 0 1px 0 var(--signal-lo); }
+.pz-sheet { position: absolute; left: 4vw; top: 70px; bottom: 22px; width: min(600px, 46vw); overflow-y: auto; background: var(--paper); color: var(--ink);
+   padding: 26px 32px 22px; box-shadow: 0 10px 40px rgba(0,0,0,.55), inset 0 0 0 7px var(--paper), inset 0 0 0 8px var(--ink-3), inset 0 0 0 10px var(--paper), inset 0 0 0 11px var(--ink-3); }
+.pz-sheet .kick { font: 700 11px var(--font); letter-spacing: .32em; text-transform: uppercase; color: var(--signal-lo); }
+.pz-sheet .when { display: flex; gap: 16px; align-items: baseline; margin-top: 10px; font: 600 15px var(--font-cond); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.pz-sheet h2 { font: 700 36px/1.02 var(--font-stencil); letter-spacing: .08em; margin: 8px 0 10px; text-transform: uppercase; color: var(--ink); }
+.pz-sheet p { font: 15px/1.55 Georgia, 'Times New Roman', serif; margin: 0 0 11px; color: var(--ink); text-align: justify; hyphens: auto; }
+.pz-sheet h4 { margin: 16px 0 6px; font: 700 12px var(--font-stencil); letter-spacing: .24em; color: var(--olive); border-bottom: 1px solid var(--rule); padding-bottom: 3px; }
+.pz-sheet ul { list-style: none; margin: 0; padding: 0; } .pz-sheet li { padding: 3px 0 3px 22px; position: relative; font-size: 14px; }
+.pz-sheet li::before { content: '◆'; position: absolute; left: 4px; color: var(--signal); font-size: 11px; top: 5px; }
+.pz-sheet .tip { margin-top: 12px; padding: 8px 12px; background: var(--khaki); border-left: 4px solid var(--signal); font-size: 13px; }
+.pz-stamp { position: absolute; right: 26px; top: 24px; transform: rotate(9deg); font: 700 15px var(--font-stencil); letter-spacing: .26em; color: rgba(156,42,34,.78);
+   border: 3px double rgba(156,42,34,.7); padding: 4px 10px; text-transform: uppercase; }
+.pz-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; } .pz-chips span { font: 600 11px var(--font); letter-spacing: .12em; text-transform: uppercase; background: var(--khaki); padding: 3px 8px; }
+.pz-bside { position: absolute; right: 18px; top: 70px; width: 340px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.pz-bside h4 { margin: 0; font: 700 12px var(--font-stencil); letter-spacing: .24em; color: var(--olive); border-bottom: 1px solid var(--rule); padding-bottom: 3px; }
+.pz-tk { display: grid; grid-template-columns: 18px 1fr auto; gap: 4px 8px; align-items: center; padding: 7px 10px; cursor: pointer; border: 1px solid var(--rule); }
+.pz-tk:hover { background: rgba(75,81,50,.12); } .pz-tk.sel { background: var(--olive); color: var(--paper); border-color: var(--olive); } .pz-tk.sel .pz-ci { color: var(--signal-hi); }
+.pz-tk .n { font-weight: 700; font-size: 15px; } .pz-tk .m { grid-column: 2 / 4; font-size: 11px; letter-spacing: .04em; color: var(--ink-3); font-variant-numeric: tabular-nums; } .pz-tk.sel .m { color: var(--khaki); }
+.pz-tk .t { font: 600 11px var(--font-cond); letter-spacing: .1em; color: var(--ink-3); } .pz-tk.sel .t { color: var(--khaki); }
+.pz-bside .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.pz-bside .go { font: 700 22px var(--font-stencil) !important; letter-spacing: .18em !important; padding: 14px 10px !important; margin-top: 6px; }
+.pz-bside .rec { font-size: 12px; color: var(--ink-2); display: flex; justify-content: space-between; align-items: center; }
+.pz-cres { display: grid; grid-template-columns: 1fr 170px; gap: 6px 22px; }
+.pz-cres .obj { list-style: none; margin: 0; padding: 0; } .pz-cres .obj li { display: grid; grid-template-columns: 22px 1fr auto; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--rule); font-size: 14px; align-items: center; }
+.pz-cres .obj .ck { font-weight: 700; text-align: center; } .pz-cres .obj .done .ck { color: var(--olive); } .pz-cres .obj .failed .ck, .pz-cres .obj .failed { color: var(--bad); }
+.pz-cres .obj .active { color: var(--ink-3); } .pz-cres .obj .bn { font: 700 9px var(--font); letter-spacing: .2em; text-transform: uppercase; background: var(--khaki-2); padding: 2px 5px; color: var(--ink-2); }
+.pz-cres .md { grid-row: 1 / span 3; grid-column: 2; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.pz-cres .md .pz-stars { font-size: 30px; } .pz-cres .md .lab { font: 700 14px var(--font-stencil); letter-spacing: .24em; text-transform: uppercase; }
+.pz-cres .mini { display: flex; gap: 16px; font-size: 12px; color: var(--ink-2); margin-top: 10px; } .pz-cres .mini b { font-size: 16px; color: var(--ink); }
 `;
+
+// campaign: nation colours and vehicle insignia (no flags), star rows, medal
+const NAT_COL = { DE: '#5d6266', SU: '#9c2a22', US: '#55613a', UK: '#33507a' };
+const NAT_NAME = { DE: 'Deutschland', SU: 'Sowjetunion', US: 'USA', UK: 'Großbritannien' };
+const INSIGNIA = {
+   DE: '<path d="M13 3h8v10h10v8H21v10h-8V21H3v-8h10z" fill="#f2efe4"/><path d="M15 5h4v10h10v4H19v10h-4V19H5v-4h10z" fill="#111"/>',
+   SU: '<path d="M17 2l3.7 10.4h11l-8.9 6.6 3.4 10.6L17 23.1l-9.2 6.5 3.4-10.6-8.9-6.6h11z" fill="#c4271d" stroke="#6e1410" stroke-width="1"/>',
+   US: '<circle cx="17" cy="17" r="15" fill="#1f3b73"/><path d="M17 4.5l2.9 8.3h8.8l-7.1 5.2 2.7 8.4L17 21.3l-7.3 5.1 2.7-8.4-7.1-5.2h8.8z" fill="#f2efe4"/>',
+   UK: '<circle cx="17" cy="17" r="15" fill="#1f3b73"/><circle cx="17" cy="17" r="10" fill="#f2efe4"/><circle cx="17" cy="17" r="5.5" fill="#b3261e"/>',
+};
+const insignia = (n) => `<svg class="ins" viewBox="0 0 34 34">${INSIGNIA[n] || INSIGNIA.DE}</svg>`;
+const stars = (n, of = 3) => `<span class="pz-stars">${Array.from({ length: of }, (_, i) => `<i class="${i < n ? 'on' : ''}">★</i>`).join('')}</span>`;
+const MEDAL = { gold: ['#fff1a8', '#d9a92b', '#8a6410', 'Gold'], silber: ['#ffffff', '#b9bec4', '#62686e', 'Silber'], bronze: ['#ffd2a1', '#b46d34', '#5f3412', 'Bronze'] };
+function medalSvg(kind) {
+   const M = MEDAL[kind]; if (!M) return '<svg width="120" height="150" viewBox="0 0 120 150"><circle cx="60" cy="88" r="40" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="3" stroke-dasharray="6 6"/></svg>';
+   const id = 'pzm-' + kind;
+   return `<svg width="120" height="150" viewBox="0 0 120 150"><defs><radialGradient id="${id}" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="${M[0]}"/><stop offset=".55" stop-color="${M[1]}"/><stop offset="1" stop-color="${M[2]}"/></radialGradient></defs>
+      <path d="M38 0h18l10 52H48z" fill="#9c2a22"/><path d="M64 0h18L72 52H54z" fill="#1d1d1b"/><path d="M41 0h4l10 52h-4zM75 0h4L69 52h-4z" fill="#f2efe4" opacity=".85"/>
+      <circle cx="60" cy="90" r="42" fill="${M[2]}"/><circle cx="60" cy="88" r="40" fill="url(#${id})"/><circle cx="60" cy="88" r="31" fill="none" stroke="${M[2]}" stroke-width="2" opacity=".7"/>
+      <path d="M60 64l6.5 15.5h16.5l-13.3 10 5 16-14.7-9.9-14.7 9.9 5-16-13.3-10h16.5z" fill="${M[1]}" stroke="${M[2]}" stroke-width="1.6"/></svg>`;
+}
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+const mmss = (t) => t == null ? '–' : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
 export class Menu {
    constructor(root, ctx) {
@@ -149,6 +222,10 @@ export class Menu {
    }
    applyResult(snap) {
       if (!this.P || !snap.result) return;
+      if (snap.mode === 'campaign') {   // operations: a record (stars, best time) instead of XP/credits; any listed tank may be used
+         try { this.P.recordCampaign?.(this.prof(), snap.op || snap.result.campaign?.op, snap.result); } catch (e) { console.warn('[menu] campaign record', e); }
+         return;
+      }
       if (!this.owned(snap.playerCls)) { snap.result.unowned = true; return; }
       try { this.P.applyRewards(this.prof(), snap.playerCls, { ...snap.result, dmg: snap.stats?.dmg, kills: snap.stats?.kills }); } catch (e) { console.warn('[menu] rewards', e); }
    }
@@ -162,8 +239,19 @@ export class Menu {
       return `
 <div class="pz-scr" id="pz-title">
    <div class="pz-title"><div class="pz-logo pz-st">PANZER</div><div class="pz-sub pz-st">Panzergefechte 1939 – 1945</div>
-      <div class="pz-btns"><button class="pri" data-a="garage">Gefecht</button><button data-a="mp" id="pz-mp">Mehrspieler</button><button data-a="settings">Einstellungen</button></div></div>
+      <div class="pz-btns"><button class="pri" data-a="garage">Gefecht</button><button data-a="camp">Feldzug</button><button data-a="mp" id="pz-mp">Mehrspieler</button><button data-a="settings">Einstellungen</button></div></div>
    <div class="pz-foot pz-st">Panzerung · Winkel · Munition · Gelände</div>
+</div>
+<div class="pz-scr" id="pz-camp">
+   <div class="pz-top"><span class="pz-logo pz-st">PANZER</span><span class="pz-k" style="color:var(--khaki-2)">Feldzug</span><span class="sp"></span>
+      <button data-a="garage">Garage</button><button data-a="settings">Einstellungen</button><button data-a="title">Hauptmenü</button></div>
+   <div class="pz-ops" id="pz-ops"></div>
+</div>
+<div class="pz-scr" id="pz-brief">
+   <div class="pz-top"><span class="pz-logo pz-st">PANZER</span><span class="pz-k" style="color:var(--khaki-2)">Feldzug · Einsatzbesprechung</span><span class="sp"></span>
+      <button data-a="camp">Operationen</button><button data-a="title">Hauptmenü</button></div>
+   <div class="pz-sheet" id="pz-sheet"></div>
+   <div class="pz-card pz-bside" id="pz-bside"></div>
 </div>
 <div class="pz-scr" id="pz-garage">
    <div class="pz-top"><span class="pz-logo pz-st">PANZER</span><span class="pz-k" style="color:var(--khaki-2)">Garage</span><span class="sp"></span>
@@ -218,8 +306,16 @@ export class Menu {
 
    action(a, el) {
       switch (a) {
-         case 'garage': this.show('garage'); break;
-         case 'title': this.show('title'); break;
+         case 'garage': this.viewCls = null; this.show('garage'); break;
+         case 'camp': this.$('#pz-results').classList.remove('on'); this.openCampaign(); break;
+         case 'toCamp': this.$('#pz-results').classList.remove('on'); this.openCampaign(); break;
+         case 'campOp': this.openBrief(el.dataset.op); break;
+         case 'campTank': this.camp.cls = this.viewCls = el.dataset.v; this.buildTank(); this.renderBrief(); break;
+         case 'campDiff': this.camp.diff = el.dataset.v; this.renderBrief(); break;
+         case 'campGo': this.startOp(this.camp.op, this.camp.cls, this.camp.diff); break;
+         case 'campRetry': this.$('#pz-results').classList.remove('on'); if (this.lastCamp) this.startOp(this.lastCamp.op, this.lastCamp.cls, this.lastCamp.diff); break;
+         case 'campNext': this.$('#pz-results').classList.remove('on'); if (this.lastCamp?.next) { this.camp = { op: this.lastCamp.next, cls: null, diff: this.lastCamp.diff }; this.openBrief(this.lastCamp.next); } break;
+         case 'title': this.viewCls = null; this.show('title'); break;
          case 'settings': this.openSettings(); break;
          case 'mp': import('./mpui.js').then((m) => m.openMultiplayer(this)).catch((e) => console.warn('[menu] mpui', e)); break;   // multiplayer screen (lazy)
          case 'closeSettings': this.$('#pz-settings').classList.remove('on'); break;
@@ -241,6 +337,7 @@ export class Menu {
       this.root.querySelectorAll('.pz-scr').forEach((s) => s.classList.toggle('on', s.id === 'pz-' + which));
       this.$('#pz-pause').classList.remove('on');
       this.buildScene();
+      if (this.scene && this.tankCls !== (this.viewCls || this.sel.cls)) this.buildTank();
       if (which === 'garage') { this.renderList(); this.renderStats(); this.renderSetup(); }
       else this.setArmorView(false);
    }
@@ -413,11 +510,11 @@ export class Menu {
    }
    buildTank() {
       if (!this.scene) return;
-      const c = this.C.TANKS?.[this.sel.cls], T3 = this.mods.tanks3dM;
+      const c = this.C.TANKS?.[this.viewCls || this.sel.cls], T3 = this.mods.tanks3dM;
       if (this.tank) { this.scene.remove(this.tank.root); this.tank = null; }
       this.disposeArmor();
       if (!c || !T3?.buildTankModel) return;
-      const m = this.tank = T3.buildTankModel(c, c.id);
+      const m = this.tank = T3.buildTankModel(c, c.id); this.tankCls = c.id;
       m.root.position.y = 0.32; this.scene.add(m.root);
       this.buildArmor(c);
       m.root.visible = !this.armorView;
@@ -518,8 +615,89 @@ export class Menu {
       } else tip.style.display = 'none';
    }
 
+   // ---------------- campaign ("Feldzug"): operations list → briefing → battle → results ----------------
+   get CM() { return this._cm?.OPS ? this._cm : null; }
+   loadCampaign() { return (this._cmP ??= import('./campaign.js').then((m) => (this._cm = m)).catch((e) => { console.warn('[menu] campaign', e); this._cmP = null; return null; })); }
+   campRec(id) { return this.P ? this.prof().campaign?.[id] || null : null; }
+   campOpen(id) { const L = this.CM?.OP_LIST || []; return this.P?.campaignUnlocked ? this.P.campaignUnlocked(this.prof(), id, L) : true; }
+   async openCampaign() {
+      if (!(await this.loadCampaign())) { this.toast('Feldzug nicht verfügbar'); return; }
+      this.viewCls = null; this.show('camp'); this.renderOps();
+   }
+   renderOps() {
+      const { OPS, OP_LIST } = this.CM, prev = (i) => OPS[OP_LIST[i - 1]];
+      let tot = 0;
+      const cards = OP_LIST.map((id, i) => {
+         const o = OPS[id], r = this.campRec(id), open = this.campOpen(id); tot += r?.stars || 0;
+         return `<div class="pz-op ${open ? '' : 'lock'}" style="--nat:${NAT_COL[o.nation] || 'var(--olive)'}" ${open ? `data-a="campOp" data-op="${id}"` : ''}>
+            ${insignia(o.nation)}<div class="no">Operation ${ROMAN[i + 1] || i + 1}</div><div class="nm">${esc(o.name)}</div>
+            <div class="pl">${esc(o.place)}</div><div class="dt">${esc(o.date)}</div>
+            ${r?.done ? '<div class="done">Erfüllt</div>' : ''}
+            <div class="ft">${open ? stars(r?.stars || 0) : '<span class="lk">Gesperrt</span>'}<span class="sp"></span>${open ? (r?.bestTime != null ? `Bestzeit ${mmss(r.bestTime)}` : esc(NAT_NAME[o.nation] || o.nation)) : `erst „${esc(prev(i)?.name)}“ gewinnen`}</div></div>`;
+      }).join('');
+      this.$('#pz-ops').innerHTML = `<div class="pz-ops-h"><h1 class="pz-st">Feldzug</h1><span>Historische Operationen 1944–1945</span><span class="sp"></span>
+         <span class="tot">Sterne <b>${tot}</b> / ${OP_LIST.length * 3}</span></div><div class="pz-opgrid">${cards}</div>`;
+   }
+   openBrief(id) {
+      const o = this.CM?.OPS[id]; if (!o) return;
+      const keep = this.camp?.op === id ? this.camp : null;
+      this.camp = { op: id, cls: keep?.cls && o.tanks.includes(keep.cls) ? keep.cls : o.tanks[0], diff: keep?.diff || this.sel.diff || 'normal' };
+      this.viewCls = this.camp.cls; this.show('brief'); this.renderBrief();
+   }
+   renderBrief() {
+      const { OPS, OP_LIST } = this.CM, o = OPS[this.camp.op], C = this.C, T = C.TANKS || {}, i = OP_LIST.indexOf(o.id), r = this.campRec(o.id);
+      const D = C.DIFFICULTY || { leicht: { name: 'Leicht' }, normal: { name: 'Normal' }, schwer: { name: 'Schwer' } };
+      this.$('#pz-sheet').innerHTML = `<div class="pz-stamp">Historisch</div>
+         <div class="kick">Einsatzbefehl · Operation ${ROMAN[i + 1] || i + 1}</div>
+         <div class="when"><span>${esc(o.date)}</span><span>·</span><span>${esc(o.place)}</span></div>
+         <h2>${esc(o.name)}</h2>
+         <div class="pz-chips"><span>${esc(NAT_NAME[o.nation] || o.nation)}</span><span>${esc(this.maps[o.map]?.name || o.map)}</span>${o.fog ? '<span>Nebel</span>' : ''}${o.difficulty ? `<span>${esc(o.difficulty)}</span>` : ''}</div>
+         <h4>Lage</h4>${(o.brief || []).map((p) => `<p>${esc(p)}</p>`).join('')}
+         <h4>Auftrag</h4><ul>${(o.goals || []).map((g) => `<li>${esc(g)}</li>`).join('')}</ul>
+         ${o.tip ? `<div class="tip"><b>Hinweis:</b> ${esc(o.tip)}</div>` : ''}`;
+      const tk = o.tanks.map((id) => {
+         const c = T[id]; if (!c) return '';
+         const a = c.gun?.ammo?.[0] || {}, ar = this.armourSummary(c);
+         return `<div class="pz-tk ${id === this.camp.cls ? 'sel' : ''}" data-a="campTank" data-v="${id}">${clsIcon(c.cls)}<span class="n">${esc(c.name)}</span><span class="t">${C.TIER_ROMAN?.[c.tier] || c.tier}</span>
+            <span class="m">${fmt(c.gun?.cal)} mm · DS ${fmt(a.pen)} mm · ${fmt(a.dmg)} Schaden · Front ${fmt(ar?.hf?.t)}${c.turret ? '/' + fmt(ar?.tf?.t) : ''} mm · ${fmt(c.vMax)} km/h</span></div>`;
+      }).join('');
+      this.$('#pz-bside').innerHTML = `<h4>Fahrzeug</h4>${tk}
+         <h4 style="margin-top:6px">Schwierigkeit</h4><div class="row">${Object.entries(D).map(([k, d]) => `<button data-a="campDiff" data-v="${k}" class="${k === this.camp.diff ? 'on' : ''}">${esc(d.name)}</button>`).join('')}</div>
+         <div class="rec"><span>${r?.done ? 'Erfüllt' : 'Noch nicht erfüllt'}${r?.bestTime != null ? ` · Bestzeit ${mmss(r.bestTime)}` : ''}</span>${stars(r?.stars || 0)}</div>
+         <button class="pri go" data-a="campGo">Einsatz beginnen</button>
+         <button data-a="camp">Zurück zum Feldzug</button>`;
+   }
+   startOp(op, cls, diff) {
+      this.viewCls = null;
+      this.ctx.startBattle({ mode: 'campaign', op, playerCls: cls, difficulty: diff });
+   }
+   showCampResults(r) {
+      const res = r.result || {}, cr = res.campaign || {}, st = r.stats || {}, CM = this.CM, o = CM?.OPS[cr.op || r.op] || {};
+      const oc = res.outcome || 'aborted', win = /win|won/.test(oc), L = CM?.OP_LIST || [], next = L[L.indexOf(o.id) + 1];
+      const nextOpen = next && this.campOpen(next);
+      const objs = (cr.objectives || []).filter((x) => !x.hidden || x.state !== 'active');
+      const mk = (x) => `<li class="${x.state}"><span class="ck">${x.state === 'done' ? '✓' : x.state === 'failed' ? '✗' : '–'}</span>
+         <span>${esc(x.text)}${x.need > 1 ? ` (${fmt(x.count)}/${fmt(x.need)})` : ''}</span>${x.bonus ? '<span class="bn">Bonus</span>' : '<span></span>'}</li>`;
+      const M = MEDAL[cr.medal];
+      this.$('#pz-resc').innerHTML = `
+         <div class="pz-k">Feldzug · ${esc(o.place || '')} · ${esc(o.date || '')} · ${esc(this.C.TANKS?.[r.playerCls]?.name || r.playerCls || '')}</div>
+         <h2 class="pz-st ${win ? 'win' : /loss|lost/.test(oc) ? 'loss' : ''}">${win ? 'Auftrag erfüllt' : OUTCOME[oc] || esc(oc)}</h2>
+         <div class="why"><b>${esc(o.name || '')}</b>${res.reason ? ' – ' + esc(res.reason) : ''}</div>
+         <div class="pz-cres"><div><h4 class="pz-k" style="margin:0 0 4px">Ziele</h4><ul class="obj">${objs.map(mk).join('')}</ul>
+            <div class="mini"><span>Zeit <b>${mmss(res.time)}</b></span><span>Abschüsse <b>${fmt(st.kills)}</b></span><span>Schaden <b>${fmt(st.dmg)}</b></span><span>Treffer <b>${fmt(st.hits)}</b> / ${fmt(st.shots)}</span></div></div>
+            <div class="md">${medalSvg(win ? cr.medal : null)}${stars(win ? cr.stars | 0 : 0)}<span class="lab">${win && M ? M[3] : 'Keine Auszeichnung'}</span></div></div>
+         <div class="bt"><button data-a="toCamp">Zurück zum Feldzug</button><button data-a="campRetry">Erneut versuchen</button>
+            ${next ? `<button class="pri" data-a="campNext" ${nextOpen ? '' : 'disabled title="Erst diese Operation gewinnen"'}>Nächste Operation</button>` : ''}</div>`;
+      this.lastCamp = { op: o.id, cls: r.playerCls, diff: r.difficulty || 'normal', next };
+      this.$('#pz-results').classList.add('on');
+   }
+
    // ---------------- results ----------------
    showResults(r) {
+      if (r.mode === 'campaign' || r.result?.campaign) {
+         this.loadCampaign().then(() => { this.viewCls = null; this.show('camp'); if (this.CM) this.renderOps(); this.showCampResults(r); });
+         return;
+      }
       this.show('garage');
       const res = r.result || {}, st = r.stats || {}, oc = res.outcome || (/won|lost|draw/.test(r.phase) ? r.phase : 'aborted');
       const cls = /win|won/.test(oc) ? 'win' : /loss|lost/.test(oc) ? 'loss' : '';

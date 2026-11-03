@@ -22,7 +22,7 @@ const SPACED_PART = { track: true, skirt: true, mantlet: true };
 const D2R = Math.PI / 180;
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
 const mmss = (s) => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
-const tankName = (t) => t?.name || t?.cfg?.short || t?.cfg?.name || t?.cls || '?';
+const tankName = (t) => t?.name || (t?.cfg?.site ? t.cfg.name : t?.cfg?.short) || t?.cfg?.name || t?.cls || '?';   // emplacements by their full name
 
 // probability that pen × (1 + u) > effT, u triangular on [-r, r]
 function penChance(pen, effT, r = BALLISTICS.PEN_RANDOM) {
@@ -45,6 +45,7 @@ export class HUD {
       this.armor = ctx.armor || {}; this.tcam = ctx.cam; this.R = ctx.R; this.G = window.__game;
       this.v = new THREE.Vector3(); this.v2 = new THREE.Vector3(); this.dir = new THREE.Vector3();
       this.lastSeq = -1; this.log = []; this.feed = []; this.hitsIn = []; this.msgs = [];
+      this.radio = []; this.radioN = null; this.objFlash = {}; this.seen = new Set();   // campaign
       this.bigMap = false; this.score = false; this.pen = null; this.t = 0;
       this._armCache = new Map();
       this.onKey = (e) => {
@@ -146,6 +147,12 @@ export class HUD {
          if (sp && ['pen', 'ricochet', 'noPen', 'he'].includes(type)) this.hitsIn.push({ x: sp.x, z: sp.z, t: 0, pen: type === 'pen' || (type === 'he' && e.dmg > 0) });
          if (this.hitsIn.length > 6) this.hitsIn.shift();
       }
+      if (type === 'objective' && w.campaign) {
+         this.objFlash[e.id] = 1.2;
+         if (e.state === 'done') this.msg('Ziel erfüllt: ' + (e.text || ''), COL.ok, 3.2);
+         else if (e.state === 'failed') this.msg('Ziel verfehlt: ' + (e.text || ''), COL.bad, 3.2);
+         else if (e.state === 'active' && e.text) { this.objT ??= this.t; if (this.t - this.objT > 0.5) this.msg('Neues Ziel: ' + e.text, COL.warn, 3.2); }   // the opening batch only flashes
+      }
       if (type === 'kill' && dst) {
          this.feed.unshift({ a: src ? tankName(src) : '', at: src?.team, b: tankName(dst), bt: dst.team, t: 0 });
          if (this.feed.length > 6) this.feed.pop();
@@ -200,18 +207,22 @@ export class HUD {
       while (this.hitsIn.length && this.hitsIn[0].t > 3) this.hitsIn.shift();
       while (this.msgs.length && this.msgs[0].t > this.msgs[0].life) this.msgs.shift();
       this.aimInfo(w, p);
+      const C = w.campaign;
+      if (C) { this.campTick(C, dt); for (const k in this.objFlash) this.objFlash[k] -= dt; }
       this.drawMarkers(g, w, p);
+      if (C) this.drawWaypoints(g, w, p, C);
       if (p.alive !== false) this.drawReticle(g, w, p);
       this.drawHitsIn(g, p);
       this.drawDamagePanel(g, p);
       this.drawLog(g);
       this.drawTop(g, w);
-      this.drawTeams(g, w, p);
+      if (C) this.drawRadio(g, w, C);
+      this.drawTeams(g, w, p, C ? this.drawObjectives(g, w, C) : 50);
       this.drawFeed(g);
       this.drawMinimap(g, w, p);
       this.drawMsgs(g);
       if (w.phase === 'countdown') this.big(g, Math.ceil(w.countdown ?? 0) || 'LOS!', 'Gefecht beginnt in');
-      else if (w.phase && w.phase !== 'playing') this.big(g, w.phase === 'won' ? 'SIEG' : w.phase === 'lost' ? 'NIEDERLAGE' : 'UNENTSCHIEDEN', w.result?.reason || '');
+      else if (w.phase && w.phase !== 'playing') this.big(g, w.phase === 'won' ? (C ? 'AUFTRAG ERFÜLLT' : 'SIEG') : w.phase === 'lost' ? (C ? 'GESCHEITERT' : 'NIEDERLAGE') : 'UNENTSCHIEDEN', w.result?.reason || '');
       else if (p.alive === false) this.big(g, 'ZERSTÖRT', 'Ihr Panzer wurde vernichtet');
       if (this.score) this.drawScore(g, w, p);
    }
@@ -385,8 +396,14 @@ export class HUD {
          this.text(g, `Basis ${c.team === w.player?.team ? '(eigene)' : c.team ? '(Gegner)' : ''} ${Math.round(c.progress)}`, bx + bw / 2, by + 9.5, COL.hud, 12, 'center', FCOND, '600');
       });
    }
-   drawTeams(g, w, p) {
-      const all = w.tanks || [], al = all.filter((t) => t.team === p.team), en = all.filter((t) => t.team !== p.team);
+   drawTeams(g, w, p, allyY = 50) {
+      const all = w.tanks || [], al = all.filter((t) => t.team === p.team);
+      let en = all.filter((t) => t.team !== p.team);
+      if (w.campaign) {   // operations: emplacements live in the objectives; enemies appear once spotted
+         for (const t of en) if (t.alive && t.spotted !== false) this.seen.add(t.id);
+         en = en.filter((t) => !t.cfg?.site && this.seen.has(t.id)).slice(0, 14);
+      }
+      this.enRows = en.length;
       const row = (t, x, y, right, col) => {
          const dead = !t.alive, f = clamp(t.hp / (t.maxHP || 1), 0, 1), bw = 54;
          g.fillStyle = 'rgba(20,23,22,.55)'; g.fillRect(x, y, 170, 17);
@@ -396,7 +413,7 @@ export class HUD {
          if (!dead) { g.fillStyle = col; g.fillRect(right ? hx + bw * (1 - f) : hx, y + 6, bw * f, 5); }
          if (dead) { g.strokeStyle = COL.dead; g.beginPath(); g.moveTo(x + 4, y + 9); g.lineTo(x + 166, y + 9); g.stroke(); }
       };
-      al.forEach((t, i) => row(t, 10, 50 + i * 19, false, COL.ally));
+      al.forEach((t, i) => row(t, 10, allyY + i * 19, false, COL.ally));
       en.forEach((t, i) => row(t, this.W - 180, 50 + i * 19, true, COL.enemy));
       // tally
       const na = al.filter((t) => t.alive).length, ne = en.filter((t) => t.alive).length;
@@ -404,7 +421,7 @@ export class HUD {
       this.text(g, String(ne), this.W / 2 + 80, 23, COL.enemy, 22, 'left', FCOND, '700');
    }
    drawFeed(g) {
-      const x = this.W - 190, y0 = 60 + 19 * Math.max(0, (this.world.tanks || []).filter((t) => t.team !== this.world.player?.team).length);
+      const x = this.W - 190, y0 = 60 + 19 * Math.max(0, this.enRows ?? (this.world.tanks || []).filter((t) => t.team !== this.world.player?.team).length);
       this.feed.forEach((f, i) => {
          g.globalAlpha = clamp(9 - f.t, 0, 1);
          const y = y0 + 12 + i * 18, me = this.world.player?.team;
@@ -432,6 +449,7 @@ export class HUD {
          g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([4, 3]); g.beginPath(); g.arc(mx(b.x), mz(b.z), Math.max(5, (b.r || 40) * k), 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
          g.fillStyle = col; g.fillRect(mx(b.x) - 3, mz(b.z) - 3, 6, 6);
       }
+      if (w.campaign) this.drawMapMarkers(g, w.campaign, mx, mz, k, big);
       // view range + draw range
       g.strokeStyle = 'rgba(255,246,216,.45)'; g.lineWidth = 1;
       g.beginPath(); g.arc(mx(p.pos.x), mz(p.pos.z), (p.viewRange || p.cfg?.view || 350) * k, 0, Math.PI * 2); g.stroke();
@@ -455,6 +473,115 @@ export class HUD {
       g.save(); g.translate(ax, az); g.rotate(-py); g.fillStyle = COL.self; g.strokeStyle = '#000'; g.lineWidth = 1;
       g.beginPath(); g.moveTo(0, -8); g.lineTo(5, 5); g.lineTo(0, 2.5); g.lineTo(-5, 5); g.closePath(); g.fill(); g.stroke(); g.restore();
       if (!big) this.text(g, 'M – Karte', x + S - 4, y - 10, COL.dim, 10, 'right', FCOND);
+   }
+
+   // ---------- campaign (world.campaign): objectives, radio, mission timer, waypoints ----------
+   wrap(g, s, maxW, font) {
+      g.font = font; const words = String(s).split(' '), out = []; let line = '';
+      for (const wd of words) { const t = line ? line + ' ' + wd : wd; if (line && g.measureText(t).width > maxW) { out.push(line); line = wd; } else line = t; }
+      if (line) out.push(line); return out;
+   }
+   campTick(C, dt) {
+      const L = C.log || [];
+      if (this.radioN == null) this.radioN = Math.max(0, L.length - 2);   // joining late: only the latest lines
+      while (this.radioN < L.length) { const e = L[this.radioN++]; this.radio.push({ text: e.text, kind: e.kind || 'radio', t: 0 }); }
+      for (const r of this.radio) r.t += dt;
+      while (this.radio.length && (this.radio[0].t > 8 || this.radio.length > 3)) this.radio.shift();
+   }
+   drawObjectives(g, w, C) {
+      const x = 10, y = 50, W = 300, F = `600 13px ${FCOND}`, list = (C.objectives || []).filter((o) => !o.hidden || o.state !== 'active');
+      const rows = list.map((o) => ({ o, lines: this.wrap(g, o.text + (o.need > 1 ? `  ${o.count ?? 0}/${o.need}` : ''), W - (o.bonus ? 78 : 34), F) }));
+      const h = 26 + rows.reduce((a, r) => a + r.lines.length * 16 + 4, 0) + 6;
+      this.panel(g, x, y, W, h);
+      g.fillStyle = COL.signal; g.fillRect(x, y, 3, h);
+      this.text(g, 'AUFTRAG', x + 12, y + 13, COL.signal, 12, 'left', FST, '700');
+      const nm = (typeof C.op === 'object' ? C.op?.name : null) || w.script?.op?.name; if (nm) this.text(g, nm, x + W - 8, y + 13, COL.dim, 11, 'right', FCOND, '600');
+      let yy = y + 30;
+      for (const { o, lines } of rows) {
+         const col = o.state === 'done' ? COL.ok : o.state === 'failed' ? COL.bad : COL.hud;
+         const mark = o.state === 'done' ? '✓' : o.state === 'failed' ? '✗' : '◇';
+         const flash = this.objFlash?.[o.id] > 0 ? clamp(this.objFlash[o.id] / 1.2, 0, 1) : 0;
+         if (flash) { g.fillStyle = `rgba(224,122,31,${0.35 * flash})`; g.fillRect(x + 4, yy - 9, W - 8, lines.length * 16 + 2); }
+         this.text(g, mark, x + 14, yy, col, 14, 'center', FONT, '700');
+         lines.forEach((ln, i) => {
+            this.text(g, ln, x + 28, yy + i * 16, o.state === 'active' ? COL.hud : col, 13, 'left', FCOND, '600');
+            if (o.state !== 'active') { g.font = F; const lw = g.measureText(ln).width; g.strokeStyle = col; g.globalAlpha = 0.8; g.lineWidth = 1.2; g.beginPath(); g.moveTo(x + 28, yy + i * 16 + 1); g.lineTo(x + 28 + lw, yy + i * 16 + 1); g.stroke(); g.globalAlpha = 1; }
+         });
+         if (o.bonus) {
+            const bx = x + W - 50, by = yy - 7; g.fillStyle = o.state === 'active' ? 'rgba(224,122,31,.25)' : 'rgba(0,0,0,.25)'; g.fillRect(bx, by, 42, 14);
+            this.text(g, 'BONUS', bx + 21, by + 7, o.state === 'failed' ? COL.dead : COL.signal, 9, 'center', FONT, '700');
+         }
+         yy += lines.length * 16 + 4;
+      }
+      return y + h + 8;
+   }
+   drawRadio(g, w, C) {
+      const cx = this.W / 2, timer = C.timer && C.timer.left != null;
+      let y = 44 + ((w.caps || []).some((c) => c.progress > 0) ? 24 : 0);
+      if (timer) {
+         const left = C.timer.left, warn = left < 30, wd = 240;
+         this.panel(g, cx - wd / 2, y, wd, 24);
+         if (warn && Math.sin(this.t * 8) > 0) { g.fillStyle = 'rgba(238,75,54,.25)'; g.fillRect(cx - wd / 2 + 1, y + 1, wd - 2, 22); }
+         this.text(g, C.timer.label || 'Zeit', cx - wd / 2 + 10, y + 12, COL.dim, 12, 'left', FCOND, '600');
+         this.text(g, mmss(left), cx + wd / 2 - 10, y + 12, warn ? COL.bad : COL.warn, 17, 'right', FCOND, '700');
+         y += 30;
+      }
+      for (const r of this.radio) {
+         const a = clamp(Math.min(r.t * 4, (8 - r.t) * 1.2), 0, 1), F = `600 15px ${FCOND}`;
+         const lines = this.wrap(g, r.text, Math.min(620, this.W * 0.5), F), wd = Math.max(...lines.map((l) => (g.font = F, g.measureText(l).width))) + 80, h = lines.length * 19 + 10;
+         g.globalAlpha = a;
+         this.panel(g, cx - wd / 2, y, wd, h);
+         const kc = r.kind === 'warn' ? COL.bad : r.kind === 'info' ? COL.hud : COL.signal;
+         g.fillStyle = kc; g.fillRect(cx - wd / 2, y, 3, h);
+         this.text(g, r.kind === 'warn' ? 'ACHTUNG' : r.kind === 'info' ? 'LAGE' : 'FUNK', cx - wd / 2 + 10, y + 14, kc, 10, 'left', FST, '700');
+         lines.forEach((ln, i) => this.text(g, ln, cx - wd / 2 + 64, y + 14 + i * 19, r.kind === 'warn' ? COL.warn : COL.hud, 15, 'left', FCOND, '600'));
+         g.globalAlpha = 1; y += h + 4;
+      }
+   }
+   markerColor(m) { return m.kind === 'danger' ? COL.bad : m.kind === 'area' ? COL.warn : COL.signal; }
+   drawWaypoints(g, w, p, C) {
+      const T = w.terrain, s = this.v2, cam = this.R.camera, fwd = cam.getWorldDirection(this.dir);
+      for (const m of C.markers || []) {
+         if (m.x == null) continue;
+         const gy = (T?.heightAt?.(m.x, m.z) ?? 0) + 4, col = this.markerColor(m);
+         const dx = m.x - cam.position.x, dy = gy - cam.position.y, dz = m.z - cam.position.z;
+         const behind = dx * fwd.x + dy * fwd.y + dz * fwd.z < 0;
+         this.proj(m.x, gy, m.z, s);
+         let sx = s.x, sy = s.y, edge = false;
+         if (behind) { sx = this.W - sx; sy = this.H - 40; }
+         const pad = 40;
+         if (behind || sx < pad || sx > this.W - pad || sy < pad + 40 || sy > this.H - pad) {
+            edge = true; sx = clamp(sx, pad, this.W - pad); sy = clamp(sy, pad + 40, this.H - pad);
+         }
+         const dist = Math.hypot(m.x - p.pos.x, m.z - p.pos.z), inside = m.r && dist < m.r;
+         const r = edge ? 7 : 9, pulse = m.kind === 'danger' ? 1 + 0.15 * Math.sin(this.t * 6) : 1;
+         g.save(); g.translate(sx, sy); g.scale(pulse, pulse);
+         g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.moveTo(1, -r - 1 + 2); g.lineTo(r + 2, 2); g.lineTo(1, r + 3); g.lineTo(-r, 2); g.closePath(); g.fill();
+         g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.moveTo(0, -r); g.lineTo(r, 0); g.lineTo(0, r); g.lineTo(-r, 0); g.closePath(); g.stroke();
+         if (inside) { g.fillStyle = col; g.fill(); } else { g.fillStyle = col; g.fillRect(-2, -2, 4, 4); }
+         g.restore();
+         if (edge) {   // arrow toward the target
+            const a = Math.atan2(sy - this.H / 2, sx - this.W / 2);
+            g.save(); g.translate(sx + Math.cos(a) * 15, sy + Math.sin(a) * 15); g.rotate(a); g.fillStyle = col;
+            g.beginPath(); g.moveTo(6, 0); g.lineTo(-3, -5); g.lineTo(-3, 5); g.closePath(); g.fill(); g.restore();
+         }
+         const ty = sy - r - 9;
+         if (m.label) this.text(g, m.label, sx, ty - 13, col, 12, 'center', FCOND, '700');
+         this.text(g, inside ? 'erreicht' : Math.round(dist) + ' m', sx, ty, COL.hud, 11, 'center', FCOND, '600');
+      }
+   }
+   drawMapMarkers(g, C, mx, mz, k, big) {
+      for (const m of C.markers || []) {
+         if (m.x == null) continue;
+         const col = this.markerColor(m), px = mx(m.x), pz = mz(m.z);
+         if (m.r) { g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash(m.kind === 'goal' ? [] : [4, 3]); g.globalAlpha = 0.85; g.beginPath(); g.arc(px, pz, Math.max(4, m.r * k), 0, Math.PI * 2); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+            if (m.kind === 'danger') { g.fillStyle = 'rgba(238,75,54,.12)'; g.fill(); } }
+         const r = 5 + 0.8 * Math.sin(this.t * 4);
+         g.fillStyle = col; g.strokeStyle = '#000'; g.lineWidth = 1;
+         g.beginPath(); g.moveTo(px, pz - r); g.lineTo(px + r, pz); g.lineTo(px, pz + r); g.lineTo(px - r, pz); g.closePath(); g.fill(); g.stroke();
+         if (m.kind === 'danger') this.text(g, '!', px, pz, '#000', 9, 'center', FONT, '700');
+         if (big && m.label) this.text(g, m.label, px + 8, pz - 8, col, 12, 'left', FCOND, '700');
+      }
    }
 
    big(g, title, sub) {
