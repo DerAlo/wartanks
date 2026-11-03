@@ -21,7 +21,7 @@ import { Replica } from './replica.js';
 import { calcRewards } from '../progress.js';
 
 const HELLO_DT = 300, START_TIMEOUT = 15000, HOST_SILENT = 12000;
-const MIGRATE_WAIT = 8000, PROMOTE_GRACE = 250;     // ms: others wait for the successor; it waits for a last full state
+const MIGRATE_WAIT = 15000, PROMOTE_GRACE = 250;     // ms: others wait for the successor; it waits for a last full state
 const sizeOf = (d) => (d instanceof Uint8Array ? d.byteLength : d instanceof ArrayBuffer ? d.byteLength : JSON.stringify(d)?.length ?? 0);
 
 /** Transport wrapper with byte counters per channel. */
@@ -51,7 +51,7 @@ export function startNetGame(session, api) {
       timers.forEach(clearInterval);
       session.onEnd?.(result);
    };
-   const abort = (reason) => { api.stopBattle?.(); end({ aborted: true, reason, victory: null, outcome: null }); };
+   const abort = (reason) => { if (globalThis.__netDebug) console.log(`[net] abort ${reason} at ${Date.now() % 100000}`); api.stopBattle?.(); end({ aborted: true, reason, victory: null, outcome: null }); };
    net.leave = () => {
       if (net.ended) return;
       if (net.isHost && net.host?.abort()) {         // the match goes on under the successor
@@ -103,6 +103,7 @@ export function startNetGame(session, api) {
       if (net.ended || net.isHost || orphan || !net.replica || net.world?.result) return;
       if (why === 'abort' || !succ || (succ === T.selfId && !mig)) { abort(why === 'timeout' ? 'Verbindung zum Gastgeber verloren.' : 'Der Gastgeber hat das Spiel verlassen.'); return; }
       orphan = Date.now();
+      if (globalThis.__netDebug) console.log(`[net] host gone (${why}) at ${orphan % 100000}, succ ${succ}`);
       api.log?.(succ === T.selfId ? 'Gastgeber weg: du führst das Gefecht weiter.' : 'Gastgeber weg: warte auf den Nachfolger ...');
    }
    // this client carries on as the host: the replica World becomes the authoritative one
@@ -131,6 +132,7 @@ export function startNetGame(session, api) {
          world.update = (dt) => { upd(dt); host.step(dt); };
          timers.forEach(clearInterval); timers.length = 0;
          T.send('sync', { k: 'host', id: T.selfId, t: Math.round(world.time * 60) });
+         if (globalThis.__netDebug) console.log(`[net] promoted at ${Date.now() % 100000}, told ${JSON.stringify(T.peers())}`);
          api.log?.(`Gastgeber gewechselt: ${me.name} führt das Gefecht weiter.`);
          net.migrated = { stateTick: m.t, tick: Math.round(world.time * 60), waited: Date.now() - orphan };
       } catch (e) {
@@ -142,6 +144,7 @@ export function startNetGame(session, api) {
    }
    // another client took over: the replica listens to it from now on
    function adopt(id) {
+      if (net.ended) return;
       T.setHost(id); orphan = 0; succ = null; mig = null; lastHost = Date.now();
       const rep = net.replica;
       if (rep) { rep.latest = -1; rep.synced = false; rep.buf.clear(); }
@@ -161,7 +164,9 @@ export function startNetGame(session, api) {
    T.on('mig', (d, from) => { if (net.isHost || from !== T.hostId || d?.k !== 'mig' || !Array.isArray(d.tk)) return; if (!mig || !(d.t < mig.t)) mig = d; });
    T.on('sync', (d, from) => {
       if (!d) return;
-      if (d.k === 'host' && from !== T.hostId && !net.isHost && started && (orphan || from === succ)) { adopt(from); return; }
+      if (globalThis.__netDebug && d.k === 'host') console.log(`[net] host msg from ${from} host ${T.hostId} orphan ${orphan} succ ${succ} ended ${!!net.ended} ${Date.now() % 100000}`);
+      // (the lobby may have switched the room's host to the new one already: from === T.hostId then)
+      if (d.k === 'host' && !net.isHost && started && from !== T.selfId && (orphan || from === succ || from === T.hostId)) { adopt(from); return; }
       if (from !== T.hostId) return;
       lastHost = Date.now();
       const rep = net.replica, w = net.world;
