@@ -145,7 +145,7 @@ function lump(acc, r, x, y, z, sx, sy, sz, seed, shade) {
       acc.c.push(k, k * 1.02, k * 0.94);
    }
 }
-function treeGeo(kind) {
+export function treeGeo(kind) {
    const crown = newAcc(), trunk = newAcc(), white = C(0xffffff);
    if (kind === 'pine') {
       addGeo(trunk, new THREE.CylinderGeometry(0.14, 0.32, 6, 6), mat(0, 3, 0), white, 0.15);

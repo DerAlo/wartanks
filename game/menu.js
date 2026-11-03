@@ -3,6 +3,7 @@
 // background (garage turntable) lives in R.scene only while no battle runs.
 // Reads config.js / maps.js / armor.js / tanks3d.js; uses progress.js when it exists (optional).
 import * as THREE from '../vendor/three/three.module.min.js';
+import { treeGeo } from './terrain3d.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (v, d = 0) => (v == null || Number.isNaN(v)) ? '–' : Number(v).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -490,22 +491,55 @@ export class Menu {
       R.setTheme?.(th); this.ctx.sky?.setTheme?.(th, R.sunDir);
       this.own = [];   // geometries/materials to dispose
       const mk = (geo, mat) => { this.own.push(geo, mat); return new THREE.Mesh(geo, mat); };
-      const ground = mk(new THREE.CircleGeometry(900, 48), new THREE.MeshStandardMaterial({ color: 0x5d6440, roughness: 1 }));
-      ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; S.add(ground);
-      const apron = mk(new THREE.CircleGeometry(11, 48), new THREE.MeshStandardMaterial({ color: 0x8a8670, roughness: 0.95 }));
+      // ground: gently rolling meadow with colour variation (vertex colours, no texture)
+      const gg = new THREE.PlaneGeometry(1400, 1400, 96, 96); gg.rotateX(-Math.PI / 2);
+      const n = (x, z) => Math.sin(x * 0.021 + Math.sin(z * 0.013) * 2) * Math.cos(z * 0.017 - x * 0.006) + 0.5 * Math.sin(x * 0.07 + z * 0.05);
+      const hgt = (x, z) => { const r = Math.hypot(x, z); return r < 16 ? 0 : (n(x, z) * 2.2 + Math.sin(r * 0.012) * 3) * Math.min(1, (r - 16) / 40); };
+      { const p = gg.attributes.position, col = [], c0 = new THREE.Color(0x6a7038), c1 = new THREE.Color(0x8c8448), c2 = new THREE.Color(0x4e5a2c), c = new THREE.Color();
+         for (let i = 0; i < p.count; i++) {
+            const x = p.getX(i), z = p.getZ(i), v = n(x, z);
+            p.setY(i, hgt(x, z));
+            c.copy(c0).lerp(v > 0 ? c1 : c2, Math.min(1, Math.abs(v) * 0.7)); col.push(c.r, c.g, c.b);
+         }
+         gg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); gg.computeVertexNormals(); }
+      const ground = mk(gg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+      ground.position.y = -0.02; ground.receiveShadow = true; S.add(ground);
+      // concrete apron: cast slabs with seams, oil stains and tyre-worn edges (canvas texture)
+      const cv = document.createElement('canvas'); cv.width = cv.height = 512; const g2 = cv.getContext('2d');
+      g2.fillStyle = '#8d8a80'; g2.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 2600; i++) { const v = 120 + Math.random() * 40 | 0; g2.fillStyle = `rgba(${v},${v - 3},${v - 10},0.25)`; g2.fillRect(Math.random() * 512, Math.random() * 512, 2 + Math.random() * 6, 2 + Math.random() * 6); }
+      for (let i = 0; i < 9; i++) { const x = Math.random() * 512, y = Math.random() * 512, r = 20 + Math.random() * 50, gr = g2.createRadialGradient(x, y, 0, x, y, r);
+         gr.addColorStop(0, 'rgba(40,36,30,0.35)'); gr.addColorStop(1, 'rgba(40,36,30,0)'); g2.fillStyle = gr; g2.fillRect(x - r, y - r, 2 * r, 2 * r); }
+      g2.strokeStyle = 'rgba(45,42,38,0.8)'; g2.lineWidth = 2; for (let k = 0; k <= 512; k += 128) { g2.beginPath(); g2.moveTo(k, 0); g2.lineTo(k, 512); g2.moveTo(0, k); g2.lineTo(512, k); g2.stroke(); }
+      const ctex = new THREE.CanvasTexture(cv); ctex.colorSpace = THREE.SRGBColorSpace; ctex.anisotropy = 8; ctex.wrapS = ctex.wrapT = THREE.RepeatWrapping; ctex.repeat.set(2, 2); this.own.push(ctex);
+      const apron = mk(new THREE.PlaneGeometry(26, 26), new THREE.MeshStandardMaterial({ map: ctex, roughness: 0.92 }));
       apron.rotation.x = -Math.PI / 2; apron.position.y = 0.02; apron.receiveShadow = true; S.add(apron);
-      const table = this.table = mk(new THREE.CylinderGeometry(5.4, 5.6, 0.32, 64), new THREE.MeshStandardMaterial({ color: 0x6e6c62, roughness: 0.8, metalness: 0.3 }));
+      const table = this.table = mk(new THREE.CylinderGeometry(5.4, 5.6, 0.32, 64), new THREE.MeshStandardMaterial({ color: 0x5c5b52, roughness: 0.7, metalness: 0.15 }));
       table.position.y = 0.16; table.receiveShadow = true; table.castShadow = true; S.add(table);
-      const ring = mk(new THREE.TorusGeometry(5.0, 0.05, 6, 64), new THREE.MeshStandardMaterial({ color: 0xe07a1f, roughness: 0.6 }));
-      ring.rotation.x = Math.PI / 2; ring.position.y = 0.33; S.add(ring);
-      // treeline silhouettes on the horizon
-      const tg = new THREE.ConeGeometry(1, 1, 6), tm = new THREE.MeshStandardMaterial({ color: 0x3f4a2a, roughness: 1, flatShading: true }); this.own.push(tg, tm);
-      const trees = new THREE.InstancedMesh(tg, tm, 140), o = new THREE.Object3D();
-      for (let i = 0; i < 140; i++) {
-         const a = i * 2.39996 + Math.sin(i) * 0.3, r = 70 + ((i * 37) % 90), h = 7 + ((i * 13) % 9);
-         o.position.set(Math.cos(a) * r, h / 2 - 0.5, Math.sin(a) * r); o.scale.set(h * 0.32, h, h * 0.32); o.updateMatrix(); trees.setMatrixAt(i, o.matrix);
+      const ring = mk(new THREE.TorusGeometry(5.42, 0.07, 6, 96), new THREE.MeshStandardMaterial({ color: 0x8a7440, roughness: 0.6, metalness: 0.2 }));
+      ring.rotation.x = Math.PI / 2; ring.position.y = 0.3; S.add(ring);
+      // depot props: fuel drums, ammo crates, sandbag wall (one merged vertex-coloured mesh)
+      { const parts = [], add = (geo, x, y, z, ry, hex) => { geo.rotateY(ry); geo.translate(x, y, z); const c = new THREE.Color(hex), n = geo.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { const k = 0.9 + Math.random() * 0.15; a[i * 3] = c.r * k; a[i * 3 + 1] = c.g * k; a[i * 3 + 2] = c.b * k; } geo.setAttribute('color', new THREE.BufferAttribute(a, 3)); parts.push(geo.index ? geo.toNonIndexed() : geo); };
+         for (const [x, z, h] of [[-8.4, -6.5, 0], [-9.3, -5.6, 0], [-8.2, -5.3, 0], [-9.0, -6.9, 1]]) add(new THREE.CylinderGeometry(0.3, 0.3, 0.88, 14), x, 0.46 + h * 0.88, z, 0, h ? 0x6b2a20 : 0x4b5232);
+         for (const [x, z, ry, y] of [[8.6, -6.2, 0.3, 0.27], [9.4, -5.1, 0.1, 0.27], [8.9, -5.7, 0.4, 0.8]]) add(new THREE.BoxGeometry(1.1, 0.52, 0.6), x, y, z, ry, 0x5a4a2e);
+         for (let i = 0; i < 14; i++) { const a = -2.5 + i * 0.075, row = i % 7, lay = i / 7 | 0, r = 12.5;
+            add(new THREE.CapsuleGeometry(0.2, 0.45, 2, 6).rotateZ(Math.PI / 2), Math.cos(a + row * 0.04) * r, 0.22 + lay * 0.34, Math.sin(a + row * 0.04) * r, -a - row * 0.04 + Math.PI / 2, 0x8a7a56); }
+         const geo = new THREE.BufferGeometry();
+         for (const k of ['position', 'normal', 'color']) { const L = parts.reduce((t, g) => t + g.attributes[k].array.length, 0), a = new Float32Array(L); let o = 0; for (const g of parts) { a.set(g.attributes[k].array, o); o += g.attributes[k].array.length; } geo.setAttribute(k, new THREE.BufferAttribute(a, 3)); }
+         parts.forEach((g) => g.dispose()); const m = mk(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.1 }));
+         m.castShadow = m.receiveShadow = true; S.add(m); }
+      // treeline: the battle-map trees (pines + broadleaf), tinted per instance
+      for (const kind of ['pine', 'tree']) {
+         const [crown, trunk] = treeGeo(kind), cm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }); this.own.push(crown, trunk, cm);
+         const N = 90, mc = new THREE.InstancedMesh(crown, cm, N), mt = new THREE.InstancedMesh(trunk, cm, N), o = new THREE.Object3D(), col = new THREE.Color();
+         for (let i = 0; i < N; i++) {
+            const j = i * 2 + (kind === 'pine' ? 0 : 1), a = j * 2.39996 + Math.sin(j) * 0.3, r = 75 + ((j * 37) % 140), s = 0.8 + ((j * 13) % 9) / 14;
+            o.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); o.position.y = hgt(o.position.x, o.position.z) - 0.3; o.rotation.y = j; o.scale.setScalar(s * (kind === 'pine' ? 1.3 : 1.15)); o.updateMatrix();
+            mc.setMatrixAt(i, o.matrix); mt.setMatrixAt(i, o.matrix);
+            mc.setColorAt(i, col.setHex(kind === 'pine' ? 0x2c4422 : 0x4d6229).multiplyScalar(0.85 + ((j * 7) % 5) * 0.08)); mt.setColorAt(i, col.setHex(0x4a3c2c));
+         }
+         mc.castShadow = mt.castShadow = true; S.add(mc, mt);
       }
-      trees.castShadow = true; S.add(trees);
       this.buildTank();
    }
    buildTank() {
