@@ -77,6 +77,8 @@ export const AMMO = {
 export const BALLISTICS = {
    PEN_RANDOM: 0.25,        // ±25 % (triangular) on penetration
    DMG_RANDOM: 0.25,        // ±25 % on damage
+   DMG_MUL: 1.3,            // global damage scale: hits must hurt (playtest: 'treffer machen wenig schaden')
+   TRACK_K: 1.0,            // share of the shell's damage a track hit deals to the track (ricochet: half)
    FALL_START: 100, FALL_END: 500,
    OVERMATCH: 3,            // caliber > 3 × t: no ricochet
    OVERMATCH_NORM: 2,       // caliber > 2 × t: normalisation scaled by 1.4 × cal/t (WoT style)
@@ -136,8 +138,8 @@ export const MODULES = {
    turretRing: { name: 'Turmdrehkranz', hp: 150 },
    radio: { name: 'Funkgerät', hp: 90 },
    optics: { name: 'Optik', hp: 90 },
-   trackL: { name: 'Kette links', hp: 160 },
-   trackR: { name: 'Kette rechts', hp: 160 },
+   trackL: { name: 'Kette links', hp: 140 },
+   trackR: { name: 'Kette rechts', hp: 140 },
 };
 export const CREW_NAMES = { commander: 'Kommandant', gunner: 'Richtschütze', driver: 'Fahrer', radio: 'Funker', loader: 'Ladeschütze' };
 

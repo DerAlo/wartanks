@@ -28,7 +28,7 @@ export function penAt(round, dist) {
    return round.pen + (p500 - round.pen) * (dist - B.FALL_START) / (B.FALL_END - B.FALL_START);
 }
 export const rollPen = (round, dist, rng) => penAt(round, dist) * (1 + B.PEN_RANDOM * rng.tri());
-export const rollDmg = (dmg, rng) => dmg * (1 + B.DMG_RANDOM * (rng() * 2 - 1));
+export const rollDmg = (dmg, rng) => dmg * (B.DMG_MUL ?? 1) * (1 + B.DMG_RANDOM * (rng() * 2 - 1));
 
 /** Normalisation in degrees for a round against plate t (overmatch-aware). */
 export function normalisation(type, cal, t) {
@@ -90,7 +90,7 @@ export function resolveImpact(target, origin, dir, shell, rng) {
       if (type === 'HE') {
          const effT = h.t / Math.max(0.05, Math.cos(h.angleDeg * D2R));
          setPlate(r, h, effT); r.pen = pen; r.overmatch = over;
-         if (h.part === 'track') r.crits.push({ kind: 'module', id: trackId(h), dmg: Math.round(rollDmg(shell.dmg, rng) * 0.6) });
+         if (h.part === 'track') r.crits.push({ kind: 'module', id: trackId(h), dmg: Math.round(rollDmg(shell.dmg, rng) * B.TRACK_K) });
          if (pen > effT && !SPACED[h.part] && h.part !== 'gun') {
             r.kind = 'pen'; r.dmg = Math.round(rollDmg(shell.dmg, rng));
             postPen(target, origin, dir, h.dist, 1.0, shell.dmg * 0.8, rng, r.crits);
@@ -103,7 +103,7 @@ export function resolveImpact(target, origin, dir, shell, rng) {
             if (h.part === 'gun') r.crits.push({ kind: 'module', id: 'gun', dmg: Math.round(rollDmg(shell.dmg, rng) * 0.5) });
          }
          r.kind = 'he';
-         r.dmg = Math.max(0, Math.round(rollDmg(shell.dmg, rng) / 2 - shieldT * B.HE_SPLASH_K));
+         r.dmg = Math.max(0, Math.round(rollDmg(shell.dmg, rng) / 2 - shieldT * B.HE_SPLASH_K * (B.DMG_MUL ?? 1)));
          if (r.dmg > 0) heModules(target, h.point, shell, r.crits, rng, 0.5);
          return r;
       }
@@ -114,7 +114,7 @@ export function resolveImpact(target, origin, dir, shell, rng) {
          const k = 2 * (dir.x * h.normal.x + dir.y * h.normal.y + dir.z * h.normal.z);
          r.ricDir = { x: dir.x - k * h.normal.x, y: dir.y - k * h.normal.y, z: dir.z - k * h.normal.z };
          r.ricPen = type === 'HEAT' ? 0 : pen * (1 - B.RIC_PEN_LOSS);
-         if (h.part === 'track') r.crits.push({ kind: 'module', id: trackId(h), dmg: Math.round(rollDmg(shell.dmg, rng) * 0.3) });
+         if (h.part === 'track') r.crits.push({ kind: 'module', id: trackId(h), dmg: Math.round(rollDmg(shell.dmg, rng) * B.TRACK_K * 0.5) });
          return r;
       }
       const ang = Math.max(0, h.angleDeg - normalisation(type, cal, h.t));
@@ -128,7 +128,7 @@ export function resolveImpact(target, origin, dir, shell, rng) {
       }
       if (SPACED[h.part]) {
          spacedHit = true;
-         if (h.part === 'track') r.crits.push({ kind: 'module', id: trackId(h), dmg: Math.round(rollDmg(shell.dmg, rng) * 0.6) });
+         if (h.part === 'track') r.crits.push({ kind: 'module', id: trackId(h), dmg: Math.round(rollDmg(shell.dmg, rng) * B.TRACK_K) });
          if (pen <= effT) { r.kind = 'noPen'; return r; }
          pen -= effT;
          continue;
@@ -180,7 +180,7 @@ export function heSplash(target, point, shell, rng) {
    const fall = 1 - d / R;
    setPlate(r, h, h.t);
    r.kind = 'he'; r.pen = shell.pen;
-   r.dmg = Math.max(0, Math.round(rollDmg(shell.dmg, rng) / 2 * fall - (h.t + spacedT) * B.HE_SPLASH_K));
+   r.dmg = Math.max(0, Math.round(rollDmg(shell.dmg, rng) / 2 * fall - (h.t + spacedT) * B.HE_SPLASH_K * (B.DMG_MUL ?? 1)));
    if (r.dmg > 0) heModules(target, point, shell, r.crits, rng, 0.4 * fall);
    return r;
 }
