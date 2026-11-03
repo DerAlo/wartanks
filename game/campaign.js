@@ -338,12 +338,13 @@ export const OPS = {
       goals: ['Erste Grabenlinie überwinden', 'PaK-Stellungen zerstören', 'Die Höhe einnehmen und halten'],
       tip: 'Leichte Fahrzeuge bleiben in Gräben stecken – quert sie langsam und gerade.',
       script(S) {
+         const H = [90, -195];                    // the plateau east of the knoll (the knoll itself is too steep)
          const zig = (z) => { const pts = []; for (let x = -420; x <= 420; x += 40) pts.push([x, z + ((x / 40) % 2 ? 8 : -8)]); return pts; };
          S.T.carveTrench?.(zig(250), { w: 2.5, d: 1.8 }); S.T.carveTrench?.(zig(60), { w: 3, d: 2 });
          for (let x = -300; x <= 300; x += 120) S.T.addObject?.({ kind: 'wire', x, z: 280, yaw: 0 });
          for (const [x, z] of [[-220, 150], [-60, 120], [90, 135], [240, 150], [-130, 20], [140, 10]]) S.spawn('pak40', 2, x, z, { tag: 'pak', order: { kind: 'hold', x, z } });
          for (const [x, z] of [[-80, -160], [90, -170]]) S.spawn('pz4h', 2, x, z, { tag: 'def', name: 'Panzer IV', order: { kind: 'hold', x, z } });
-         S.spawn('tiger2', 2, 0, -260, { tag: 'tiger', name: 'Königstiger (s.SS-Pz.Abt. 502)', order: { kind: 'ambush', x: 0, z: -260, r: 260 } });
+         S.spawn('tiger2', 2, 20, -265, { tag: 'tiger', name: 'Königstiger (s.SS-Pz.Abt. 502)', order: { kind: 'ambush', x: 20, z: -265, r: 200 } });
          for (const [x, z, c] of [[-70, 440, 'is2'], [70, 440, 't34_85'], [140, 450, 't34_85']]) S.spawn(c, 1, x, z, { tag: 'allies', name: c === 'is2' ? 'IS-2' : 'T-34-85', order: { kind: 'advance', x: x * 0.5, z: 200 } });
          S.obj('trench1', 'Erste Grabenlinie überwinden');
          S.obj('pak', 'Den Pak-Riegel brechen (5 von 6 Geschützen)', { need: 5 });
@@ -358,12 +359,38 @@ export const OPS = {
             S.hunt('pak', 'PaK-Nest (gemeldet)');
          });
          S.when(() => true, (S) => S.progress('pak', S.dead('pak')), { repeat: true });
-         let held = 0;
-         S.when((S) => S.isDone('pak'), (S) => { S._hunt = null; S.goal(0, -200, 'Höhe', 60); S.radio('Der Weg auf die Höhe ist frei. Nehmt den Kamm!'); S.order(S.group('allies'), { kind: 'advance', x: 0, z: -190 }); });
+         S.when((S) => S.isDone('pak'), (S) => { S._hunt = null; S.goal(H[0], H[1], 'Höhe', 50); S.radio('Der Weg auf die Höhe ist frei. Nehmt das Plateau östlich der Kuppe!'); S.order(S.group('allies'), { kind: 'advance', x: H[0] - 20, z: H[1] + 30 }); });
          S.when((S) => S.group('tiger')[0]?.spotted, (S) => { S.show('b_tiger'); S.radio('Königstiger auf dem Kamm! Flanke angreifen!', 'warn'); });
          S.when((S) => S.alive('tiger') === 0, (S) => { S.show('b_tiger'); S.done('b_tiger'); });
          S.when((S) => S.dead('allies') > 0, (S) => S.fail('b_allies'));
-         S.when((S) => S.isDone('pak') && S.countIn(1, 0, -200, 70) > 0 && S.enemyTanksAlive() <= 1, (S) => {
+         S.obj('counter', 'Den Gegenstoß auf die Höhe abwehren', { hidden: true });
+         // on the crest the defence springs its trap: the Königstiger leaves its reverse-slope
+         // hide and a counter-attack of the Müncheberg division comes out of the wood behind
+         S.when((S) => S.isDone('pak') && S.player && Math.hypot(S.player.pos.x - H[0], S.player.pos.z - H[1]) < 75, (S) => {
+            S.phase('hill'); S.show('counter'); S.refit(0.5, 'Die Tankisten der Nachhut werfen Granaten auf euer Heck – schnell nachladen!');
+            const [hx, hz] = S.hullDown(H[0], H[1], 25, H[0], -460);
+            S.mark('hd', hx, hz, 'Stellung am Kamm', 'area', 10); S.goal(hx, hz, 'Kamm halten', 8);
+            S.radio('Gegenstoß aus dem Wald! Panzer IV im Anmarsch – haltet den Kamm!', 'warn');
+            S.after(60, (S) => {          // the Königstiger leaves its hide once the counter-attack is under way
+               const tg = S.group('tiger').filter((t) => t.alive); if (!tg.length) return;
+               S.radio('Der Königstiger rollt aus seiner Deckung – er qualmt schon, die Artillerie hat ihn erwischt. Flanke suchen!', 'warn');
+               // three days of battle: shell-struck, the crew worn out (it still kills a careless IS-2)
+               for (const t of tg) { t.hp = Math.min(t.hp, t.maxHP * 0.6); t.aiErr = 1.6; if (t.ai) t.ai._tuned = false; S._tuneAI(t); }
+               // it swings east across the front to cut the plateau off from behind: a side shot for whoever waits
+               S.order(tg, { kind: 'route', pin: true, pts: [[-20, -300], [hx + 40, -300], [hx + 130, hz - 110]] });
+            });
+            S.order(S.group('allies').filter((t) => t.alive), { kind: 'advance', x: hx, z: hz + 25 });
+            [[200, 'pz4h', 20], [-20, 'pz4h', 45], [120, 'panther', 80], [260, 'pz4h', 140]].forEach(([x, c, dt], i) => S.after(dt, (S) => {
+               S.spawn(c, 2, x, -460, { tag: 'counter', name: TANKS[c].short || TANKS[c].name, order: { kind: 'route', pts: [[x * 0.6 + 40, -330], [x * 0.4 + 60, -250], [hx, hz]] } });
+               if (i === 2) S.radio('Ein Panther führt die zweite Welle!', 'warn');
+            }));
+         });
+         // the counter-attack is broken but the Königstiger still lurks: go and find it
+         S.when((S) => S.c.phase === 'hill' && S.group('counter').length === 4 && S.alive('counter') === 0 && S.alive('tiger') > 0,
+            (S) => { S.radio('Die Panzer IV brennen. Bleibt der Königstiger – sucht ihn, von der Seite!', 'warn'); S.hunt('tiger', 'Königstiger', (S) => S.goal(...S.c.markers.find((m) => m.id === 'hd') ? [S.c.markers.find((m) => m.id === 'hd').x, S.c.markers.find((m) => m.id === 'hd').z] : H, 'Kamm halten', 8)); });
+         let held = 0;
+         S.when((S) => S.c.phase === 'hill' && S.group('counter').length === 4 && S.alive('counter') === 0 && S.alive('tiger') === 0 && S.countIn(1, H[0], H[1], 80) > 0, (S) => {
+            if (held === 0) { S.done('counter'); S.radio('Der Gegenstoß ist zerschlagen. Haltet den Kamm, bis die Infanterie oben ist!'); }
             held += 0.25; S.timer('Höhe halten', Math.max(0, 30 - held));
             if (held >= 30) { S.done('hill'); if (S.get('b_allies').state === 'active') S.done('b_allies'); S.timer(null); S.win('Seelower Höhen genommen'); }
          }, { repeat: true });

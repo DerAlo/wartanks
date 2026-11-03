@@ -451,7 +451,7 @@ export class BotAI {
       for (const m of this.w.tanks) {
          if (m === t || !m.alive || m.team !== t.team || m.cfg.site) continue;
          const ox = m.pos.x - t.pos.x, oz = m.pos.z - t.pos.z, along = ox * dx + oz * dz;
-         if (along > 4 && along < dist - 4 && Math.abs(ox * dz - oz * dx) < 4.5) return true;
+         if (along > -1 && along < dist - 4 && Math.abs(ox * dz - oz * dx) < 4.5) return true;
       }
       return false;
    }
