@@ -69,7 +69,7 @@ export class World {
 
    // ---------------------------------------------------------------- setup helpers (missions.js)
    addTank(cls, team, o = {}) {
-      const t = new Tank(TANKS[cls] || cls, { ...o, team, terrain: this.terrain });
+      const t = new Tank(TANKS[cls] || cls, { id: this.tanks.length + 1, ...o, team, terrain: this.terrain });
       this.tanks.push(t); this._byId.set(t.id, t);
       if (o.isPlayer) this.player = t; else this.bots.push(t);
       return t;

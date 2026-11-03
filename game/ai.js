@@ -11,10 +11,15 @@
 //   angles the hull ~35° when stationary under fire, retreats when low on HP, caps / resets bases.
 import { WORLD } from './config.js';
 import { rayArmor } from './armor.js';
-import { penAt } from './ballistics.js';
+import { penAt, ricochets, normalisation } from './ballistics.js';
+import { effective } from './armor.js';
 import { clamp, angleDelta, yawTo, makeRng, hashSeed, mulMat3, poseMatrix } from './utils.js';
 
 const CELL = 16;
+const LATE_T = 260;            // s left: everyone leaves their post and plays the objective
+// team-shared last known enemy positions (per world): Map enemyId -> { x, z, t }
+const INTEL = new WeakMap();
+function intel(w, team) { let m = INTEL.get(w); if (!m) INTEL.set(w, m = { 1: new Map(), 2: new Map() }); return m[team]; }
 const DIFF = {                 // aim error (m at 100 m, 1σ), reaction (s), patience for aim (s), smart plate pick
    leicht: { err: 1.1, react: 1.4, aimWait: 1.2, convK: 2.2, smart: 0.25, angle: false },
    normal: { err: 0.55, react: 0.8, aimWait: 2.0, convK: 1.5, smart: 0.6, angle: true },
@@ -100,9 +105,30 @@ export function findPath(T, x0, z0, x1, z1) {
    return res;
 }
 
+// Expected outcome of a shell along a ray, walking the plates like ballistics.resolveImpact
+// (tracks / skirts / mantlet eat pen, the gun stops the shell, ricochets): returns the margin
+// pen / effT on the first real plate (>1 = penetrates on average; 0 = cannot damage).
+function penMargin(hits, type, cal, pen) {
+   for (const h of hits) {
+      if (h.t <= 0) continue;
+      if (type === 'HE') return (h.part === 'hull' || h.part === 'turret') ? pen / Math.max(1, effective(h.t, h.angleDeg)) : 0.3;
+      if (h.part === 'gun') return 0;
+      if (ricochets(type, cal, h.t, h.angleDeg)) return 0;
+      const effT = effective(h.t, Math.max(0, h.angleDeg - normalisation(type, cal, h.t)));
+      if (h.part === 'track' || h.part === 'skirt' || h.part === 'mantlet') {
+         if (type === 'HEAT' && h.part !== 'mantlet') return 0.2;      // spaced armour kills HEAT (simplified)
+         if (pen <= effT) return 0; pen -= effT; continue;
+      }
+      return pen / Math.max(1, effT);
+   }
+   return 0;
+}
+
 // ------------------------------------------------------------------ bot
 const _o = { x: 0, y: 0, z: 0 }, _d = { x: 0, y: 0, z: 0 }, _lp = { x: 0, y: 0, z: 0 }, _wp = { x: 0, y: 0, z: 0 };
 const _m = new Float64Array(9);
+const CANDS = [];
+const AMMO_ORDER = ['AP', 'APCR', 'HEAT', 'HE'];
 
 export class BotAI {
    constructor(world, tank) {
@@ -135,9 +161,10 @@ export class BotAI {
    chooseDest() {
       const T = this.w.terrain, t = this.tank, s = this._sideSign(), r = this.rng;
       const own = T.bases['team' + t.team], enemy = T.bases['team' + (3 - t.team)];
-      const lateGame = this.w.timeLeft != null && this.w.timeLeft < 200;
+      const lateGame = this.w.timeLeft != null && this.w.timeLeft < LATE_T;
       const neutral = this.w.mode === 'encounter' ? T.bases.neutral : null;
-      if (t.hp < t.maxHP * 0.3 && this.stage > 0) return this.coverNear(own.x * 0.5 + t.pos.x * 0.5, own.z * 0.6 + t.pos.z * 0.4);
+      if (this.hunting) { const k = this.huntPoint(); if (k) return k; }
+      if (t.hp < t.maxHP * 0.3 && this.stage > 0 && !this.hunting) return this.coverNear(own.x * 0.5 + t.pos.x * 0.5, own.z * 0.6 + t.pos.z * 0.4);
       if (neutral && (lateGame || this.stage >= 2)) return { x: neutral.x + (r() - 0.5) * 30, z: neutral.z + (r() - 0.5) * 30 };
       if (this.role === 'defend') return { x: own.x + (r() - 0.5) * 30, z: own.z + (r() - 0.5) * 30 };
       if (lateGame || this.stage >= 2) return neutral ? { x: neutral.x, z: neutral.z } : { x: enemy.x + (r() - 0.5) * 30, z: enemy.z + (r() - 0.5) * 30 };
@@ -148,6 +175,21 @@ export class BotAI {
       if (this.role === 'push') return this.stage === 0 ? { x: (r() - 0.5) * 200, z: s * (40 + r() * 60) } : { x: (r() - 0.5) * 200, z: -s * 120 };
       if (this.role === 'snipe') return this.bushNear((r() - 0.5) * 500, s * (180 + r() * 80)) || this.highNear((r() - 0.5) * 500, s * 200);
       return this.highNear((r() - 0.5) * 500, s * (110 + r() * 60));            // ridge
+   }
+   // nearest last known position of a living enemy (team-shared memory), with a little scatter so
+   // several hunters do not stack on one point; null when nothing is known
+   huntPoint() {
+      const t = this.tank, mem = intel(this.w, t.team);
+      let best = null, bs = Infinity;
+      for (const e of this.w.tanks) {
+         if (!e.alive || e.team === t.team) continue;
+         const k = mem.get(e.id); if (!k) continue;
+         const score = Math.hypot(k.x - t.pos.x, k.z - t.pos.z) + (this.w.time - k.t) * 2;
+         if (score < bs) { bs = score; best = k; }
+      }
+      if (!best) return null;
+      const r = this.rng;
+      return { x: clamp(best.x + (r() - 0.5) * 40, -this.w.terrain.half + 20, this.w.terrain.half - 20), z: clamp(best.z + (r() - 0.5) * 40, -this.w.terrain.half + 20, this.w.terrain.half - 20) };
    }
    highNear(x, z) {
       const T = this.w.terrain, N = navGrid(T);
@@ -228,11 +270,42 @@ export class BotAI {
       // target selection
       this.pickTarget();
       if (this.target) this.lastEnemySeen = w.time;
+      const mem = intel(w, t.team);
+      let nEnemy = 0, nOwn = 0;
+      for (const e of w.tanks) {
+         if (!e.alive) continue;
+         if (e.team === t.team) { nOwn++; continue; }
+         nEnemy++;
+         if (e.spotted) { const k = mem.get(e.id); if (k) { k.x = e.pos.x; k.z = e.pos.z; k.t = w.time; } else mem.set(e.id, { x: e.pos.x, z: e.pos.z, t: w.time }); }
+      }
+      // hunt the last known enemy positions: few enemies left, clear superiority, or the clock runs
+      // out (the defender too); otherwise both sides camp and the battle ends in a draw
+      const late = w.timeLeft != null && w.timeLeft < LATE_T;
+      const capping = t.capId != null && w.caps.some((c) => c.id === t.capId && c.capper === t.team);
+      const wantHunt = !this.returning && !capping && (nEnemy <= 2 || nOwn >= nEnemy + 3
+         || (late && this.role === 'defend' && (w.timeLeft < 150 || nEnemy <= 3)) || (late && w.timeLeft < 110));
+      // a remembered spot that turns out empty is forgotten
+      for (const [id, k] of mem) if (Math.hypot(k.x - t.pos.x, k.z - t.pos.z) < 30 && !w.tankById(id)?.spotted) mem.delete(id);
+      if (wantHunt && w.time - this.lastEnemySeen > 6 && (!this.hunting || this.huntT <= 0)) {
+         this.hunting = true; this.huntT = 25; this.stage = Math.max(this.stage, 2); this._late = true; this.setDest(this.chooseDest());
+      }
+      if (this.hunting) this.huntT -= 0.25;
+      // nothing on the target penetrates from here: drive round to its side / rear instead of
+      // parking in front of it and trading bounces (turreted, mobile tanks; HT / TD keep station)
+      if (this.flankT > 0) this.flankT -= 0.25;
+      const e = this.target;
+      if (e && this.bestRatio < 0.8 && !(this.flankT > 0) && !this.returning && !this.retreating && t.cfg.turret && t.cfg.cls !== 'TD'
+         && t.mod('trackL') !== 'destroyed' && t.mod('trackR') !== 'destroyed' && Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z) < 260) {
+         const fx = -Math.sin(e.yaw), fz = -Math.cos(e.yaw), rx = -fz, rz = fx;
+         const side = (t.pos.x - e.pos.x) * rx + (t.pos.z - e.pos.z) * rz > 0 ? 1 : -1, T = w.terrain;
+         this.flankT = 18;
+         this.setDest({ x: clamp(e.pos.x + rx * side * 45 - fx * 25, -T.half + 20, T.half - 20), z: clamp(e.pos.z + rz * side * 45 - fz * 25, -T.half + 20, T.half - 20) });
+      }
       // destination / stage progression
       if (!this.dest) this.setDest(this.chooseDest());
       // late game / thinned-out teams: everyone leaves their post once and moves on the objective
-      const fewLeft = w.tanks.filter((o) => o.alive && o.team === t.team).length <= 2;
-      if (!this._late && !this.returning && !this.retreating && this.role !== 'defend' && w.timeLeft != null && (w.timeLeft < 200 || fewLeft)) {
+      const fewLeft = nOwn <= 2;
+      if (!this._late && !this.returning && !this.retreating && this.role !== 'defend' && w.timeLeft != null && (late || fewLeft)) {
          this._late = true; this.stage = Math.max(this.stage, 2); this.setDest(this.chooseDest());
       }
       const arrived = Math.hypot(this.dest.x - t.pos.x, this.dest.z - t.pos.z) < 18;
@@ -255,7 +328,8 @@ export class BotAI {
          const d = Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z);
          if (d > WORLD.DRAW_RANGE) continue;
          if (!this.los(e)) continue;
-         const score = d * (0.5 + e.hp / e.maxHP) * (e === this.target ? 0.6 : 1);
+         const rb = this.ratioBy?.get(e.id);            // known to be (nearly) impenetrable from here
+         const score = d * (0.5 + e.hp / e.maxHP) * (e === this.target ? 0.6 : 1) * (rb != null && rb < 0.8 ? 2.5 : 1);
          if (score < bs) { bs = score; best = e; }
       }
       if (best !== this.target) {
@@ -270,44 +344,46 @@ export class BotAI {
       return T.raycast(ox, oy, oz, dx / d, dy / d, dz / d, d - 3) == null;
    }
 
-   /** Choose a hull-local aim point on the target: the weakest plate among candidates. */
+   /** Choose a hull-local aim point on the target: the plate with the best expected penetration
+    *  margin for the best loaded/loadable round (smart bots), or centre mass (dumb pick). */
    chooseAim(e) {
-      const t = this.tank, cfg = e.cfg, H = cfg.hull, D = this.D;
-      const round = t.round(), dist = Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z), pen = penAt(round, dist);
-      const fy = H.floorY, ry = H.roofY, zF = H.zMin ?? -H.len / 2, zR = H.zMax ?? H.len / 2;
+      const t = this.tank, cfg = e.cfg, H = cfg.hull, D = this.D, g = t.cfg.gun.ammoByType;
+      const dist = Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z);
+      const fy = H.floorY, ry = H.roofY, zF = H.zMin ?? -H.len / 2, zR = H.zMax ?? H.len / 2, hw = (H.w ?? 3) * 0.32;
+      const tz = cfg.turret?.z ?? 0, tx = cfg.turret?.x ?? 0;
       const tY = cfg.turret ? cfg.turret.y + cfg.turret.h * 0.45 : ry * 0.9;
-      const cands = [[0, (fy + ry) / 2, 0], [0, fy + (ry - fy) * 0.3, zF * 0.9], [0, ry * 0.85, zF * 0.7], [0, tY, cfg.turret?.z ?? 0],
-         [(cfg.turret?.x ?? 0) + 0.5, tY, cfg.turret?.z ?? 0], [0, (fy + ry) / 2, zR * 0.5], [0, (fy + ry) / 2, zF * 0.4]];
-      let best = cands[0], bv = -Infinity;
+      const mid = (fy + ry) / 2, up = fy + (ry - fy) * 0.7;
+      const cands = CANDS; let n = 0;
+      const add = (x, y, z) => { const c = cands[n++] ||= [0, 0, 0]; c[0] = x; c[1] = y; c[2] = z; };
+      add(0, mid, 0); add(0, fy + (ry - fy) * 0.3, zF * 0.9); add(0, ry * 0.85, zF * 0.7); add(tx, tY, tz);
+      add(tx + 0.5, tY, tz); add(tx - 0.5, tY, tz); add(0, mid, zR * 0.5); add(0, mid, zF * 0.4);
+      add(hw, up, zF * 0.6); add(-hw, up, zF * 0.6); add(0, up, zR * 0.85); add(0, mid, zR * 0.2);
       const P = e.pose();
       poseMatrix(_m, P.yaw, P.pitch, P.roll);
       const smart = this.rng() < D.smart;
-      for (const c of cands) {
+      // rounds worth considering: the loaded one, plus the others for smart bots (with stock)
+      const types = smart ? AMMO_ORDER.filter((k) => g[k] && (k === t.ammoSel || t.ammoCount[k] > (k === 'AP' ? 0 : 1))) : [t.ammoSel];
+      let best = 0, bv = -1, bType = t.ammoSel;
+      for (let i = 0; i < n; i++) {
+         const c = cands[i];
          _lp.x = c[0]; _lp.y = c[1]; _lp.z = c[2];
          mulMat3(_wp, _m, _lp); _wp.x += P.pos.x; _wp.y += P.pos.y; _wp.z += P.pos.z;
          _d.x = _wp.x - t.muzzle.x; _d.y = _wp.y - t.muzzle.y; _d.z = _wp.z - t.muzzle.z;
          const L = Math.hypot(_d.x, _d.y, _d.z); _d.x /= L; _d.y /= L; _d.z /= L;
          const hits = rayArmor(e.armor, P, t.muzzle, _d);
-         let h = null; for (const x of hits) if (x.t > 0 && (x.part === 'hull' || x.part === 'turret' || x.part === 'mantlet')) { h = x; break; }
-         if (!h) continue;
-         if (!smart) { best = c; break; }               // dumb bots aim centre mass
-         const ric = h.angleDeg > 70 && round.cal < 3 * h.t;
-         const v = (ric ? -1e3 : 0) + pen / Math.max(1, h.effT) - (c === cands[0] ? 0 : 0.02);
-         if (v > bv) { bv = v; best = c; }
+         if (!hits.length) continue;
+         if (!smart) { best = i; bv = penMargin(hits, t.ammoSel, g[t.ammoSel].cal, penAt(g[t.ammoSel], dist)); break; }
+         for (const k of types) {
+            const r = g[k], m = penMargin(hits, k, r.cal, penAt(r, dist));
+            // prefer standard AP when it is enough; premium only for a real gain; HE only as a last resort
+            const v = Math.min(m, 1.6) * (k === 'AP' ? 1 : k === 'HE' ? 0.5 : 0.93) - (i === 0 ? 0 : 0.02);
+            if (v > bv) { bv = v; best = i; bType = k; }
+         }
       }
-      this.aimLocal.x = best[0]; this.aimLocal.y = best[1]; this.aimLocal.z = best[2];
-      this.bestRatio = bv;
-      // ammo by expected armour
-      const g = t.cfg.gun.ammoByType;
-      if (this.rng() < D.smart && bv > -1e3) {
-         const effT = pen / Math.max(0.01, bv);
-         let want = 'AP';
-         if (g.APCR && penAt(g.AP, dist) < effT * 1.05 && penAt(g.APCR, dist) > effT * 0.95 && t.ammoCount.APCR > 2) want = 'APCR';
-         else if (g.HEAT && penAt(g.AP, dist) < effT * 1.05 && t.ammoCount.HEAT > 0) want = 'HEAT';
-         else if (g.HE && penAt(g.AP, dist) < effT * 0.6 && g.HE.cal >= 85 && t.ammoCount.HE > 0) want = 'HE';
-         if (want !== t.ammoSel && t.ammoCount[want] > 0 && (t.reload <= 0.5 || t.reload > t.reloadMax * 0.8)) t.setAmmo(want);
-         else if (want === t.ammoSel) { /* keep */ }
-      }
+      const c = cands[best];
+      this.aimLocal.x = c[0]; this.aimLocal.y = c[1]; this.aimLocal.z = c[2];
+      this.bestRatio = bv; (this.ratioBy ??= new Map()).set(e.id, bv);
+      if (smart && bType !== t.ammoSel && t.ammoCount[bType] > 0 && (t.reload <= 0.5 || t.reload > t.reloadMax * 0.8)) t.setAmmo(bType);
       // new random aim error (gaussian-ish), re-rolled each pick
       const err = D.err * dist / 100;
       this.errX = (this.rng() + this.rng() + this.rng() - 1.5) * err * 1.4;
@@ -338,6 +414,7 @@ export class BotAI {
       t.aimPoint.y = P.pos.y + _wp.y + this.errY;
       t.aimPoint.z = P.pos.z + _wp.z + e.vel.z * tof + rz * this.errX;
       if (this.targetT < this.D.react) return;
+      if (this.flankT > 0 && this.bestRatio < 0.3) return;            // pointless shot while manoeuvring
       if (t.reload > 0 || t.gunBlocked) { this.aimT = 0; return; }
       this.aimT += dt;
       const conv = t.aimDisp <= t.baseDisp * this.D.convK;
@@ -359,7 +436,7 @@ export class BotAI {
       const dWp = wp ? Math.hypot(wp.x - t.pos.x, wp.z - t.pos.z) : 0;
       const atDest = this.pi >= this.path.length - 1 && dWp < 10;
       // engage stance: stop and fight unless flanking / retreating
-      const engaging = e && e.alive && !this.retreating && (this.role !== 'flank' || this.stage > 0 || Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z) < 160)
+      const engaging = e && e.alive && !this.retreating && !(this.flankT > 0) && (this.role !== 'flank' || this.stage > 0 || Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z) < 160)
          && this.role !== 'push' && !this.returning;
       const hold = atDest || (engaging && t.reload < 1.5 + (t.cfg.cls === 'TD' ? 3 : 0));
       // unstick
