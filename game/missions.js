@@ -66,7 +66,7 @@ const capCircle = (T, id, b, team, r = 30) => ({ id, pos: { x: b.x, y: T.heightA
 
 export const MISSIONS = {
    standard: {
-      id: 'standard', name: 'Standardgefecht', teamSize: 7, timeLimit: 420, countdown: 10,
+      id: 'standard', name: 'Standardgefecht', teamSize: 7, timeLimit: 600, countdown: 10,
       desc: 'Zwei Basen. Vernichte alle Gegner oder erobere die gegnerische Basis.',
       setup(world, opts) {
          spawnTeams(world, opts, opts.teamSize || this.teamSize);
@@ -75,7 +75,7 @@ export const MISSIONS = {
       },
    },
    encounter: {
-      id: 'encounter', name: 'Begegnungsgefecht', teamSize: 7, timeLimit: 420, countdown: 10,
+      id: 'encounter', name: 'Begegnungsgefecht', teamSize: 7, timeLimit: 600, countdown: 10,
       desc: 'Eine neutrale Basis in der Kartenmitte. Wer sie hält oder alle Gegner vernichtet, gewinnt.',
       setup(world, opts) {
          spawnTeams(world, opts, opts.teamSize || this.teamSize);

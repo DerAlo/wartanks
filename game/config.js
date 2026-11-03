@@ -104,11 +104,11 @@ export const TIER_ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII',
 
 // Ground resistance classes (base rolling resistance coefficient; tanks scale it by cfg.ground).
 export const GROUND = {
-   road:   { name: 'Straße', res: 0.035, idx: 0 },
-   hard:   { name: 'Fester Boden', res: 0.05, idx: 0 },
-   medium: { name: 'Wiese', res: 0.075, idx: 1 },
-   soft:   { name: 'Weicher Boden', res: 0.12, idx: 2 },
-   water:  { name: 'Furt', res: 0.2, idx: 2 },
+   road:   { name: 'Straße', res: 0.02, idx: 0 },
+   hard:   { name: 'Fester Boden', res: 0.025, idx: 0 },
+   medium: { name: 'Wiese', res: 0.05, idx: 1 },
+   soft:   { name: 'Weicher Boden', res: 0.06, idx: 2 },
+   water:  { name: 'Furt', res: 0.12, idx: 2 },
 };
 
 export const CONSUMABLES = {
@@ -205,6 +205,11 @@ const G = {
       load: { AP: 50, APCR: 10, HE: 24 },
       ammo: [{ type: 'AP', name: 'M61 APCBC', pen: 91, dmg: 110, vel: 620 }, { type: 'APCR', name: 'M61 APC-T', pen: 108, dmg: 110, vel: 700 },
          { type: 'HE', name: 'M48 HE', pen: 38, dmg: 175, vel: 600 }] },
+   // Churchill VII: the same OQF 75 mm as the Cromwell, but historically it fired only M72 AP-T,
+   // M61 APC(BC) and M48 HE (no APDS / HEAT for the 75 mm); the 77 mm HV belonged to the Black Prince.
+   qf75c: { name: 'OQF 75 mm Mk V', cal: 75, len: 2.8, reload: 4.2, disp: 0.39, aim: 1.9, elev: 20, depr: -12.5, cap: 84,
+      load: { AP: 60, HE: 24 },
+      ammo: [{ type: 'AP', name: 'M61 APCBC', pen: 91, dmg: 110, vel: 618 }, { type: 'HE', name: 'M48 HE', pen: 38, dmg: 175, vel: 463 }] },
    hv77: { name: 'OQF 77 mm HV', cal: 76.2, len: 3.85, reload: 5.2, disp: 0.35, aim: 2.0, elev: 20, depr: -12, cap: 61,
       load: { AP: 38, APCR: 8, HE: 15 },
       ammo: [{ type: 'AP', name: 'APCBC Mk 8', pen: 148, dmg: 150, vel: 785 }, { type: 'APCR', name: 'APDS Mk 1', pen: 202, dmg: 150, vel: 1120 },
@@ -438,7 +443,7 @@ const RAW = [
          rear: [['urp', 50, 0, 0.9], ['lrp', 50, -30, null]], floorT: 20, side: { t: 95 } },
       turret: { z: -0.6, ringR: 0.74, h: 0.78, roofT: 20, oct: [1.95, 0.85, 1.1, 0.35, 0.35], f: [152, 0], cheek: [152, 10], s: [95, 5], rr: [95, 5], r: [95, 0], traverse: 22 },
       mantlet: { w: 0.5, h: 0.35, d: 0.1, t: 50 },
-      gun: gun(G.hv77),
+      gun: gun(G.qf75c),
       run: { wheels: 11, wheelR: 0.18, interleave: 0, rollers: 0, sprocket: 'rear', sprocketR: 0.4, idlerR: 0.4, trackW: 0.56, len: 7.4, h: 1.6, t: 20, style: 'allround' },
       layout: { ammo: 'sponson', fuel: 'rear' },
    },

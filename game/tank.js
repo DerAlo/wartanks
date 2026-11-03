@@ -21,7 +21,7 @@ import { clamp, approach, approachAngle, angleDelta, poseMatrix, mulMat3T, DEG }
 
 const KMH = 1 / 3.6;
 const HP_W = 735.5;            // W per metric hp
-const DRIVE_EFF = 0.8;         // engine -> track power
+const DRIVE_EFF = 0.95;        // engine -> track power (generous: WoT-like pace, terrain still tells)
 const MU = [0.85, 0.78, 0.7, 0.55, 0.5];   // traction by ground idx (road, hard, medium, soft, water)
 const RES = [GROUND.road.res, GROUND.hard.res, GROUND.medium.res, GROUND.soft.res, GROUND.water.res];
 const CFG_GROUND_IDX = [0, 0, 1, 2, 2];     // ground idx -> cfg.ground [hard, medium, soft] slot

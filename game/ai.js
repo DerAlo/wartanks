@@ -163,7 +163,10 @@ export class BotAI {
       const own = T.bases['team' + t.team], enemy = T.bases['team' + (3 - t.team)];
       const lateGame = this.w.timeLeft != null && this.w.timeLeft < LATE_T;
       const neutral = this.w.mode === 'encounter' ? T.bases.neutral : null;
-      if (this.hunting) { const k = this.huntPoint(); if (k) return k; }
+      if (this.hunting) {                 // nobody known: sweep toward the enemy side (defenders too)
+         const k = this.huntPoint(); if (k) return k;
+         const g = neutral || enemy; return { x: g.x * 0.7 + (r() - 0.5) * 120, z: g.z * 0.7 + (r() - 0.5) * 60 };
+      }
       if (t.hp < t.maxHP * 0.3 && this.stage > 0 && !this.hunting) return this.coverNear(own.x * 0.5 + t.pos.x * 0.5, own.z * 0.6 + t.pos.z * 0.4);
       if (neutral && (lateGame || this.stage >= 2)) return { x: neutral.x + (r() - 0.5) * 30, z: neutral.z + (r() - 0.5) * 30 };
       if (this.role === 'defend') return { x: own.x + (r() - 0.5) * 30, z: own.z + (r() - 0.5) * 30 };
@@ -299,7 +302,10 @@ export class BotAI {
          const fx = -Math.sin(e.yaw), fz = -Math.cos(e.yaw), rx = -fz, rz = fx;
          const side = (t.pos.x - e.pos.x) * rx + (t.pos.z - e.pos.z) * rz > 0 ? 1 : -1, T = w.terrain;
          this.flankT = 18;
-         this.setDest({ x: clamp(e.pos.x + rx * side * 45 - fx * 25, -T.half + 20, T.half - 20), z: clamp(e.pos.z + rz * side * 45 - fz * 25, -T.half + 20, T.half - 20) });
+         // a tracked target cannot turn its hull: go straight for its rear plate
+         const stuck = e.mod('trackL') === 'destroyed' || e.mod('trackR') === 'destroyed';
+         if (stuck) { this.flankT = 12; this.setDest({ x: clamp(e.pos.x + rx * side * 12 - fx * 40, -T.half + 20, T.half - 20), z: clamp(e.pos.z + rz * side * 12 - fz * 40, -T.half + 20, T.half - 20) }); }
+         else this.setDest({ x: clamp(e.pos.x + rx * side * 45 - fx * 25, -T.half + 20, T.half - 20), z: clamp(e.pos.z + rz * side * 45 - fz * 25, -T.half + 20, T.half - 20) });
       }
       // destination / stage progression
       if (!this.dest) this.setDest(this.chooseDest());
@@ -382,6 +388,22 @@ export class BotAI {
             const v = Math.min(m, 1.6) * (k === 'AP' ? 1 : k === 'HE' ? 0.5 : 0.93) - (i === 0 ? 0 : 0.02);
             if (v > bv) { bv = v; best = i; bType = k; }
          }
+      }
+      // nothing penetrates: shoot a track off instead (immobilised, it cannot turn its front to the
+      // flanker any more), aiming at the track end facing us
+      const run = cfg.run;
+      if (bv < 0.3 && run && e.mod('trackL') !== 'destroyed' && e.mod('trackR') !== 'destroyed') {
+         _d.x = t.pos.x - e.pos.x; _d.z = t.pos.z - e.pos.z;
+         const lz = -Math.sin(P.yaw) * _d.x - Math.cos(P.yaw) * _d.z;     // >0: we are in front of it
+         const lx = Math.cos(P.yaw) * _d.x - Math.sin(P.yaw) * _d.z;      // >0: we are on its right
+         const tx2 = (lx >= 0 ? 1 : -1) * (run.x ?? H.w * 0.4), ty = (run.h ?? 1) * 0.45, tz2 = (lz > 0 ? zF : zR) * 0.82;
+         const c = cands[n] ||= [0, 0, 0]; c[0] = tx2; c[1] = ty; c[2] = tz2;
+         _lp.x = tx2; _lp.y = ty; _lp.z = tz2;
+         mulMat3(_wp, _m, _lp); _wp.x += P.pos.x; _wp.y += P.pos.y; _wp.z += P.pos.z;
+         _d.x = _wp.x - t.muzzle.x; _d.y = _wp.y - t.muzzle.y; _d.z = _wp.z - t.muzzle.z;
+         const L = Math.hypot(_d.x, _d.y, _d.z); _d.x /= L; _d.y /= L; _d.z /= L;
+         const hits = rayArmor(e.armor, P, t.muzzle, _d);
+         if (hits.length && hits[0].part === 'track') { best = n; bv = 0.32; bType = g.AP ? 'AP' : t.ammoSel; }
       }
       const c = cands[best];
       this.aimLocal.x = c[0]; this.aimLocal.y = c[1]; this.aimLocal.z = c[2];

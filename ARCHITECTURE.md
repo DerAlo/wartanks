@@ -202,7 +202,7 @@ speeds.
 * `modules[k] = { hp, max, state:'ok'|'damaged'|'destroyed', repairT }` (`turretRing` only if the
   tank has a turret). `crew` is keyed by the cfg crew id: `{ alive, hp, wounded, roles:[...] }`;
   `t.roleAlive('gunner')` checks any member with that role.
-* Driving: P = hp·735.5·0.8·powerK; F = min(P / max(v,1.2), μ·N), μ per ground class;
+* Driving: P = hp·735.5·0.95·powerK (generous, WoT-like pace); F = min(P / max(v,1.2), μ·N), μ per ground class;
   rolling resistance from `GROUND.res × cfg.ground`; a step > 1.25 m per metre ahead blocks
   (cliff). Tank-tank: inelastic impulse e = 0.15, parked/dead tanks count ×4 mass; ram damage
   above 2.5 m/s relative speed (energy/1800, split by mass), no ram damage to allies.
@@ -280,7 +280,7 @@ timeLeft < 200 s or ≤ 2 tanks of their team remain.
 ## Modes (`missions.js`)
 
 * `standard` — Standardgefecht: 2 bases, 7v7 (configurable up to 10v10), win by destroying all
-  enemies or capturing the enemy base (100 points), 7-min timer (draw).
+  enemies or capturing the enemy base (100 points), 10-min timer (draw; was 7 min, too short for heavy mirrors).
 * `encounter` — Begegnungsgefecht: one neutral base.
 * `assault`? optional later.
 * `training` — Übungsplatz: drive any tank, static/moving target tanks of each type, armour
