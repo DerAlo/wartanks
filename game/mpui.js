@@ -419,7 +419,7 @@ class MpUI {
       $('#mp-room').dataset.state = r.state; $('#mp-room').dataset.host = host ? '1' : '0';
       $('#mp-pcount').textContent = `${r.players.length}/${r.max}`;
       const row = (p) => {
-         const ready = p.id === r.hostId ? ['on', 'HOST'] : p.ready ? ['on', 'BEREIT'] : ['', 'WARTET'];
+         const ready = p.id === r.hostId ? ['on', 'HOST'] : p.lost ? ['', 'GETRENNT'] : p.ready ? ['on', 'BEREIT'] : ['', 'WARTET'];
          const via = lb.via(p.id);
          const route = via === 'direct' ? '<em class="direct" title="Direkte Verbindung zum Host">direkt</em>'
             : via === 'relay' ? '<em title="Keine direkte Verbindung zum Host: die Spieldaten laufen verschlüsselt über die Vermittlung. Das funktioniert, mit etwas mehr Verzögerung.">über Relay</em>' : '';

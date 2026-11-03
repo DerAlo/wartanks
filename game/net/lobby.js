@@ -570,7 +570,11 @@ export class Lobby {
          if (this.isHost) { const p = this.room.players.find(x => x.id === from); if (p && m && typeof m.text === 'string') this._say(p, m.text); }
          else if (from === this.room?.hostId && m) this._chatLine(m);
       });
-      rt.onPeerJoin((id) => { this.session?.transport._join(id); });
+      rt.onPeerJoin((id) => {
+         this.session?.transport._join(id);
+         const p = this.isHost && this.room?.players.find(x => x.id === id);
+         if (p?.lost) { p.lost = false; this._sync(); }
+      });
       // a player's route changed (relay <-> direct): the host tells everybody
       rt.onRoute?.(() => { if (this.isHost) this._sync(); else this.cb.onRoom?.(); });
       rt.onPeerLeave((id) => {
@@ -578,6 +582,12 @@ export class Lobby {
          if (!this.room) return;
          if (this.isHost) {
             const p = this.room.players.find(x => x.id === id);
+            if (p && this.session && this.room.state === 'running') {
+               // a running match keeps the captain's place (his tank drives on with the AI): the
+               // route may come back (relay.js revives the peer), or he comes back by `rejoin`
+               if (!p.lost) { p.lost = true; this._sync(); }
+               return;
+            }
             this._unseat(id, p);
             if (p) { this.room.players = this.room.players.filter(x => x.id !== id); this._say(null, `${p.name} hat das Spiel verlassen.`); this._sync(); }
          } else if (id === this.room.hostId) {
@@ -634,7 +644,7 @@ export class Lobby {
             id: base.id, hostId: base.hostId, name: cleanName(m.room.name, 32), mode: String(m.room.mode), mission: String(m.room.mission), mapId: String(m.room.mapId ?? RANDOM_MAP).slice(0, 40), difficulty: String(m.room.difficulty),
             max: Number(m.room.max) || 1, locked: !!m.room.locked, teamsLocked: !!m.room.teamsLocked, state: m.room.state === 'running' ? 'running' : 'lobby',
             players: m.players.slice(0, 16).map(p => ({ id: String(p.id), name: cleanName(p.name) || '?', tank: validTank(p.tank) ? p.tank : null, ready: !!p.ready,
-               via: p.via === 'direct' || p.via === 'relay' ? p.via : '', team: TEAMS.includes(p.team) ? p.team : 0 })),
+               via: p.via === 'direct' || p.via === 'relay' ? p.via : '', team: TEAMS.includes(p.team) ? p.team : 0, lost: !!p.lost })),
          };
          const me = this.me;
          if (me && this._hello) this._hello('ok');
@@ -666,7 +676,7 @@ export class Lobby {
    _state() {
       const r = this.room;
       return { t: 'state', room: { name: r.name, mode: r.mode, mission: r.mission, mapId: r.mapId, difficulty: r.difficulty, max: r.max, locked: r.locked, teamsLocked: !!r.teamsLocked, state: r.state },
-         players: r.players.map(p => ({ id: p.id, name: p.name, tank: p.tank, ready: p.ready, via: this.via(p.id), team: p.team || 0 })) };
+         players: r.players.map(p => ({ id: p.id, name: p.name, tank: p.tank, ready: p.ready, via: this.via(p.id), team: p.team || 0, ...(p.lost ? { lost: 1 } : null) })) };
    }
    // how a player is connected to the host: 'direct' | 'relay' | '' (the host itself, or unknown).
    // The host and the player concerned know it first-hand, the others from the room state.
@@ -746,7 +756,15 @@ export class Lobby {
             }
             if (this.isHost) { this._forgetSeat(); this._seats.clear(); this._back.clear(); this._startMsg = null; }
             else if (result && !result.aborted) this._forgetSeat();          // over: nothing to go back to
-            if (this.room && this.isHost && this.room.state === 'running') { this.room.state = 'lobby'; this._sync(); }
+            if (this.room && this.isHost && this.room.state === 'running') {
+               this.room.state = 'lobby';
+               // the captains whose connection was lost during the match leave the room now
+               const here = new Set(this.rt?.peers?.() || []);
+               for (const p of this.room.players.filter(x => x.lost && !here.has(x.id))) { this._unseat(p.id, p); this._say(null, `${p.name} hat das Spiel verlassen.`); }
+               this.room.players = this.room.players.filter(x => !x.lost || here.has(x.id));
+               this.room.players.forEach(x => { x.lost = false; });
+               this._sync();
+            }
             this.cb.onEnd?.(result || { aborted: true, reason: '', victory: null });
          },
          // host migration (game.js): the host named its successor / somebody runs the match now

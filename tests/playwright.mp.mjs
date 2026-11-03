@@ -80,6 +80,29 @@ try {
    assert.ok(Math.hypot(host.bPos[0] - cli.me[0], host.bPos[1] - cli.me[1]) < 8, 'client tank position matches the host');
    assert.ok(Math.hypot(host.aPos[0] - cli.aPos[0], host.aPos[1] - cli.aPos[1]) < 8, 'host tank position matches on the client');
    const bad = [...errs.A, ...errs.B].filter((e) => !/WebGL|GPU|favicon|ERR_|WebSocket|mqtt|nostr|relay/i.test(e));
+   // rejoin: B reloads mid-match, stays in the host's room meanwhile, and comes back by the list
+   if (process.argv.includes('rejoin') || NET === 'local' || NET === 'relay') {
+      const bTid = await A.evaluate(() => __game.world.tanks.find((t) => t.human && t !== __game.world.player).id);
+      await B.reload();
+      await B.waitForFunction(() => window.__game?.menu, null, { timeout: 30000 });
+      await A.waitForTimeout(NET === 'relay' ? 13000 : 1500);
+      const room = await A.evaluate(() => __mp.lobby.room.players.map((p) => [p.name, !!p.lost]));
+      console.log('host room while B is away', JSON.stringify(room));
+      assert.ok(room.some(([n]) => n === 'Bert'), 'Bert keeps his place in the running room');
+      await B.click('#pz-mp'); await B.waitForSelector('#mp:not(.hidden) #mp-list');
+      const back = await B.waitForSelector('#mp-list [data-back]', { timeout: NET === 'relay' ? 45000 : 15000 });
+      const t1 = Date.now(); await back.click();
+      await B.waitForFunction(() => __game?.world && __game.net && __game.world.phase === 'playing', null, { timeout: 90000 });
+      console.log(`back in the match after ${Date.now() - t1} ms`);
+      const mine = await B.evaluate(() => __game.world.player.id);
+      assert.equal(mine, bTid, 'same tank after the rejoin');
+      const s0 = await A.evaluate((id) => __game.world.tankById(id).stats.shots, bTid);
+      for (let k = 0; k < 4; k++) { await B.evaluate(() => { const w = __game.world, me = w.player; if (me.alive && me.reload <= 0) me.fire(w); }); await A.waitForTimeout(3000); }
+      const after = await A.evaluate((id) => { const t = __game.world.tankById(id); return { shots: t.stats.shots, human: !t.ai, alive: t.alive }; }, bTid);
+      console.log('host after rejoin', JSON.stringify(after), 'shots before', s0);
+      if (after.alive) assert.ok(after.shots > s0, 'shots after the rejoin reach the host');
+      assert.ok(after.human || !after.alive, 'the tank belongs to the captain again');
+   }
    console.log('console errors', bad.length, bad.slice(0, 5));
    assert.equal(bad.length, 0);
    console.log('OK');
