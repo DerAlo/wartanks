@@ -13,7 +13,11 @@
 export const MIG_DT = 1;             // s between two full states
 const MAX_DEPTH = 4, MAX_LIST = 256;
 // tank fields that are configuration, geometry, AI (packed apart) or client-only
-const TANK_SKIP = new Set(['cfg', 'armor', 'ai', 'visible', 'isPlayer', 'side', 'bot', 'fire', 'setAmmo', 'useConsumable']);
+// (_pose, muzzle, gunDir are derived from the pose every tick; _pose holds a reference to pos)
+const TANK_SKIP = new Set(['cfg', 'armor', 'ai', 'visible', 'isPlayer', 'side', 'bot', 'fire', 'setAmmo', 'useConsumable', '_pose', '_m', 'muzzle', 'gunDir', 'input']);
+// modules and crew members in their fresh state stay out (most of them, most of the time)
+const intact = { modules: (m) => m && m.hp === m.max && m.state === 'ok' && !m.repairT, crew: (c) => c && c.alive && c.hp === 100 && !c.wounded };
+const CREW_SKIP = new Set(['roles']);
 const AI_SKIP = new Set(['w', 'tank', 'rng', 'D']);
 const WORLD_KEYS = ['time', 'phase', 'countdown', 'timeLeft', 'caps', 'result', 'winner', '_spotAcc'];
 // what the newest snapshot knows better than a full state up to a second old
@@ -53,7 +57,23 @@ function unpacker(world) {
    };
    return uk;
 }
-const packObj = (pk, obj, skip) => { const o = {}; for (const k of Object.keys(obj)) { if (skip.has(k)) continue; const y = pk(obj[k], MAX_DEPTH); if (y !== undefined) o[k] = y; } return o; };
+const packObj = (pk, obj, skip) => {
+   const o = {};
+   for (const k of Object.keys(obj)) {
+      if (skip.has(k)) continue;
+      const v = obj[k];
+      if (intact[k] && v && typeof v === 'object') {
+         // only the damaged ones; restoreWorld resets the ones left out to fresh
+         const d = {};
+         for (const n of Object.keys(v)) if (!intact[k](v[n])) d[n] = packObj(pk, v[n], k === 'crew' ? CREW_SKIP : NONE);
+         o[k] = { $dmg: d };
+         continue;
+      }
+      const y = pk(v, MAX_DEPTH); if (y !== undefined) o[k] = y;
+   }
+   return o;
+};
+const NONE = new Set();
 
 /** Host: the full state. extra (pl: peer ids by slot, gone flags ...) goes along as it is. */
 export function packState(world, extra = {}) {
@@ -73,12 +93,24 @@ export function restoreWorld(world, m, { fresh = null, setHuman } = {}) {
       const t = world.tankById(id);
       if (!t) continue;
       const snap = fresh?.get(id);
+      const seen = snap ? { hp: t.hp, alive: t.alive } : null;   // the replica's snapshot is newer
       for (const k of Object.keys(f)) {
+         if (f[k] && f[k].$dmg) {               // modules / crew: listed ones damaged, the others fresh
+            const cur = t[k] || (t[k] = {});
+            for (const n of Object.keys(cur)) {
+               const d = f[k].$dmg[n], x = cur[n];
+               if (d) Object.assign(x, uk(d));
+               else if (k === 'modules') { x.hp = x.max; x.state = 'ok'; x.repairT = 0; }
+               else { x.alive = true; x.hp = 100; x.wounded = false; }
+            }
+            continue;
+         }
          const v = uk(f[k]);
          // plain sub-objects are merged into the existing ones (other code may hold references)
          if (v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Set) && t[k] && typeof t[k] === 'object' && Object.getPrototypeOf(t[k]) === Object.prototype && !world.tankById(v.id ?? -1)) Object.assign(t[k], v);
          else t[k] = v;
       }
+      if (seen) { t.hp = seen.hp; if (!seen.alive) t.alive = false; }
       if (snap && t.alive) { t.pos.x = snap.x; t.pos.y = snap.y; t.pos.z = snap.z; for (const k of FRESH) if (snap[k] != null) t[k] = snap[k]; }
       tanks++;
       if (ai && t.alive) {

@@ -48,6 +48,12 @@ for (const how of ['leave', 'drop']) test(`host migration (${how}): the successo
    assert.equal(H.world.phase, 'playing');
    assert.equal(H.succ, 'A', 'host names the first client as successor');
    const hw = H.world;
+   // a damaged gun and a wounded crewman on a bot must reach the successor
+   const vic = hw.tanks.find((t) => t.alive && !t.human && t.team === 2);
+   Object.assign(vic.modules.gun, { hp: 0, state: 'destroyed', repairT: 60 });
+   const crewId = Object.keys(vic.crew)[0];
+   Object.assign(vic.crew[crewId], { hp: 40, wounded: true });
+   run(peers, 1.2, (p) => alive.has(p));
    const before = new Map(hw.tanks.map((t) => [t.id, { alive: t.alive, hp: t.hp, reload: t.reload, ai: !!t.ai, x: t.pos.x }]));
    const timeLeft = hw.timeLeft;
    // the host goes
@@ -69,6 +75,12 @@ for (const how of ['leave', 'drop']) test(`host migration (${how}): the successo
       if (!b.alive) assert.equal(t.alive, false, 'tank ' + t.id + ' stays dead');
       if (t.alive && !t.human) assert.ok(t.ai, 'bot ' + t.id + ' has its AI');
       if (b.alive && t.alive) assert.ok(t.hp <= b.hp + 1e-6, 'hp of ' + t.id);
+   }
+   const v2 = aw.tankById(vic.id);
+   if (v2.alive) {
+      assert.equal(v2.modules.gun.state, 'destroyed', 'module damage carried over');
+      assert.ok(v2.modules.engine.state === vic.modules.engine.state, 'intact modules stay intact');
+      assert.ok(v2.crew[crewId].wounded && v2.crew[crewId].hp <= 40, 'wounded crew carried over');
    }
    assert.ok(Math.abs(aw.timeLeft - timeLeft) < 4, `timer ${aw.timeLeft} vs ${timeLeft}`);
    const H_tank = aw.tankById(1);
