@@ -116,8 +116,10 @@ export class Script {
    _end(winner, reason) {
       if (this.w.phase !== 'playing') return;
       for (const o of this.c.objectives) if (o.state === 'active' && !o.bonus && winner === 2) o.state = 'failed';
-      this.w.end(winner, reason);
-      const r = this.w.result; if (!r) return;
+      this.w.end(winner, reason);   // World.end calls _result before it emits 'phase'
+   }
+   _result(r) {
+      if (r.outcome === 'loss') for (const o of this.c.objectives) if (o.state === 'active' && !o.bonus) o.state = 'failed';
       const bonus = this.c.objectives.filter((o) => o.bonus), bDone = bonus.filter((o) => o.state === 'done').length;
       let stars = 0;
       if (r.outcome === 'win') {

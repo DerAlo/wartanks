@@ -47,6 +47,7 @@ export class World {
       this.seed = this.mission.seedFor?.(opts) ?? opts.seed ?? 1234;
       this.rng = makeRng(hashSeed(this.seed, 'world', this.mode));
       this.diffKey = difficultyKey(opts.difficulty ?? 1);
+      this.difficulty = opts.difficulty ?? 1;
       this.diff = DIFFICULTY[this.diffKey];
       this.terrain = makeTerrain(this.seed, this.mapId);
       this.time = 0; this.phase = 'countdown';
@@ -270,6 +271,7 @@ export class World {
       this.winner = winner;
       this.result = { outcome, winner, reason, time: this.time, xp: 0, credits: 0 };
       try { Object.assign(this.result, calcRewards(this)); } catch (e) { /* rewards are optional */ }
+      this.script?._result?.(this.result);   // campaign: stars/medal on every end path, before 'phase' is emitted
       for (const t of this.tanks) t.input.fire = false;
       this.emit('phase', { phase: this.phase, outcome, reason });
    }
