@@ -1,10 +1,11 @@
-// game/hud.js — battle HUD on one 2D canvas over the 3D view: reticle (dispersion circle on the
-// gun's 3D aim point, reload ring, penetration-chance colour, gun-limit and lock-on markers),
+// game/hud.js — battle HUD on one 2D canvas over the 3D view: reticle (dispersion circle centred
+// on the crosshair, small barrel marker while the gun is still laying, reload ring, penetration-chance colour, gun-limit and lock-on markers),
 // vehicle markers, damage panel, hit log, received-hit arrows, kill feed, team panels, minimap,
 // timer / bases, countdown and the Tab score table. Reads sim state only (optional chaining
 // everywhere) and consumes world.events by `seq`. hud.msg(text, colour) is public (audio/callouts).
 import * as THREE from '../vendor/three/three.module.min.js';
 import { AMMO, BALLISTICS, MODULES, CREW_NAMES, CONSUMABLES, PLATE_NAMES } from './config.js';
+import { solveElevation } from './ballistics.js';
 
 const css = getComputedStyle(document.documentElement), tok = (n, d) => (css.getPropertyValue(n).trim() || d);
 const COL = {
@@ -235,15 +236,12 @@ export class HUD {
 
    drawReticle(g, w, p) {
       const cam = this.R.camera, scoped = this.tcam?.scoped, cx = this.W / 2, cy = this.H / 2, s = this._s ??= {};
-      // gun marker: where the gun actually points at the aim distance
-      let gx = cx, gy = cy;
-      const dist = this.G?.aimDist ?? 300;
-      if (p.gunDir && p.aimPoint) {
-         const ox = p.pos.x, oy = p.pos.y + (p.cfg?.dims?.h ?? 2.3), oz = p.pos.z;
-         const d = Math.hypot(p.aimPoint.x - ox, p.aimPoint.y - oy, p.aimPoint.z - oz);
-         this.proj(ox + p.gunDir.x * d, oy + p.gunDir.y * d, oz + p.gunDir.z * d, s);
-         if (s.ok) { gx = s.x; gy = s.y; }
-      }
+      // The circle sits on the crosshair: the aim point is on the camera ray, and the sim lays the
+      // gun (with superelevation for drop) at exactly that point. While the turret still traverses
+      // or the gun is at an elevation stop, a small diamond shows where the shot would land now.
+      const gx = cx, gy = cy, dist = this.G?.aimDist ?? 300;
+      const b = this.barrelMark(p, s);
+      this.ret = { gx, gy, cx, cy, bx: b ? s.x : cx, by: b ? s.y : cy, laid: !b };
       const fovT = Math.tan(cam.fov * D2R / 2), disp = p.aimDisp ?? p.cfg?.gun?.disp ?? 0.4;
       const r = clamp(disp / 100 / fovT * (this.H / 2), 6, this.H * 0.45);
       const pc = this.pen, col = !pc ? COL.ret : pc.chance < 0 ? '#9a9a90' : pc.chance > 0.66 ? COL.penYes : pc.chance > 0.25 ? COL.penMaybe : COL.penNo;
@@ -253,6 +251,11 @@ export class HUD {
       // ticks on the circle
       for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + Math.PI / 4; g.beginPath(); g.moveTo(gx + Math.cos(a) * r, gy + Math.sin(a) * r); g.lineTo(gx + Math.cos(a) * (r + 7), gy + Math.sin(a) * (r + 7)); g.stroke(); }
       g.fillStyle = col; g.fillRect(gx - 1.5, gy - 1.5, 3, 3);
+      if (b) {   // barrel marker: hollow diamond + dot, clearly not a second reticle
+         const k = 5, bx = s.x, by = s.y;
+         g.lineWidth = 2.6; g.strokeStyle = 'rgba(0,0,0,.5)'; g.beginPath(); g.moveTo(bx, by - k); g.lineTo(bx + k, by); g.lineTo(bx, by + k); g.lineTo(bx - k, by); g.closePath(); g.stroke();
+         g.lineWidth = 1.3; g.strokeStyle = COL.warn; g.stroke(); g.fillStyle = COL.warn; g.fillRect(bx - 0.75, by - 0.75, 1.5, 1.5);
+      }
       // camera aim (centre): small chevrons
       g.strokeStyle = 'rgba(244,238,214,.75)'; g.lineWidth = 1.2; g.beginPath();
       g.moveTo(cx - 14, cy); g.lineTo(cx - 6, cy); g.moveTo(cx + 6, cy); g.lineTo(cx + 14, cy); g.moveTo(cx, cy + 6); g.lineTo(cx, cy + 14); g.stroke();
@@ -273,6 +276,30 @@ export class HUD {
       // lock-on brackets
       const lid = p.input?.lockId ?? p.lockId;
       if (lid != null) { const t = w.tanks.find((q) => q.id === lid); if (t?.alive) this.brackets(g, t, COL.signal); }
+   }
+   // where the shot lands with the gun as it points now: the aim vector from the muzzle turned by
+   // the barrel's yaw/pitch error against the solution the sim lays toward. Returns false once the
+   // barrel is on the crosshair (within 3 px), else true with the screen point in s.
+   barrelMark(p, s) {
+      const a = p.aimPoint, m = p.muzzle, d = p.gunDir;
+      if (!a || !m || !d || !(m.x || m.z)) return false;
+      const ax = a.x - m.x, ay = a.y - m.y, az = a.z - m.z, hd = Math.hypot(ax, az);
+      if (hd < 3) return false;
+      let el = solveElevation(p.round?.()?.vel ?? 800, hd, ay);
+      if (!(el === el)) el = Math.atan2(ay, hd);
+      let dy = Math.atan2(d.x, d.z) - Math.atan2(ax, az);
+      dy -= Math.round(dy / (2 * Math.PI)) * 2 * Math.PI;
+      const dp = Math.asin(clamp(d.y, -1, 1)) - el;
+      if (Math.abs(dy) < 1e-4 && Math.abs(dp) < 1e-4) { this.bres = 0; return false; }
+      const yaw = Math.atan2(ax, az) + dy, pit = Math.atan2(ay, hd) + dp, L = Math.hypot(hd, ay);
+      const px = m.x + Math.cos(pit) * Math.sin(yaw) * L, py = m.y + Math.sin(pit) * L, pz = m.z + Math.cos(pit) * Math.cos(yaw) * L;
+      this.proj(px, py, pz, s);
+      const e = this.R.camera.matrixWorld.elements, c = this.R.camera.position;
+      if ((px - c.x) * e[8] + (py - c.y) * e[9] + (pz - c.z) * e[10] > 0) {   // behind the camera: to the side it lies on
+         s.x = (px - c.x) * e[0] + (py - c.y) * e[1] + (pz - c.z) * e[2] > 0 ? this.W : 0; s.y = this.H / 2;
+      }
+      s.x = clamp(s.x, 14, this.W - 14); s.y = clamp(s.y, 14, this.H - 14);   // off screen: pinned to the edge
+      return (this.bres = Math.hypot(s.x - this.W / 2, s.y - this.H / 2)) > 3;
    }
    elevLimited(p, gun) {
       const a = p.aimPoint, dx = a.x - p.pos.x, dz = a.z - p.pos.z, h = Math.hypot(dx, dz);

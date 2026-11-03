@@ -350,8 +350,12 @@ nation. Works without localStorage (memory fallback).
   M map, Tab score.
 * Reticle: dispersion circle (shrinks with aim time), **penetration indicator colour**
   (green/yellow/red by chance to penetrate the plate under the reticle, using `armor.js`),
-  shell-drop aware (the circle sits on the 3D aim point), reload ring, gun cannot elevate/
-  depress → marker, "Zielmarkierung" for locked target.
+  centred on the crosshair (the aim point lies on the camera ray and the sim lays the gun on it
+  with superelevation for drop, so once laid the shot goes there), reload ring. While the turret
+  still traverses or the gun sits at an elevation/depression stop, a small amber diamond
+  (`hud.barrelMark`) shows where the shot would land now, pinned to the screen edge if off
+  screen; gun cannot elevate/depress → red ×, "Zielmarkierung" for locked target.
+  `hud.ret = {gx, gy, cx, cy, bx, by, laid}` and `hud.bres` (barrel-to-crosshair px) for tests.
 * Damage panel: module/crew icons, HP bar, speed, ammo counts, consumables; damage-received
   directions; hit log ("Durchschlag 142 mm effektiv", "Abpraller", "Kein Durchschlag").
 * Armour viewer in garage (colours plates by effective thickness from current view angle).
