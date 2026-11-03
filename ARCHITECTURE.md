@@ -387,3 +387,37 @@ reloads and comes back; `tests/playwright.migrate.mjs`: three pages, the host pa
 `node tests/sim.mjs <map> <diff> <seed> <mode>`. `tests/battle.test.mjs`: 5 bots-only 7v7
 battles over all difficulties and maps, a battle with a player, training ground, spotting,
 terrain determinism, matchmaking, progression.
+
+## Campaign (`campaign.js`, sim) — scripted historical operations
+
+All mission logic runs inside the World (deterministic, `world.rng` only, no DOM), so a co-op host
+can run an operation unchanged and clients only render `world.campaign`.
+
+* Start: `new World({ mode: 'campaign', op, playerCls, difficulty })`; `MISSIONS.campaign.mapFor/seedFor`
+  take map and seed from the op (`World` asks `mission.mapFor?.(opts)` before `makeTerrain`).
+  `playerCls: null` = headless run: the player's tank is a bot that follows `S.goal()` (autopilot).
+  `MISSION_LIST` excludes `campaign` (it starts from the Feldzug menu).
+* `OPS[id] = { id, name, place, date, nation, map, seed, tanks:[cls], start0:[x,z,yaw], brief:[…],
+  goals:[…], tip, fog?, playerMayDie?, script(S), start?(S) }`, `OP_LIST` = campaign order.
+* `world.campaign = { op, phase, objectives:[{ id, text, state:'active'|'done'|'failed', bonus,
+  hidden, count?, need? }], log:[{ t, text, kind:'radio'|'info'|'warn' }], markers:[{ id, x, z, r,
+  label, kind:'goal'|'area'|'danger' }], timer:null|{ label, left }, fog (0..1, cuts view range by
+  up to 62 % in spotting.js) }`. Events: `objective { id, state, text }`, `radio { text, kind }`.
+* `world.result.campaign = { op, stars 0–3, medal 'bronze'|'silber'|'gold'|null, objectives }`;
+  stars = 1 + share of bonus objectives done (×2), −1 if the player ends below 25 % HP.
+* Script runtime `S` (class `Script`): `obj(id, text, { bonus, hidden, need })`, `done/fail/show/
+  progress(id, n)`, `radio(text, kind)`, `phase(p)`, `timer(label, s)`, `mark/unmark`, `goal(x, z,
+  label, r)`, `spawn(cls, team, x, z, { yaw, face, name, tag, order })` (wires side + BotAI for
+  late spawns; emplacements face `op.start0` by default), `group/alive/dead(tag)`, `countIn(team|
+  tag, x, z, r)`, `order(tanks, { kind:'hold'|'advance'|'route'|'ambush', x, z, pts, r })`,
+  triggers `when(cond, fn, { repeat })`, `at(t)`, `after(dt)`, `every(dt)`, `win/lose(reason)`.
+  Trigger evaluation 4 Hz; the player's death loses unless `op.playerMayDie`.
+* Bot orders (`ai.js`): `ai.order` overrides `chooseDest` (route advances waypoint by waypoint in
+  `Script.tick`); hold / ambush suppress the no-pen flanking; ambush holds fire until an enemy is
+  spotted within `r` or the tank is hit.
+* Emplacements (`config.js` `SITE_RAW`, ids in `SITE_LIST`, in `TANKS` but not `TANK_LIST`):
+  `cfg.site` = `'bunker'` (Regelbau: 300 mm concrete, 60 mm embrasure band `emb`, 70 mm rear door),
+  `'pak'` (`pak40`: 5 mm shield, 260 HP, HE kills it), `'ship'` (`tboat`, Torpedoboot, 10,5 cm gun,
+  12–15 mm plating, floats at `terrain.water − cfg.draft`). They never drive (`Tank._siteTick`).
+* Tests: `tests/campaign.test.mjs` runs every op headless; `tests/out/_camp.mjs` (scratch) prints
+  per-op outcome and objective states.
