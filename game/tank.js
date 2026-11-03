@@ -225,7 +225,8 @@ export class Tank {
       // cliff check ahead of the leading track end
       if (Math.abs(this.speed) > 0.05) {
          const sg = Math.sign(this.speed), ex = this.pos.x + fx * sg * this.halfLen, ez = this.pos.z + fz * sg * this.halfLen;
-         const h0 = T.heightAt(ex, ez), h1 = T.heightAt(ex + fx * sg, ez + fz * sg);
+         const hl = this.cfg.dims?.len ?? this.halfLen * 2, H = T.hullHeightAt ? (a, b) => T.hullHeightAt(a, b, hl) : (a, b) => T.heightAt(a, b);
+         const h0 = H(ex, ez), h1 = H(ex + fx * sg, ez + fz * sg);
          if (h1 - h0 > CLIFF) { this.speed = 0; dx = this.push.x * dt; dz = this.push.z * dt; }
       }
       this.pos.x += dx; this.pos.z += dz;
@@ -238,10 +239,11 @@ export class Tank {
    _terrainPose(T, dt) {
       const c = Math.cos(this.yaw), s = Math.sin(this.yaw), L = this.halfLen * 0.9, W = this.trackX;
       const x = this.pos.x, z = this.pos.z;
+      const hl = this.cfg.dims?.len ?? this.halfLen * 2, hAt = T.hullHeightAt ? (a, b) => T.hullHeightAt(a, b, hl) : (a, b) => T.heightAt(a, b);
       // local (lx, lz) -> world: x + c*lx + s*lz, z - s*lx + c*lz ; front = -z local
-      const hFL = T.heightAt(x - c * W - s * L, z + s * W - c * L), hFR = T.heightAt(x + c * W - s * L, z - s * W - c * L);
-      const hRL = T.heightAt(x - c * W + s * L, z + s * W + c * L), hRR = T.heightAt(x + c * W + s * L, z - s * W + c * L);
-      const hC = T.heightAt(x, z);
+      const hFL = hAt(x - c * W - s * L, z + s * W - c * L), hFR = hAt(x + c * W - s * L, z - s * W - c * L);
+      const hRL = hAt(x - c * W + s * L, z + s * W + c * L), hRR = hAt(x + c * W + s * L, z - s * W + c * L);
+      const hC = hAt(x, z);
       const front = Math.max(hFL, hFR) * 0.5 + (hFL + hFR) * 0.25, rear = Math.max(hRL, hRR) * 0.5 + (hRL + hRR) * 0.25;
       const left = (hFL + hRL) / 2, right = (hFR + hRR) / 2;
       let tp = Math.atan2(front - rear, 2 * L) - clamp(this.accel, -8, 8) * 0.004;
@@ -276,6 +278,7 @@ export class Tank {
 
    _objects(world) {
       const T = world.terrain;
+      T.driveOver?.(this.pos.x, this.pos.z, Math.max(this.halfLen, this.halfW ?? this.trackX));
       const near = T.objectsNear(this.pos.x, this.pos.z, this.radius + 1);
       if (!near.length) return;
       const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
@@ -311,7 +314,7 @@ export class Tank {
             }
             // destructible and enough momentum toward it?
             const towards = -(nx * fx + nz * fz) * Math.sign(this.speed);
-            const thr = BREAK[o.kind];
+            const thr = BREAK[o.kind] ?? o.breakMomentum;
             if (o.destructible && thr != null && momentum > thr && towards > 0.2) {
                T.destroyObject(o, fx * Math.sign(this.speed), fz * Math.sign(this.speed));
                world.onTankEffect?.(o.kind === 'tree' ? 'treeFall' : 'objectBreak', this, o);

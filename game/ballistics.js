@@ -251,6 +251,7 @@ export function updateShells(world, dt) {
          if (obj && obj.destructible && obj.kind !== 'house' && s.caliber >= 75) T.destroyObject(obj, _d.x, _d.z);
          world.onShellHit(s, null, null, _pt, w);
          if (s.ammo === 'HE') splashAll(world, s, _pt);
+         T.blast?.(_pt.x, _pt.y, _pt.z, s.caliber, s.dmg, obj);
          continue;
       }
       if (bestTank) {
