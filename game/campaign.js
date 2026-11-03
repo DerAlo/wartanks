@@ -87,6 +87,14 @@ export class Script {
       // reached the report point and still nothing: close in further (woods, crests block the view)
       h.off = best === h.cur ? Math.max(6, (h.off ?? 35) - 14) : 35;
       h.cur = best; h.t = this.w.time;
+      // a bunker is only open from behind (door) or square through the slit: lead round to its rear
+      // quarter, outside the embrasure's arc
+      if (best.cfg.site === 'bunker') {
+         const fx = -Math.sin(best.yaw), fz = -Math.cos(best.yaw), s = (p.pos.x - best.pos.x) * fz - (p.pos.z - best.pos.z) * fx > 0 ? 1 : -1;
+         const o = Math.max(14, h.off * 0.8);
+         this.goal(best.pos.x - fx * o * 0.8 + fz * s * o * 0.6, best.pos.z - fz * o * 0.8 - fx * s * o * 0.6, h.label, 12);
+         return;
+      }
       const k = Math.min(1, h.off / Math.max(1, bd));
       this.goal(best.pos.x + (p.pos.x - best.pos.x) * k, best.pos.z + (p.pos.z - best.pos.z) * k, h.label, 30);
    }
@@ -130,6 +138,19 @@ export class Script {
          if (v > bh) { bh = v; best = [px, pz]; }
       }
       return best;
+   }
+   /** Hull-down spot: the highest ground within r of (x, z), then back off it (away from the
+    *  enemy direction ex, ez) until the crest stands ~1.4 m above the hull's ground. */
+   hullDown(x, z, r, ex, ez) {
+      const T = this.T; let cx = x, cz = z, ch = -Infinity;
+      for (let i = -r; i <= r; i += 4) for (let j = -r; j <= r; j += 4) {
+         if (i * i + j * j > r * r) continue;
+         const h = T.heightAt(x + i, z + j); if (T.water != null && h < T.water + 0.5) continue;
+         if (h > ch) { ch = h; cx = x + i; cz = z + j; }
+      }
+      const L = Math.hypot(ex - cx, ez - cz) || 1, dx = (cx - ex) / L, dz = (cz - ez) / L;
+      for (let s = 3; s <= 30; s += 1) if (T.heightAt(cx + dx * s, cz + dz * s) < ch - 1.4) return [cx + dx * s, cz + dz * s];
+      return [cx + dx * 8, cz + dz * 8];
    }
    /** Field workshop between phases: the player's tank gets `frac` of its HP back, modules and
     *  crew patched, consumables and some ammunition restocked. */
@@ -262,36 +283,47 @@ export const OPS = {
          S.T.addObject?.({ kind: 'wire', x: -60, z: zL + 25, yaw: 0 }); S.T.addObject?.({ kind: 'wire', x: 60, z: zL + 25, yaw: 0 });
          S.spawn('bunker', 2, -90, 40, { tag: 'bunker', name: 'Bunker 1' });
          S.spawn('bunker', 2, 95, 30, { tag: 'bunker', name: 'Bunker 2' });
-         for (const [x, z] of [[-200, 10], [190, 0], [10, -60]]) S.spawn('pak40', 2, x, z, { tag: 'pak', order: { kind: 'hold', x, z } });
+         // Westwall garrisons in autumn 1944 were fortress battalions of older reservists: slow, poor gunnery
+         for (const [x, z] of [[-200, 10], [190, 0], [10, -60]]) S.spawn('pak40', 2, x, z, { tag: 'pak', aiErr: 2.5, order: { kind: 'hold', x, z } });
          for (const [x, z] of [[-60, 420], [60, 420], [120, 430]]) S.spawn('m4a3e8', 1, x, z, { tag: 'allies', name: 'Sherman', order: { kind: 'advance', x: x * 0.3, z: zL + 40 } });
          S.obj('gap', 'Durch die Lücke in der Höckerlinie vorstoßen');
          S.obj('bunker', 'Bunker ausschalten', { need: 2 });
          S.obj('pak', 'PaK-Stellungen zerstören', { need: 3 });
          S.obj('counter', 'Gegenangriff abwehren', { hidden: true });
-         S.obj('b_allies', 'Mindestens zwei Shermans überleben', { bonus: true });
+         S.obj('b_allies', 'Mindestens drei Shermans überleben', { bonus: true });
          S.obj('b_time', 'Westwall in 9 Minuten durchbrechen', { bonus: true });
          S.goal(0, zL, 'Lücke');
          this.start = (S) => S.radio('Hier Kampfgruppe B: Die Pioniere haben eine Lücke in die Höcker gesprengt. Vorwärts, Marsch!');
          S.when((S) => S.w.tanks.some((t) => t.team === 1 && t.alive && t.pos.z < zL - 12), (S) => {
             S.done('gap'); S.radio('Wir sind durch die Höcker. Bunker vor uns – auf die Scharten zielen!');
-            S.goal(0, 35, 'Bunkerlinie'); S.order(S.group('allies'), { kind: 'advance', x: 0, z: 40 });
+            S.goal(0, 35, 'Bunkerlinie');
             S.after(20, (S) => S.hunt(['pak', 'bunker'], 'Feindstellung'));
+            // the Shermans fan out, one against each flank gun, so the PaKs' fire is split
+            S.group('allies').forEach((t, i) => S.order([t], { kind: 'route', pts: [[[-120, 120, 0][i], 60], [[-190, 180, 10][i], [10, 0, -50][i]]] }));
          });
          S.when((S) => true, (S) => { S.progress('bunker', S.dead('bunker')); S.progress('pak', S.dead('pak')); }, { repeat: true });
          S.when((S) => S.isDone('bunker') && S.isDone('pak'), (S) => {
             if (S.time < 540) S.done('b_time'); else S.fail('b_time');
-            S.show('counter'); S.phase('counter'); S.refit(0.35);
-            S.radio('Achtung! Deutsche Panzer im Anmarsch aus Nordost – Gegenstoß!', 'warn');
-            for (const [x, z] of [[160, -420], [200, -440], [-150, -430]]) S.spawn('pz4h', 2, x, z, { tag: 'counter', name: 'Panzer IV', order: { kind: 'advance', x: 0, z: 40 } });
-            S.goal(0, 0, 'Stellung halten');
+            S.show('counter'); S.phase('counter'); S.refit(0.5);
+            // a breather: the workshop patches the tank, the player takes a marked hull-down spot on
+            // the bunker hill and two more Shermans of the 2nd Armored come up through the gap
+            const [hx, hz] = S.hullDown(0, 0, 30, 0, -400);
+            S.mark('hd', hx, hz, 'Stellung (hull-down)', 'area', 10); S.goal(hx, hz, 'Stellung hinter der Kuppe', 8);
+            S.radio('Aufklärung meldet Panzer IV aus Nord. Geht hinter der Kuppe in Stellung – nur der Turm schaut drüber!', 'warn');
+            for (const [x, z] of [[-20, 300], [25, 310]]) S.spawn('m4a3e8', 1, x, z, { tag: 'allies', name: 'Sherman (2. PD)', order: { kind: 'route', pts: [[0, zL + 30], [x * 2, 25]] } });
+            S.order(S.group('allies').filter((t) => t.alive), { kind: 'advance', x: 0, z: 30 });
+            // the counter-attack comes in three echelons, not as one fist
+            [[160, -420, 40], [-150, -430, 70], [200, -440, 100]].forEach(([x, z, dt], i) => S.after(dt, (S) => {
+               S.spawn('pz4h', 2, x, z, { tag: 'counter', name: 'Panzer IV', order: { kind: 'route', pts: [[x * 0.6, -200], [x * 0.3, -40], [0, 40]] } });
+               S.radio(['Erster Panzer IV über dem Kamm im Nordosten!', 'Zweiter Panzer IV von links!', 'Noch einer aus Nordost – haltet die Stellung!'][i], 'warn');
+            }));
          });
-         S.when((S) => S.c.phase === 'counter' && S.group('counter').length && S.alive('counter') === 0, (S) => {
+         S.when((S) => S.c.phase === 'counter' && S.group('counter').length === 3 && S.alive('counter') === 0, (S) => {
             S.done('counter');
-            if (S.alive('allies') >= 2) S.done('b_allies'); else S.fail('b_allies');
+            if (S.alive('allies') >= 3) S.done('b_allies'); else S.fail('b_allies');
             S.radio('Gegenangriff abgeschlagen. Die Bresche ist offen – gut gemacht!');
             S.win('Westwall durchbrochen');
          });
-         S.when((S) => S.alive('allies') < 2, (S) => S.fail('b_allies'));
       },
    },
 

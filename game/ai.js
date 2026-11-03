@@ -139,7 +139,7 @@ const AMMO_ORDER = ['AP', 'APCR', 'HEAT', 'HE'];
 export class BotAI {
    constructor(world, tank) {
       this.w = world; this.tank = tank;
-      this.rng = makeRng(hashSeed(world.seed, 'ai', tank.id));
+      this.rng = makeRng(world.salt ? hashSeed(world.seed, 'ai', tank.id, world.salt) : hashSeed(world.seed, 'ai', tank.id));
       this.D = DIFF[world.diffKey] || DIFF.normal;
       this.role = tank.role || this.pickRole();
       tank.role = this.role;
@@ -394,6 +394,8 @@ export class BotAI {
       add(0, mid, 0); add(0, fy + (ry - fy) * 0.3, zF * 0.9); add(0, ry * 0.85, zF * 0.7); add(tx, tY, tz);
       add(tx + 0.5, tY, tz); add(tx - 0.5, tY, tz); add(0, mid, zR * 0.5); add(0, mid, zF * 0.4);
       add(hw, up, zF * 0.6); add(-hw, up, zF * 0.6); add(0, up, zR * 0.85); add(0, mid, zR * 0.2);
+      add(0, fy + (ry - fy) * 0.35, zR * 0.95);                        // low rear (bunker door, engine deck)
+      if (cfg.site && cfg.gun.pivotY != null) add(0, cfg.gun.pivotY, zF * 0.98);   // embrasure / gun port
       const P = e.pose();
       poseMatrix(_m, P.yaw, P.pitch, P.roll);
       const smart = this.rng() < D.smart;
@@ -412,7 +414,8 @@ export class BotAI {
          for (const k of types) {
             const r = g[k], m = penMargin(hits, k, r.cal, penAt(r, dist));
             // prefer standard AP when it is enough; premium only for a real gain; HE only as a last resort
-            const v = Math.min(m, 1.6) * (k === 'AP' ? 1 : k === 'HE' ? 0.5 : 0.93) - (i === 0 ? 0 : 0.02);
+            // ...except against a gun crew behind a thin shield, where HE is the right round
+            const v = Math.min(m, 1.6) * (k === 'AP' ? 1 : k === 'HE' ? (cfg.site === 'pak' ? 1.2 : 0.5) : 0.93) - (i === 0 ? 0 : 0.02);
             if (v > bv) { bv = v; best = i; bType = k; }
          }
       }
@@ -440,6 +443,17 @@ export class BotAI {
       const err = D.err * dist / 100;
       this.errX = (this.rng() + this.rng() + this.rng() - 1.5) * err * 1.4;
       this.errY = (this.rng() + this.rng() + this.rng() - 1.5) * err * 0.9;
+   }
+
+   /** a friendly tank close to the line of fire, in front of the target: hold the shot */
+   _mateInLine(e, dist) {
+      const t = this.tank, dx = (e.pos.x - t.pos.x) / dist, dz = (e.pos.z - t.pos.z) / dist;
+      for (const m of this.w.tanks) {
+         if (m === t || !m.alive || m.team !== t.team || m.cfg.site) continue;
+         const ox = m.pos.x - t.pos.x, oz = m.pos.z - t.pos.z, along = ox * dx + oz * dz;
+         if (along > 4 && along < dist - 4 && Math.abs(ox * dz - oz * dx) < 4.5) return true;
+      }
+      return false;
    }
 
    combat(dt) {
@@ -476,7 +490,7 @@ export class BotAI {
       const L = Math.hypot(_d.x, _d.z);
       const yawErr = Math.abs(angleDelta(Math.atan2(-t.gunDir.x, -t.gunDir.z), Math.atan2(-_d.x, -_d.z)));
       if (yawErr * L > 1.5 + t.aimDisp * L / 100) return;
-      if ((conv || this.aimT > this.D.aimWait + (dist > 250 ? 1.5 : 0)) && this.los(e)) { inp.fire = true; this.aimT = 0; if (this.rng() < 0.5) this.chooseAim(e); }
+      if ((conv || this.aimT > this.D.aimWait + (dist > 250 ? 1.5 : 0)) && this.los(e) && !this._mateInLine(e, dist)) { inp.fire = true; this.aimT = 0; if (this.rng() < 0.5) this.chooseAim(e); }
    }
 
    drive(dt) {

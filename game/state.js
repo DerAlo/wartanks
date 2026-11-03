@@ -45,7 +45,8 @@ export class World {
       this.mission = MISSIONS[this.mode];
       this.mapId = this.mission.mapFor?.(opts) || opts.mapId || 'steppe';     // campaign ops fix map + seed
       this.seed = this.mission.seedFor?.(opts) ?? opts.seed ?? 1234;
-      this.rng = makeRng(hashSeed(this.seed, 'world', this.mode));
+      this.salt = opts.salt || 0;                 // varies dice (shots, AI) but not the terrain; 0 = classic
+      this.rng = makeRng(this.salt ? hashSeed(this.seed, 'world', this.mode, this.salt) : hashSeed(this.seed, 'world', this.mode));
       this.diffKey = difficultyKey(opts.difficulty ?? 1);
       this.difficulty = opts.difficulty ?? 1;
       this.diff = DIFFICULTY[this.diffKey];
