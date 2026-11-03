@@ -99,6 +99,38 @@ G.startNetGame = async (session) => {
    return G.net;
 };
 
+// ---- render interpolation: the sim runs at a fixed 60 Hz, the display at anything (75/120/144 Hz),
+// so a frame sees 0, 1 or 2 steps. Tanks are drawn at prev + alpha*(cur - prev) and put back afterwards. ----
+const POSE_K = ['yaw', 'pitch', 'roll', 'turretYaw', 'gunPitch'];
+function snapPrev(world) {
+   for (const t of world.tanks) {
+      const q = t._prev ??= {};
+      q.x = t.pos.x; q.y = t.pos.y; q.z = t.pos.z; for (const k of POSE_K) q[k] = t[k];
+      q.ok = true;
+   }
+}
+const lerpA = (a, b, f) => { let d = (b - a) % (2 * Math.PI); if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return b - d * (1 - f); };
+function lerpPoses(world, f) {
+   f = Math.min(1, Math.max(0, f));
+   for (const t of world.tanks) {
+      const q = t._prev; if (!q?.ok) continue;
+      const c = t._cur ??= {};
+      c.x = t.pos.x; c.y = t.pos.y; c.z = t.pos.z; for (const k of POSE_K) c[k] = t[k];
+      c.on = Math.hypot(c.x - q.x, c.z - q.z) < 4;   // a respawn / teleport is not smeared
+      if (!c.on) continue;
+      t.pos.x = q.x + (c.x - q.x) * f; t.pos.y = q.y + (c.y - q.y) * f; t.pos.z = q.z + (c.z - q.z) * f;
+      for (const k of POSE_K) if (typeof c[k] === 'number' && typeof q[k] === 'number') t[k] = lerpA(q[k], c[k], f);
+      t.pose?.();
+   }
+}
+function restorePoses(world) {
+   for (const t of world.tanks) {
+      const c = t._cur; if (!c?.on) continue;
+      t.pos.x = c.x; t.pos.y = c.y; t.pos.z = c.z; for (const k of POSE_K) t[k] = c[k];
+      c.on = false; t.pose?.();
+   }
+}
+
 // ---- right mouse (WoT style): a short click locks the aim onto a spotted enemy (auto-aim; the
 // crosshair sticks to it until the next click or the target is lost), holding it is free look ----
 const RMB_HOLD = 0.25;
@@ -211,6 +243,10 @@ function frame(now) {
       const p = world.player;
       if (/^(won|lost|draw)$/.test(world.phase) || world.result) { G.endT += dt; if (G.endT > 4 && menu) { finishBattle(); return; } }
       controls(world, p, dt);
+      G.acc += dt; let n = 0;
+      while (G.acc >= SIM_DT && n++ < 6) { snapPrev(world); world.update(SIM_DT); G.acc -= SIM_DT; }
+      if (n >= 6) G.acc = 0;
+      lerpPoses(world, G.acc / SIM_DT);   // draw tanks between the last two sim steps (no stepping judder)
       if (p) {
          pivot.set(p.pos.x, p.pos.y + (p.height ?? p.cfg?.height ?? 2.4) + 0.4, p.pos.z);
          if (tanks3d?.sightPos) tanks3d.sightPos(p, sight); else sight.set(p.pos.x, p.pos.y + (p.height ?? p.cfg?.height ?? 2.4), p.pos.z);
@@ -218,9 +254,6 @@ function frame(now) {
          else tcam.update(dt, pivot, sight, (x, z) => world.terrain.heightAt(x, z));
          aimRay(world, p);
       }
-      G.acc += dt; let n = 0;
-      while (G.acc >= SIM_DT && n++ < 6) { world.update(SIM_DT); G.acc -= SIM_DT; }
-      if (n >= 6) G.acc = 0;
       terrain3d?.update(R.camera.position, dt);
       tanks3d?.update(dt, R.camera);
       fx?.update(dt, R.camera);
@@ -232,6 +265,7 @@ function frame(now) {
    sky.update(R.camera, now / 1000);
    R.render();
    hud?.draw?.(dt);
+   if (G.world) restorePoses(G.world);
    input.endFrame();
    G.frame++;
 }
