@@ -462,6 +462,38 @@ can run an operation unchanged and clients only render `world.campaign`.
   `cfg.site` = `'bunker'` (Regelbau: 300 mm concrete, 60 mm embrasure band `emb`, 70 mm rear door),
   `'pak'` (`pak40`: 5 mm shield, 260 HP, HE kills it), `'ship'` (`tboat`, Torpedoboot, 10,5 cm gun,
   12–15 mm plating, floats at `terrain.water − cfg.draft`). They never drive (`Tank._siteTick`).
+* Script helpers added for the balanced ops:
+  * `S.hunt(tag|[tags], label, onDone)`: every ~2 s it puts the goal on the nearest live member of the
+    groups and calls `onDone` when all of them are dead (`S._hunt = null` cancels). A bunker target gets
+    its goal at the rear quarter (`max(14, off·0.8)` behind and to the side), so the player meets the
+    70 mm door and not 300 mm of concrete.
+  * `S.refit(frac = 0.4, text)` adds `frac·maxHP` HP, repairs all modules, revives the crew, gives each
+    consumable at least 1 charge, refills each ammo type to at least 60 % of `gun.load`, and radios `text`.
+  * `S.hullDown(x, z, r, ex, ez)` returns `[x, z]` just behind the highest dry ground within `r`,
+    measured against an enemy at `(ex, ez)`. It backs off until the ground is about 1.4 m below the
+    crest. Use it with `mark(...)` and `goal(...)` for a marked firing position.
+  * `spawn(..., { aiErr, viewMul })`. `aiErr` overrides `cfg.aiErr`, and `_tuneAI` multiplies
+    `ai.D.err` by it (green or emplacement crews aim worse). `viewMul` scales `cfg.view` in
+    `tank.js` (spotting), e.g. 0.4 under artillery smoke.
+  * Route orders can carry `pin: true`. Like hold and ambush, this stops the no-pen flanking
+    detour (`ai.js`, `bestRatio < 0.8`), so the bot keeps to its scripted path. Used for
+    counter-attack echelons and the Königstiger sortie.
+* `cfg.eye` (emplacements) sets the spotting eye height above `pos.y` in place of `height + 0.3`: the
+  PaK commander stands behind the shield (2.1 m), the boat sees from its bridge (14 m).
+  `cfg.aiErr` is the crew's base aim error (PaK 1.7, boat 2.2).
+* The ship armour (`armor.js` `shipHullParts`) is 13 convex slices along z, using the same
+  `shipSection` taper as `tanks3d.js`. Bow end face = `nose`, stern end face = `urp`; the faces
+  between slices are internal. Hits therefore land on the plating as drawn.
+* Bot behaviour that matters in the ops:
+  * `ai.js _mateInLine` holds fire while a friendly tank is in the line of fire.
+  * `chooseAim` also tries the low rear and the gun port (`gun.pivotY`) on sites.
+  * HE is preferred against PaKs (×1.2) and penalised against armour (×0.5).
+* `World({ salt })` re-rolls the dice (shots, AI) without changing the terrain. `salt` 0 is the
+  classic run. Balance sweep: `tests/out/_robust.mjs [ops|all] [diffs] [nSalt] [countdowns]`
+  (scratch, gitignored) prints win rate, mean duration and stars per op and difficulty.
+* Maps: `noRandom: true` in `MAPS` (e.g. the sea-half `kueste`) keeps a map out of `RANDOM_MAPS`, the
+  pool the menu's "random" map draws from. Such maps are reached only through the campaign or by
+  choosing them directly.
 * Tests: `tests/campaign.test.mjs` runs every op headless; `tests/out/_camp.mjs` (scratch) prints
   per-op outcome and objective states.
 
