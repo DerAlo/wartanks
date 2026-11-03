@@ -359,7 +359,15 @@ free places are bots), battle types `standard` and `encounter`.
 - World team 1 is the host's team; sides follow `world.player.team`, so rendering / HUD need
   no change. Pause does not stop a net game. At the end every peer applies its own rewards via
   progress.js (`menu.applyResult`), then `net.finish` hands the result (PvP table) to the lobby.
-- Not done: host migration (a lost host ends the match).
+- Host migration (`migrate.js`): the host names a successor and sends it the full state once a
+  second (`mig`: tank internals, modules, crew, fires, reloads, bots' AI, caps, timers). When the
+  host leaves or goes silent, the successor turns its replica into the real World and runs
+  `NetHost` from its own slot; the others follow its `host` announcement. Shells in the air are
+  lost.
+- PvP `evt` is filtered per team (shells, events of unspotted enemies). The room keeps captains
+  whose connection was lost, for a rejoin. relay.js revives a timed-out peer with its stream
+  counters (the reason the relay test failed: a client frozen by shader compiling was timed out and
+  never heard again).
 
 ## Tests
 
@@ -368,7 +376,10 @@ pen falloff, determinism of terrain, a bot battle runs to an end without errors)
 screenshot scripts in `tests/*.mjs` for the browser (Chrome via playwright).
 `tests/net.test.mjs`: co-op 3 humans, PvP 2v2 and a full 1v1 match at 80 ms over `makeMemoryHub`
 (ids, replica error, captains' shots, no visibility leaks, end/rewards per client).
-`tests/playwright.mp.mjs [local|relay]`: two pages, lobby -> match, client drives and fires;
+`tests/migrate.test.mjs`: host migration over the memory hub; `tests/relay.test.mjs`: relay.js over
+a fake broker (revive, own stall).
+`tests/playwright.mp.mjs [local|relay]`: two pages, lobby -> match, both drive and fire, the client
+reloads and comes back; `tests/playwright.migrate.mjs`: three pages, the host page closes mid-match;
 `tests/playwright.mplobby.mjs`: lobby flow.
 
 `tests/sim.mjs` runs a headless battle: `runBattle({ map, diff, seed, mode, player })` →
