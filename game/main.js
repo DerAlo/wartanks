@@ -115,7 +115,7 @@ function aimRay(world, p) {
       if (armorM.rayArmor && t.armor) {
          const hits = armorM.rayArmor(t.armor, t.pose(), tmpO, tmpD);
          if (!hits?.length) continue;
-         hitD = hits[0].dist; G.aimTarget = { tank: t, hit: hits[0] };
+         hitD = hits[0].dist; G.aimTarget = { tank: t, hit: hits[0], hits };
       } else G.aimTarget = { tank: t, hit: null };
       best = hitD;
    }

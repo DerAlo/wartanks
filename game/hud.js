@@ -18,6 +18,7 @@ const COL = {
 const FONT = tok('--font', 'Bahnschrift, sans-serif'), FCOND = tok('--font-cond', 'Arial Narrow, sans-serif'), FST = tok('--font-stencil', 'Impact, sans-serif');
 const MOD_SHORT = { engine: 'MOT', fuel: 'KRS', ammo: 'MUN', gun: 'KAN', turretRing: 'TDK', radio: 'FUNK', optics: 'OPT', trackL: 'K-L', trackR: 'K-R' };
 const CREW_SHORT = { commander: 'KDT', gunner: 'RS', driver: 'FA', radio: 'FU', loader: 'LS', loader2: 'LS2' };
+const SPACED_PART = { track: true, skirt: true, mantlet: true };
 const D2R = Math.PI / 180;
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
 const mmss = (s) => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
@@ -123,6 +124,7 @@ export class HUD {
       const dst = w.tanks?.find((t) => t.id === e.dstId), src = w.tanks?.find((t) => t.id === e.srcId);
       const effT = e.effT != null ? Math.round(e.effT) + ' mm' : '';
       const modName = MODULES[e.module ?? e.mod]?.name || CREW_NAMES[e.crew ?? e.module] || e.module || '';
+      if (e.wreck) { if (mine && ['pen', 'ricochet', 'noPen', 'he'].includes(type)) this.addLog('Wrack getroffen', COL.hud); return; }
       if (mine) {
          if (type === 'pen') this.addLog(`Durchschlag ${effT ? effT + ' effektiv' : ''} · ${Math.round(e.dmg || 0)} Schaden`, COL.penYes);
          else if (type === 'ricochet') this.addLog('Abpraller' + (e.angleDeg ? ` (${Math.round(e.angleDeg)}°)` : ''), COL.penMaybe);
@@ -156,10 +158,10 @@ export class HUD {
       const at = this.G?.aimTarget, A = this.armor;
       this.pen = null;
       if (!at?.tank || !at.tank.alive) return;
-      let hit = at.hit;
+      let hit = at.hit, hits = at.hits;
       if (!hit && A.rayArmor && A.armorFor && at.tank.cfg?.hull) {
          const cam = this.R.camera.position; this.tcam.aimDir(this.dir);
-         const hits = A.rayArmor(A.armorFor(at.tank.cfg), at.tank.pose(), cam, this.dir);
+         hits = A.rayArmor(A.armorFor(at.tank.cfg), at.tank.pose(), cam, this.dir);
          hit = hits?.find((h) => h.t > 0) || null;
       }
       const ammo = (p.cfg?.gun?.ammo || []).find((a) => a.type === (p.ammoSel || 'AP')) || p.cfg?.gun?.ammo?.[0];
@@ -171,8 +173,19 @@ export class HUD {
       const overmatch = hit.t > 0 && cal > BALLISTICS.OVERMATCH * hit.t;
       const ric = rule.ric != null && !overmatch && ang > rule.ric;
       ang = Math.max(0, ang - norm);
-      const effT = hit.t / Math.max(0.02, Math.cos(ang * D2R));
-      this.pen = { tank: at.tank, chance: ric ? 0 : penChance(pen, effT), effT, pen, ric, plate: PLATE_NAMES[hit.plateId] || hit.plateName || '', t: hit.t, dist };
+      let effT = hit.t / Math.max(0.02, Math.cos(ang * D2R)), plate = PLATE_NAMES[hit.plateId] || hit.plateName || '', heatDead = false;
+      // spaced armour (track / skirt / mantlet) only eats into the pen: add the real plate behind it
+      if (SPACED_PART[hit.part] && hits && !ric) {
+         if (ammo.type === 'HEAT' && hit.part !== 'mantlet') heatDead = true;
+         const i0 = hits.indexOf(hit), next = i0 >= 0 ? hits.slice(i0 + 1).find((h) => h.t > 0 && (h.part === 'hull' || h.part === 'turret')) : null;
+         if (next) {
+            let a2 = next.angleDeg ?? 0, n2 = rule.norm ?? 0;
+            if (cal > BALLISTICS.OVERMATCH_NORM * next.t) n2 *= 1.4 * cal / next.t;
+            effT += next.t / Math.max(0.02, Math.cos(Math.max(0, a2 - n2) * D2R));
+            plate = (PLATE_NAMES[next.plateId] || next.plateName || '') + ' + ' + plate;
+         }
+      }
+      this.pen = { tank: at.tank, chance: ric || heatDead || hit.part === 'gun' ? 0 : penChance(pen, effT), effT, pen, ric, plate, t: hit.t, dist };
    }
 
    // ---------- draw ----------

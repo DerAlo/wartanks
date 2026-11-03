@@ -135,7 +135,7 @@ export class World {
       let dmg = res.dmg || 0;
       if (src?.bot && tank.team === this.player?.team) dmg *= this.diff.botDmg ?? 1;
       if (friendly) dmg *= 0.5;
-      if (!tank.alive) { this._ev(kind, src, tank, res, point, shell, 0, what); return; }
+      if (!tank.alive) { this._ev(kind, src, tank, res, point, shell, 0, what, true); return; }   // wreck: effects only
       if (src && what !== 'splash') { src.stats.hits++; if (kind === 'pen') src.stats.pens++; if (kind === 'ricochet' || kind === 'noPen') src.stats.bounces++; }
       if (kind === 'ricochet' || kind === 'noPen' || (kind === 'he' && dmg <= 0)) tank.stats.blocked += shell.dmg;
       dmg = Math.round(Math.min(dmg, tank.hp));
@@ -143,11 +143,11 @@ export class World {
       if (dmg > 0) this.damage(tank, dmg, src, 'shell');
       if (tank.alive && res.crits?.length && (kind === 'pen' || kind === 'he' || kind === 'noPen' || kind === 'ricochet')) this._crits(tank, src, res.crits, point, kind);
    }
-   _ev(kind, src, tank, res, point, shell, dmg, what) {
+   _ev(kind, src, tank, res, point, shell, dmg, what, wreck = false) {
       this.emit(kind, { srcId: src?.id ?? shell.ownerId, dstId: tank.id, dmg, pos: { x: point.x, y: point.y, z: point.z },
          normal: res.normal ? { x: res.normal.x, y: res.normal.y, z: res.normal.z } : null, plateId: res.plateId, plateName: res.plateName,
          part: res.part, side: res.side, t: res.t, effT: res.effT, pen: res.pen, angleDeg: res.angleDeg, overmatch: res.overmatch,
-         ammo: shell.ammo, cal: shell.caliber, what, from: src ? { x: src.pos.x, y: src.pos.y, z: src.pos.z } : null });
+         ammo: shell.ammo, cal: shell.caliber, what, wreck, from: src ? { x: src.pos.x, y: src.pos.y, z: src.pos.z } : null });
    }
 
    _crits(tank, src, crits, point, kind) {
