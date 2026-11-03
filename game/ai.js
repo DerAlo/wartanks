@@ -230,6 +230,11 @@ export class BotAI {
       if (this.target) this.lastEnemySeen = w.time;
       // destination / stage progression
       if (!this.dest) this.setDest(this.chooseDest());
+      // late game / thinned-out teams: everyone leaves their post once and moves on the objective
+      const fewLeft = w.tanks.filter((o) => o.alive && o.team === t.team).length <= 2;
+      if (!this._late && !this.returning && !this.retreating && this.role !== 'defend' && w.timeLeft != null && (w.timeLeft < 200 || fewLeft)) {
+         this._late = true; this.stage = Math.max(this.stage, 2); this.setDest(this.chooseDest());
+      }
       const arrived = Math.hypot(this.dest.x - t.pos.x, this.dest.z - t.pos.z) < 18;
       if (arrived) this.holdT += 0.25; else this.holdT = 0;
       const quiet = w.time - this.lastEnemySeen;

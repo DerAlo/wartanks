@@ -192,6 +192,27 @@ Water: speed penalty in fords, drowning in deep water.
 `elev`/`depr` limits (deg), may differ to the rear. Gun lags toward the aim with traverse
 speeds.
 
+**As implemented** (`new Tank(cfg|clsId, { id, team, name, isPlayer, x, z, yaw, terrain })`, `collideTanks(tanks, world)`):
+
+* Extra fields: `radius`, `height` (hull+turret height in m — `cfg.height` does not exist, use
+  `t.height`), `halfLen`, `halfW`, `mass` (t), `muzzle {x,y,z}`, `gunBlocked` (aim outside arc /
+  elevation), `turretOff` (wreck lost its turret), `visible` (within draw range of the player),
+  `role` (bot role), `stats` (per tank, same shape as `world.stats`), `lastDamaged`, `lastMoved`,
+  `inWater`, `drownT`, `fireSrc`, `camo {still, move, fire}`.
+* `modules[k] = { hp, max, state:'ok'|'damaged'|'destroyed', repairT }` (`turretRing` only if the
+  tank has a turret). `crew` is keyed by the cfg crew id: `{ alive, hp, wounded, roles:[...] }`;
+  `t.roleAlive('gunner')` checks any member with that role.
+* Driving: P = hp·735.5·0.8·powerK; F = min(P / max(v,1.2), μ·N), μ per ground class;
+  rolling resistance from `GROUND.res × cfg.ground`; a step > 1.25 m per metre ahead blocks
+  (cliff). Tank-tank: inelastic impulse e = 0.15, parked/dead tanks count ×4 mass; ram damage
+  above 2.5 m/s relative speed (energy/1800, split by mass), no ram damage to allies.
+* Objects: houses block; trees/fences/walls break above momentum 40/8/110 t·m/s.
+* Water: deep at 0.62·height, drowning after 10 s submerged.
+* Fire: 2.2 % maxHP/s; bots extinguish automatically.
+* Hooks the tank calls on the world (all optional): `onFire(tank, round, pos, dir, shell)`,
+  `onRam(a, b, dmgA, dmgB, p)`, `onTankEffect(kind, tank, obj)`, `onBurn(tank, dmg)`,
+  `onDrown(tank)`; flag `world.infiniteAmmo`. Bots fire when `input.fire` and loaded.
+
 ## Spotting (`spotting.js`)
 
 View range (m, 250–440) vs camo (fraction; stationary / moving / firing penalty) like WoT:
@@ -199,6 +220,13 @@ View range (m, 250–440) vs camo (fraction; stationary / moving / firing penalt
 per bush ×), firing from a bush loses its bonus. LOS is a terrain raycast from commander
 height to several points on the target (turret top, hull centre). 2 s spot memory, 445 m
 draw range, team-shared spotting (radio). Proximity spotting 50 m always.
+
+As implemented: `updateSpotting(world, dt)` (world calls it every 0.25 s) and
+`canSee(world, observer, target)`. Bushes add +0.25 camo each (max +0.5), bushes within 15 m
+of the observer are ignored; for 3 s after a shot camo is multiplied by `camo.fire`. Sets
+`t.spotted` (bool, with 2 s memory), `t.detected`, `t.spotterId`, `t.visible`; first spot calls
+`world.onSpotted` and counts `stats.spotted`. tanks3d draws enemies when
+`spotted !== false && visible !== false`.
 
 ## World (`state.js`)
 
@@ -215,6 +243,40 @@ world.result   // { outcome:'win'|'loss'|'draw', reason, xp, credits }
 world.update(dt), world.enemiesOf(t), world.alliesOf(t)
 ```
 
+As implemented:
+
+* Options: `{ mode='standard', mapId, seed, playerCls, difficulty, teamSize?, roster?, countdown?, playerName? }`.
+  `difficulty` may be `0|1|2` (main.js passes a number) or `'leicht'|'normal'|'schwer'`;
+  `difficultyKey(d)` maps it. `playerCls: null` gives a bots-only battle (headless tests);
+  then `world.player` is null.
+* `world.phase`: `'countdown' | 'playing' | 'won' | 'lost' | 'draw'` (relative to the player); details in `world.result`.
+  Countdown defaults to the mission's (10 s; training 0). Nothing moves in the countdown.
+* `world.result = { outcome, winner (1|2|0), reason (relative to the player, e.g. 'Eigenes Team
+  vernichtet', 'Basis erobert', 'Zeit abgelaufen'), time, xp, credits, freeXP, ammoCost, breakdown }`.
+* `world.stats === world.player.stats`.
+* `world.effects` is a list of fresh objects `{ kind, pos, dir?, t, life, size, ... }`
+  (kinds: `ground`, `splash`, `explosion`, `sparks`, ...); fx marks consumed ones with `__fx`.
+* `world.events` ring buffer of 256, each `{ type, seq, t, ... }`. Types: `shot`, `pen`,
+  `ricochet`, `noPen`, `he` (hit events carry `srcId, dstId, dmg, pos, normal, plateId,
+  plateName, part, side, t, effT, pen, angleDeg, overmatch, ammo, cal, what, from`), `crit`
+  (`module` or `crew`), `track`, `fire`, `ammoRack`, `kill`, `ram`, `spotted`, `cap`,
+  `treeFall`, `objectBreak`, `phase`.
+* Update order: AI → (countdown freeze) → tanks → collideTanks → shells → spotting (0.25 s)
+  → caps and end check → `mission.tick` → effect ageing.
+* Damage: bot damage against the player's team × `diff.botDmg`; friendly fire × 0.5.
+  Crits: tracks and gun can be hit by any hit, other modules only on pen or HE; a destroyed
+  ammo rack detonates with 60 % chance; engine and fuel hits can start fires.
+* Caps: per-tank points, rate min(1, 3/n), any damage resets the tank's cap points, neutral
+  base blocked while both teams are inside. `world.tankById(id)`, `world.emit(ev)`,
+  `world.effect(fx)`, `world.addTank(cls, team, opts)`, `world.end(winner, reason)`.
+
+Bots (`ai.js`): `new BotAI(world, tank)` with `update(dt)`; `findPath(T, a, b)` is A* on a 16 m
+grid cached in `T._nav`. Difficulty table `DIFF[key] = { err, react, aimWait, convK, smart, angle }`.
+Roles `flank | push | ridge | snipe | defend | target | targetMoving`. Bots aim at the weakest
+plate (rayArmor from the muzzle), pick ammo, lead moving targets, angle the hull ~0.6 rad,
+retreat below 30 % HP, return to a base being capped, and push the objective when
+timeLeft < 200 s or ≤ 2 tanks of their team remain.
+
 ## Modes (`missions.js`)
 
 * `standard` — Standardgefecht: 2 bases, 7v7 (configurable up to 10v10), win by destroying all
@@ -225,11 +287,25 @@ world.update(dt), world.enemiesOf(t), world.alliesOf(t)
   inspection (shows effective thickness of plate under reticle).
 Matchmaking for bots: tier ±1 of the player's tank, balanced classes per team.
 
+As implemented: `MISSIONS[id] = { id, name, desc, hint?, teamSize, timeLimit, countdown, noEnd?,
+setup(world, opts), tick?(world, dt) }`, `MISSION_LIST`, `matchmake(playerCls, teamSize, rng)
+-> { team1, team2 }` (classes mirrored slot by slot, tier ±1), `botName(rng, used)`.
+Training: infinite ammo, no end, one target of every tank type at 100–400 m with varied
+yaw, every third one drives (`role 'targetMoving'`), destroyed targets respawn after 8 s.
+
 ## Progression (`progress.js`, localStorage `wartanks.profile.v1`)
 
 Tech tree per nation (Deutschland, Sowjetunion, USA, Großbritannien), tiers I/II…VIII,
 XP per tank to research the next, credits to buy, start tanks unlocked. Ammo loadout
 (premium APCR/HEAT costs credits). Save export/import like warships.
+
+As implemented: `loadProfile()`, `saveProfile(p)`, `resetProfile()`, `newProfile()`,
+`techTree() -> { DE:[ids by tier], ... }`, `tankState(p, id) -> { owned, researched, xp, prev,
+researchXP, price, canResearch, canBuy }`, `research(p, id)` / `buy(p, id) -> { ok, reason }`,
+`calcRewards(world)`, `applyRewards(p, tankId, result)`, `exportProfile(p) -> 'WT1:'+base64`,
+`importProfile(str)` (throws on garbage). Research XP by tier 5/6/7/8: 2500/6000/12000/22000;
+prices tier 4–8: 30k/90k/200k/450k/900k; start: 150k credits and the first tank of each
+nation. Works without localStorage (memory fallback).
 
 ## Rendering & controls (client)
 
@@ -277,3 +353,9 @@ co-op vs bots and PvP, rejoin, host migration later). Transport files (`mqtt.js`
 `npm test` (= `node --test "tests/*.test.mjs"`; node ≥ 22 no longer accepts a bare directory) — sim tests (armour ray tests, effective thickness, ricochet/overmatch,
 pen falloff, determinism of terrain, a bot battle runs to an end without errors). Playwright
 screenshot scripts in `tests/*.mjs` for the browser (Chrome via playwright).
+
+`tests/sim.mjs` runs a headless battle: `runBattle({ map, diff, seed, mode, player })` →
+`{ w, ms, time, result, alive, counts (per event type), shots, hits, pens, dmg }`; CLI
+`node tests/sim.mjs <map> <diff> <seed> <mode>`. `tests/battle.test.mjs`: 5 bots-only 7v7
+battles over all difficulties and maps, a battle with a player, training ground, spotting,
+terrain determinism, matchmaking, progression.
