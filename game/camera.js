@@ -58,7 +58,7 @@ export class TankCamera {
          fov = 2 * Math.atan(Math.tan(BASE_FOV * Math.PI / 360) / (this.zoom * 1.25)) * 180 / Math.PI;
       } else {
          // orbit: behind and above the pivot, looking along d; the tank sits low in frame
-         const up = 2.2 + this.dist * 0.16;
+         const up = 1.1 + this.dist * 0.07;
          cam.position.set(pivot.x - d.x * this.dist, pivot.y + up - d.y * this.dist, pivot.z - d.z * this.dist);
          const g = heightAt(cam.position.x, cam.position.z) + 1.0;
          if (cam.position.y < g) cam.position.y = g;

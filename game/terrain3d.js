@@ -173,6 +173,7 @@ export class Terrain3D {
       }
       const bushGeo = new THREE.IcosahedronGeometry(1, 1); bushGeo.scale(1, 0.62, 1); bushGeo.translate(0, 0.35, 0);
       const rockGeo = new THREE.DodecahedronGeometry(1, 0); rockGeo.translate(0, 0.25, 0);
+      for (const g of [bushGeo, rockGeo]) g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));
       const defs = {
          tree: [treeGeo('tree'), P.tree, 6.5, true], pine: [treeGeo('pine'), P.pine, 9, true],
          bush: [bushGeo, P.bush, 1.6, false], rock: [rockGeo, P.rock, 1.4, true],
@@ -268,14 +269,15 @@ export class Terrain3D {
       if (!n || this.pal === PALETTES.winter) return;
       const g = new THREE.BufferGeometry(), p = [], c = [];
       for (let b = 0; b < 5; b++) {
-         const a = b * 2.4, ox = Math.cos(a) * 0.18, oz = Math.sin(a) * 0.18, w = 0.06, h = 0.32 + hash(b, 1) * 0.3;
+         const a = b * 2.4, ox = Math.cos(a) * 0.18, oz = Math.sin(a) * 0.18, w = 0.045, h = 0.22 + hash(b, 1) * 0.22;
          const dx = Math.cos(a + 1.57) * w, dz = Math.sin(a + 1.57) * w, lean = 0.15;
-         p.push(ox - dx, 0, oz - dz, ox + dx, 0, oz + dz, ox + Math.cos(a) * lean, h, oz + Math.sin(a) * lean);
-         c.push(0.8, 0.8, 0.75, 0.8, 0.8, 0.75, 1.25, 1.25, 1.1);
+         const A = [ox - dx, 0, oz - dz], B = [ox + dx, 0, oz + dz], T = [ox + Math.cos(a) * lean, h, oz + Math.sin(a) * lean];
+         p.push(...A, ...B, ...T, ...B, ...A, ...T);   // both windings: no back-face normal flip
+         for (let k = 0; k < 2; k++) c.push(0.62, 0.66, 0.58, 0.62, 0.66, 0.58, 0.98, 1.02, 0.9);
       }
       g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
-      g.computeVertexNormals();
-      const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(p.length).map((_, i) => i % 3 === 1 ? 1 : 0), 3)); // up-facing: lit like the ground
+      const m = new THREE.MeshLambertMaterial({ vertexColors: true });
       const im = this.grass = new THREE.InstancedMesh(g, m, n);
       im.frustumCulled = false;
       this.grassSpan = 110; this.grassBase = new Float32Array(n * 2); this.grassCell = new Int32Array(n * 2).fill(-99999);

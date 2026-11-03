@@ -8,7 +8,8 @@ const base = process.argv[2] || 'http://localhost:5173/';
 const only = process.argv[3] || '';
 fs.mkdirSync('tests/out', { recursive: true });
 let browser;
-try { browser = await chromium.launch({ channel: 'chrome', args: ['--use-angle=d3d11', '--enable-gpu'] }); }
+const GPU = process.env.NO_GPU ? [] : ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'];
+try { browser = await chromium.launch({ args: GPU, ...(process.env.CHROME ? { channel: 'chrome' } : {}) }); }
 catch { browser = await chromium.launch(); }
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 const errors = [];
@@ -26,6 +27,7 @@ if (!only || only === 'menu') {
    await wait(2500);
    await shot('00-menu');
 }
+await page.addInitScript(() => addEventListener('DOMContentLoaded', () => document.getElementById('gl').addEventListener('webglcontextlost', () => console.error('CTXLOST at frame', window.__game?.frame))));
 await page.goto(base + '?autostart' + (process.env.QS || ''));
 await page.waitForFunction(() => window.__game?.world, null, { timeout: 20000 });
 await page.evaluate(() => { window.__game.input.noLock = true; window.__game.input.forceAim = true; });
@@ -49,8 +51,11 @@ await page.mouse.wheel(0, -300); await wait(200); await page.mouse.wheel(0, -300
 await stats('scope'); await shot('05-scope');
 await page.mouse.down(); await wait(60); await page.mouse.up(); await wait(120); await shot('06-fire');
 await wait(1500); await shot('07-after');
-await page.mouse.wheel(0, 1500); await wait(1200);
-await page.evaluate(() => { const g = window.__game; g.tcam.yaw += Math.PI; });
-await wait(1200); await shot('08-close'); await stats('end');
+for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, 300); await wait(80); }
+await wait(1000);
+await page.evaluate(() => { const g = window.__game; g.tcam.yaw = g.world.player.yaw + 2.2; g.tcam.pitch = -0.25; g.tcam.level = 4; });
+await wait(1200); await shot('08-close');
+await page.evaluate(() => { const g = window.__game; g.tcam.yaw = g.world.player.yaw - 0.7; g.tcam.pitch = -0.3; });
+await wait(800); await shot('09-front'); await stats('end');
 console.log('errors:', errors.length ? errors.slice(0, 15).join('\n') : 'none');
 await browser.close();

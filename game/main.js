@@ -20,10 +20,10 @@ const params = new URLSearchParams(location.search);
 
 // optional modules: graceful while other parts are still being written
 async function opt(path) { try { return await import(path); } catch (e) { console.warn('[main] optional module missing', path, e.message); return {}; } }
-const [stateM, mapsM, tanks3dM, hudM, fxM, audioM, menuM, armorM] = await Promise.all(
-   ['./state.js', './maps.js', './tanks3d.js', './hud.js', './fx.js', './audio.js', './menu.js', './armor.js'].map(opt));
+const [stateM, mapsM, tanks3dM, hudM, fxM, audioM, menuM, armorM, configM] = await Promise.all(
+   ['./state.js', './maps.js', './tanks3d.js', './hud.js', './fx.js', './audio.js', './menu.js', './armor.js', './config.js'].map(opt));
 
-const G = window.__game = { R, q, tcam, input, world: null, fps: 0, frame: 0, mods: { stateM, mapsM, tanks3dM, hudM, fxM, audioM, menuM, armorM } };
+const G = window.__game = { R, q, tcam, input, world: null, fps: 0, frame: 0, mods: { stateM, mapsM, tanks3dM, hudM, fxM, audioM, menuM, armorM, configM } };
 let terrain3d = null, tanks3d = null, hud = null, fx = null, audio = null, menu = null;
 const tmpO = new THREE.Vector3(), tmpD = new THREE.Vector3(), pivot = new THREE.Vector3(), sight = new THREE.Vector3();
 
@@ -43,9 +43,11 @@ function StubWorld(opts) {
       raycast(ox, oy, oz, dx, dy, dz, max) { for (let d = 0; d < max; d += 0.5) if (oy + dy * d < h(ox + dx * d, oz + dz * d)) return d; return null; },
       objects: [] };
    for (let i = 0; i < 600; i++) { const x = Math.sin(i * 12.9898) * 480, z = Math.sin(i * 78.233) * 480; terrain.objects.push({ id: i, kind: i % 5 === 0 ? 'bush' : i % 13 === 0 ? 'rock' : i % 29 === 0 ? 'house' : 'tree', x, z, yaw: i, w: i % 29 === 0 ? 10 : 3, d: i % 29 === 0 ? 7 : 3, h: i % 29 === 0 ? 7 : undefined, solid: true, alive: true, seed: i }); }
-   const mk = (id, team, x, z) => ({ id, team, cls: 'stub', cfg: { height: 2.4 }, pos: { x, y: h(x, z), z }, yaw: 0, pitch: 0, roll: 0, turretYaw: 0, gunPitch: 0, speed: 0, hp: 1000, maxHP: 1000, alive: true, reload: 0, reloadMax: 6, input: {}, pose() { return this; } });
-   const player = mk(1, 1, 0, 100), enemy = mk(2, 2, 0, -60);
-   return { terrain, tanks: [player, enemy], player, shells: [], events: [], time: 0, phase: 'playing', mapId: opts.mapId,
+   const TK = configM.TANKS || {}, ids = configM.TANK_LIST || [];
+   const mk = (id, team, x, z, cls = ids[0]) => ({ id, team, cls, cfg: TK[cls] || { height: 2.4 }, pos: { x, y: h(x, z), z }, yaw: 0, pitch: 0, roll: 0, turretYaw: 0, gunPitch: 0, speed: 0, hp: 1000, maxHP: 1000, alive: true, reload: 0, reloadMax: 6, input: {}, pose() { return this; } });
+   const player = mk(1, 1, 0, 100, opts.playerCls || 'tiger1'), tanks = [player];
+   ids.forEach((c, i) => { const t = mk(10 + i, 2, -76 + i * 9.5, 78, c); t.yaw = 0.5; t.turretYaw = -0.4; tanks.push(t); });
+   return { terrain, tanks, player, shells: [], events: [], time: 0, phase: 'playing', mapId: opts.mapId,
       update(dt) { this.time += dt; const p = player, i = p.input; p.speed += ((i.throttle || 0) * 12 - p.speed) * dt * 0.8; p.yaw += (i.steer || 0) * dt * 0.7;
          p.pos.x -= Math.sin(p.yaw) * p.speed * dt; p.pos.z -= Math.cos(p.yaw) * p.speed * dt; p.pos.y = h(p.pos.x, p.pos.z); } };
 }
@@ -133,7 +135,8 @@ function frame(now) {
       if (p) {
          pivot.set(p.pos.x, p.pos.y + (p.cfg?.height ?? 2.4) + 0.4, p.pos.z);
          if (tanks3d?.sightPos) tanks3d.sightPos(p, sight); else sight.set(p.pos.x, p.pos.y + (p.cfg?.height ?? 2.4), p.pos.z);
-         tcam.update(dt, pivot, sight, (x, z) => world.terrain.heightAt(x, z));
+         if (G.camOverride) { const o = G.camOverride; R.camera.position.set(o[0], o[1], o[2]); R.camera.lookAt(o[3], o[4], o[5]); }
+         else tcam.update(dt, pivot, sight, (x, z) => world.terrain.heightAt(x, z));
          aimRay(world, p);
       }
       G.acc += dt; let n = 0;
