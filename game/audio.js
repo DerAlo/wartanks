@@ -74,7 +74,7 @@ export class Audio {
       // --- engines: player + nearest moving tanks
       const near = this._near ??= [];
       near.length = 0;
-      for (const t of w.tanks || []) if (t !== p && t.alive !== false) near.push(t);
+      for (const t of w.tanks || []) if (t !== p && t.alive !== false && !t.cfg?.site) near.push(t);   // sites have no engine (vMax 0 -> NaN rpm)
       near.sort((a, b) => ((a.pos.x - cp.x) ** 2 + (a.pos.z - cp.z) ** 2) - ((b.pos.x - cp.x) ** 2 + (b.pos.z - cp.z) ** 2));
       for (let i = 0; i < this.voices.length; i++) {
          const V = this.voices[i], t = i === 0 ? (p?.alive !== false ? p : null) : near[i - 1];

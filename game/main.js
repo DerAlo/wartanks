@@ -4,7 +4,7 @@
 import * as THREE from '../vendor/three/three.module.min.js';
 import * as gfxM from './gfxquality.js';
 const { loadQuality } = gfxM;
-import { Renderer } from './render.js';
+import { Renderer, fogTheme } from './render.js';
 import { Sky } from './sky.js';
 import { Terrain3D } from './terrain3d.js';
 import { Input } from './input.js';
@@ -41,7 +41,7 @@ export function startBattle(opts = {}) {
    if (!stateM.World) { console.error('[main] state.js missing: no battle possible'); menu?.show('garage'); return; }
    const world = G.world = opts.world || new stateM.World({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
    G.battleOpts = { ...opts }; delete G.battleOpts.world; G.endT = 0; G.paused = false;
-   const th = themeOf(world.mapId ?? opts.mapId);
+   const th = fogTheme(themeOf(world.mapId ?? opts.mapId), world.campaign?.fog || 0);   // misty ops (Arracourt)
    R.setTheme(th); sky.setTheme(th, R.sunDir);
    terrain3d = new Terrain3D(R.scene, world.terrain, th, q);
    if (tanks3dM.Tanks3D) tanks3d = new tanks3dM.Tanks3D(R.scene, world);

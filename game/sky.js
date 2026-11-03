@@ -40,7 +40,7 @@ export class Sky {
    setTheme(th = {}, sunDir) {
       this.u.top.value.set(th.skyTop ?? 0x5f8fc4); this.u.hor.value.set(th.skyHor ?? th.fog ?? 0xc6d2d0);
       this.u.low.value.set(th.skyLow ?? 0x7a7a62); this.u.cloud.value = th.cloud ?? 0.6;
-      this.u.sunCol.value.set(th.sunColor ?? 0xfff0d0);
+      this.u.sunCol.value.set(th.skySun ?? th.sunColor ?? 0xfff0d0);   // skySun: glow only (fogTheme dims it)
       if (sunDir) this.u.sunDir.value.copy(sunDir);
    }
    update(camera, t) { this.mesh.position.copy(camera.position); this.u.time.value = t; }

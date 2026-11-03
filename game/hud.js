@@ -6,6 +6,7 @@
 import * as THREE from '../vendor/three/three.module.min.js';
 import { AMMO, BALLISTICS, MODULES, CREW_NAMES, CONSUMABLES, PLATE_NAMES } from './config.js';
 import { solveElevation } from './ballistics.js';
+import { MapFeatures } from './mapfeatures.js';
 
 const css = getComputedStyle(document.documentElement), tok = (n, d) => (css.getPropertyValue(n).trim() || d);
 const COL = {
@@ -55,7 +56,7 @@ export class HUD {
       };
       addEventListener('keydown', this.onKey); addEventListener('keyup', this.onKey);
       this.resize(); this.onResize = () => this.resize(); addEventListener('resize', this.onResize);
-      this.buildMap();
+      this.buildMap(); this.mapFx = new MapFeatures(world.terrain);
       canvas.style.display = '';
    }
    dispose() {
@@ -467,6 +468,7 @@ export class HUD {
       const mx = (v) => x + (v + half) * k, mz = (v) => y + (v + half) * k;
       g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(x - 3, y - 3, S + 6, S + 6);
       g.globalAlpha = big ? 0.95 : 0.88; g.drawImage(this.mapCv, x, y, S, S); g.globalAlpha = 1;
+      const fl = this.mapFx?.layer(); if (fl) g.drawImage(fl, x, y, S, S);   // teeth, wire, trenches, bridges
       g.strokeStyle = COL.edge; g.lineWidth = 1; g.strokeRect(x - 0.5, y - 0.5, S + 1, S + 1);
       // bases
       const bases = T?.bases ? Object.entries(T.bases).filter(([, b]) => b) : [];
