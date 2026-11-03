@@ -64,6 +64,7 @@ export function startBattle(opts = {}) {
    if (hudM.HUD) hud = new hudM.HUD(document.getElementById('hudc'), world, { armor: armorM, cam: tcam, R });
    if (audioM.Audio && !audio) audio = new audioM.Audio();
    audio?.start?.(world);
+   G.fx = fx; G.hud = hud; G.audio = audio;
    tcam.reset(world.player?.yaw ?? 0);
    input.enabled = true; menu?.hide?.();
    G.acc = 0;
