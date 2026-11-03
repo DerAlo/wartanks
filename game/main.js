@@ -57,7 +57,7 @@ export function startBattle(opts = {}) {
 export function stopBattle() {
    input.enabled = false; input.unlock();
    terrain3d?.dispose(); tanks3d?.dispose?.(); fx?.dispose?.(); hud?.dispose?.(); audio?.stop?.();
-   terrain3d = tanks3d = fx = hud = null; G.world = null; G.paused = false; G.aimTarget = null;
+   terrain3d = tanks3d = fx = hud = null; G.world = null; G.paused = false; G.aimTarget = null; G.fireReq = null;
    document.getElementById('scope').classList.remove('on');
    const hc = document.getElementById('hudc'); hc.getContext('2d')?.clearRect(0, 0, hc.width, hc.height);
 }
@@ -127,7 +127,15 @@ function controls(world, p, dt) {
    inp.steer = (k('KeyA') || k('ArrowLeft') ? 1 : 0) - (k('KeyD') || k('ArrowRight') ? 1 : 0);
    inp.brake = k('Space');
    inp.fire = input.lmb && !G.noFire;
-   if (input.lmbPressed && p.reload <= 0) p.fire?.(world);
+   // a click is kept for 0.3 s so a click just before the round is loaded still fires (an edge-
+   // triggered click was dropped when it landed a frame or two early); say why a click cannot fire
+   if (input.lmbPressed) {
+      G.fireReq = world.time;
+      if (p.mod?.('gun') === 'destroyed') hud?.msg?.('Kanone zerstört', '#ff6a4d', 1.2);
+      else if (world.phase === 'countdown') hud?.msg?.('Gefecht beginnt gleich', undefined, 1);
+      else if (!world.infiniteAmmo && p.ammoCount && !Object.values(p.ammoCount).some((n) => n > 0)) hud?.msg?.('Keine Munition', '#ff6a4d', 1.2);
+   }
+   if (G.fireReq != null && world.time - G.fireReq < 0.3 && p.reload <= 0 && world.phase !== 'countdown' && p.fire?.(world)) G.fireReq = null;
    const AM = ['AP', 'APCR', 'HEAT', 'HE'];
    for (let i = 0; i < 4; i++) if (input.hit('Digit' + (i + 1))) { const types = p.cfg?.ammoTypes || p.cfg?.gun?.ammo?.map?.((a) => a.type) || AM; types[i] && p.setAmmo?.(types[i]); }
    for (let i = 0; i < 3; i++) if (input.hit('Digit' + (i + 5))) { const ids = Object.keys(p.consumables || {}); ids[i] && p.useConsumable?.(ids[i]); }

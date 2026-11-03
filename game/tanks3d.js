@@ -323,7 +323,8 @@ export class Tanks3D {
    sightPos(t, out) {
       const m = this._model(t); m.gunPivot.getWorldPosition(out); out.y += 0.35; return out;
    }
-   setHidden(t, scoped) { const m = this.models.get(t?.id); if (m) { m.gun.visible = !scoped; if (m.tmesh) m.tmesh.visible = !scoped; } }
+   // scope view: the sight sits inside the own turret, so the whole own model goes (WoT does the same)
+   setHidden(t, scoped) { const m = this.models.get(t?.id); if (m && scoped) m.root.visible = false; }
    update(dt, camera) {
       const w = this.world, sh = shared();
       for (const ev of w.events?.list ?? w.events ?? []) {   // turret blow-off on ammo rack

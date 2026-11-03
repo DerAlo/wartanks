@@ -630,8 +630,12 @@ function buildInternals(cfg, layout) {
    // Crew: driver front-left, radio front-right, turret crew in the turret (casemate: hull).
    const crew = [];
    const cs = [0.24, 0.38, 0.24];
+   // every gun needs a loader: without one listed, the commander loads (else the tank would
+   // reload at the 'loader dead' penalty from the start, e.g. the 4-man Luchs)
+   const noLoader = !cfg.crew.some((e) => e.split('+').includes('loader'));
    for (const entry of cfg.crew) {
       const roles = entry.split('+');
+      if (noLoader && roles[0] === 'commander') roles.push('loader');
       const id = roles[0];
       let part = 'hull', c;
       const main = roles[0];

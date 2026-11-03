@@ -105,7 +105,7 @@ export class Terrain3D {
       this.pal = { ...PALETTES[pid], ...(theme.colors ? Object.fromEntries(Object.entries(theme.colors).map(([k, v]) => [k, C(v)])) : {}) };
       this.detail = detailTexture();
       this.groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.detail, roughness: 0.97, metalness: 0 });
-      this.vegMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true });
+      this.vegMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });   // smooth: faceted crowns read as flat planes in the x8/x16 scope
       this.buildGround();
       this.buildWater();
       this.buildObjects();
