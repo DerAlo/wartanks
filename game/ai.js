@@ -264,6 +264,7 @@ export class BotAI {
       if (this.role === 'target' || this.role === 'targetMoving') return;
       // modules / crew
       if ((t.mod('trackL') === 'destroyed' || t.mod('trackR') === 'destroyed' || t.mod('engine') === 'destroyed') && w.time - t.lastDamaged > this.D.react) t.useConsumable('repair');
+      else if (this.careful && t.mod('engine') === 'damaged' && w.time - t.lastDamaged > 8) t.useConsumable('repair');
       for (const k in t.crew) if (!t.crew[k].alive && w.time - t.lastDamaged > this.D.react * 2) { t.useConsumable('medkit'); break; }
       // own base under capture -> defenders and nearby bots return
       const ownCap = w.caps.find((c) => c.team === t.team && c.progress > 0);
@@ -342,7 +343,8 @@ export class BotAI {
          if (d > WORLD.DRAW_RANGE) continue;
          if (!this.los(e)) continue;
          const rb = this.ratioBy?.get(e.id);            // known to be (nearly) impenetrable from here
-         const score = d * (0.5 + e.hp / e.maxHP) * (e === this.target ? 0.6 : 1) * (rb != null && rb < 0.8 ? 2.5 : 1);
+         let score = d * (0.5 + e.hp / e.maxHP) * (e === this.target ? 0.6 : 1) * (rb != null && rb < 0.8 ? 2.5 : 1);
+         if (this.careful && e.id === t.lastHitBy && w.time - t.lastDamaged < 12) score *= 0.12;   // answer whoever is hitting us
          if (score < bs) { bs = score; best = e; }
       }
       if (best !== this.target) {
@@ -473,12 +475,21 @@ export class BotAI {
       const dE = e && e.alive ? Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z) : 1e9;
       this.blockT = t.gunBlocked && dE < 400 ? (this.blockT || 0) + dt : 0;
       const blocked = this.blockT > 2;
-      if (blocked && dE >= 25 && (atDest || !this.path) && !(this.reposT > w.time)) {
-         this.reposT = w.time + 6; const k = Math.min(0.5, 60 / dE);
-         this.setDest({ x: t.pos.x + (e.pos.x - t.pos.x) * k, z: t.pos.z + (e.pos.z - t.pos.z) * k });
+      if (blocked && dE >= 25 && (atDest || !this.path || this.blockT > 8) && !(this.reposT > w.time)) {
+         this.reposT = w.time + 6;
+         // gun at its depression stop (hull nosed up a slope): back off and to the side onto
+         // flatter ground; otherwise close in
+         const k = t.gunLow && t.cfg.turret ? -Math.min(0.6, 20 / dE) : Math.min(0.5, 60 / dE), sx = (this.rng() - 0.5) * 20;
+         this.setDest({ x: t.pos.x + (e.pos.x - t.pos.x) * k + sx, z: t.pos.z + (e.pos.z - t.pos.z) * k - sx });
          inp.throttle = 0; return;
       }
-      const hold = !(blocked && dE >= 25) && (atDest || (engaging && t.reload < 1.5 + (t.cfg.cls === 'TD' ? 3 : 0)));
+      // careful player (campaign autopilot): shoot, then reverse out of sight (behind the crest /
+      // hull-down) while reloading when the target shoots back, and keep the front to it
+      if (this.careful && e && e.alive && dE < 400 && t.reload > 1.2 && w.time - t.lastDamaged < 6 && !this.flankT && t.hp < t.maxHP * 0.9) {
+         const dy = angleDelta(t.yaw, yawTo(t.pos.x, t.pos.z, e.pos.x, e.pos.z) + (t.cfg.turret ? 0.45 * this.angleSide : 0));
+         inp.throttle = t.reload > 2.5 ? -0.7 : 0; inp.steer = clamp(dy * 2, -1, 1); return;
+      }
+      const hold = !(blocked && dE >= 25) && (atDest || (engaging && (this.careful || t.reload < 1.5 + (t.cfg.cls === 'TD' ? 3 : 0))));
       // unstick
       if (this.unstickT > 0) {
          this.unstickT -= dt; inp.throttle = -0.8; inp.steer = this.unstickDir; return;
@@ -490,7 +501,8 @@ export class BotAI {
          const dy = angleDelta(t.yaw, yawTo(t.pos.x, t.pos.z, e.pos.x, e.pos.z));
          inp.throttle = -1; inp.steer = clamp(dy * 2, -1, 1); return;
       }
-      if (!hold && Math.abs(t.speed) < 0.6 && Math.abs(inp.throttle) > 0.3) {
+      // stuck: no headway under throttle, or a pivot turn that does not turn (slope, damaged engine)
+      if (!hold && Math.abs(t.speed) < 0.6 && (Math.abs(inp.throttle) > 0.3 || (Math.abs(inp.steer) > 0.5 && Math.abs(t.yawRate) < 0.05))) {
          this.stuckT += dt;
          if (this.stuckT > 2.5) { this.stuckT = 0; this.unstickT = 1.6; this.unstickDir = this.rng() < 0.5 ? 1 : -1; this.repath = 0.1; return; }
       } else this.stuckT = Math.max(0, this.stuckT - dt);

@@ -29,6 +29,7 @@ const BRAKE = 6.5;             // m/s² service brake
 const DROWN_TIME = 10;
 const REPAIR_TIME = { trackL: 9, trackR: 9, engine: 14, gun: 12, turretRing: 12, optics: 10, radio: 10, fuel: 12, ammo: 12 };
 const ELEV_SPEED = 14 * DEG;   // gun elevation drive, rad/s
+const PAK_SLEW = 0.07;         // rad/s: a PaK crew shifting the split trails (~25 s for 90°)
 const CLIFF = 1.25;            // m of height step per m ahead that counts as a wall (~51°)
 // object break thresholds: momentum in t·m/s
 const BREAK = { tree: 40, fence: 8, wall: 110, bush: 0 };
@@ -131,6 +132,13 @@ export class Tank {
       if (this.cfg.draft != null) {                  // a ship rides at the water line and rolls gently
          this.pos.y = (world.terrain.water ?? 0) - this.cfg.draft;
          this.pitch = Math.sin(world.time * 0.37 + this.id) * 0.004; this.roll = Math.sin(world.time * 0.53 + this.id * 2) * 0.012;
+      }
+      // a PaK crew re-lays the trails (slowly) when its target is outside the shield's arc
+      const e = this.cfg.site === 'pak' && this.ai?.target;
+      if (e && e.alive && this.arc) {
+         const want = Math.atan2(-(e.pos.x - this.pos.x), -(e.pos.z - this.pos.z));
+         let d = want - this.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+         if (Math.abs(d) > this.arc[1] * 0.8) { this.yaw += Math.sign(d) * Math.min(Math.abs(d), PAK_SLEW * dt); this.pose(); }
       }
    }
 
@@ -366,6 +374,7 @@ export class Tank {
       this.turretRate = angleDelta(old, this.turretYaw) / dt;
       const cp = clamp(wantPitch, this.depr, this.elev);
       if (cp !== wantPitch) this.gunBlocked = true;
+      this.gunLow = wantPitch < this.depr;          // blocked by depression (hull pitched up / target below)
       this.gunPitch = approach(this.gunPitch, cp, ELEV_SPEED * (this.mod('gun') === 'destroyed' ? 0 : 1) * dt);
       this._pose.turretYaw = this.turretYaw; this._pose.gunPitch = this.gunPitch;
       gunWorld(cfg, this._pose, this.muzzle, this.gunDir);

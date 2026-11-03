@@ -25,7 +25,7 @@ function camoOf(t, time) {
 }
 
 function los(T, o, t) {
-   const oy = o.pos.y + o.height + 0.3;
+   const oy = o.pos.y + (o.cfg.eye ?? o.height + 0.3);      // cfg.eye: emplacements (crew standing / on the bridge)
    const fx = -Math.sin(t.yaw), fz = -Math.cos(t.yaw), L = t.halfLen * 0.8;
    for (let i = 0; i < 4; i++) {
       let x = t.pos.x, z = t.pos.z, y = t.pos.y;

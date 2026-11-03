@@ -62,6 +62,35 @@ export class Script {
       if (this.autopilot && this.player) this.order([this.player], { kind: 'advance', x, z });
    }
 
+   /** Lead the player to the remaining members of `tag`, nearest first: the goal sits short of
+    *  the target (its rough position, as a scout report would give it) until the group is dead. */
+   hunt(tag, label, onDone) { this._hunt = { tag, label, onDone, t: -1e9, cur: null }; }
+   _huntTick() {
+      const h = this._hunt, p = this.player; if (!h || !p) return;
+      if (!this.alive(h.tag)) { this._hunt = null; h.onDone?.(this); return; }
+      const g = this.c.markers.find((m) => m.id === 'goal');
+      const near = g && Math.hypot(p.pos.x - g.x, p.pos.z - g.z) < 25;
+      // no headway on this one for 45 s (cliff, wood): try the next and come back later
+      const dCur = h.cur?.alive ? Math.hypot(h.cur.pos.x - p.pos.x, h.cur.pos.z - p.pos.z) : 0;
+      if (h.cur?.alive && dCur < (h.bestD ?? Infinity) - 8) { h.bestD = dCur; h.prog = this.w.time; }
+      if (h.cur?.alive && this.w.time - (h.prog ?? this.w.time) > 45) { (h.skip ??= new Map()).set(h.cur, this.w.time + 90); h.cur = null; }
+      if (h.cur?.alive && !near && this.w.time - h.t < 20) return;
+      let best = null, bd = Infinity;
+      for (const t of this.group(h.tag)) {
+         if (!t.alive) continue;
+         const d = Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z) + ((h.skip?.get(t) ?? 0) > this.w.time ? 5000 : 0);
+         if (d < bd) { bd = d; best = t; }
+      }
+      bd = Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z);
+      if (best !== h.cur) { h.bestD = bd; h.prog = this.w.time; }
+      if (best === h.cur && h.cur?.alive && this.w.time - h.t < 20 && !near) return;
+      // reached the report point and still nothing: close in further (woods, crests block the view)
+      h.off = best === h.cur ? Math.max(6, (h.off ?? 35) - 14) : 35;
+      h.cur = best; h.t = this.w.time;
+      const k = Math.min(1, h.off / Math.max(1, bd));
+      this.goal(best.pos.x + (p.pos.x - best.pos.x) * k, best.pos.z + (p.pos.z - best.pos.z) * k, h.label, 30);
+   }
+
    // ------------------------------------------------------------ units
    /** Spawn a tank or emplacement (cls in TANKS) for team 1|2 at x, z. o: { yaw, name, tag, order } */
    spawn(cls, team, x, z, o = {}) {
@@ -71,6 +100,10 @@ export class Script {
       const f = o.face || (cfgSite(cls) && this.op.start0);
       const yaw = o.yaw ?? (f ? Math.atan2(-(f[0] - x), -(f[1] - z)) : team === 1 ? 0 : Math.PI);
       const cfg = TANKS[cls];
+      if (cfg.site === 'pak' && !o.exact) {
+         [x, z] = this._siteSpot(x, z);
+         for (const ob of [...T.objectsNear(x, z, 12)]) if (ob.kind === 'tree') T.destroyObject(ob, ob.x - x, ob.z - z);   // the crew cleared its field of fire
+      }
       const t = w.addTank(cls, team, { x, z, yaw, name: o.name || cfg.name, isPlayer: !!o.isPlayer });
       t.placeOn?.(T);
       t.tag = o.tag || null;
@@ -81,9 +114,39 @@ export class Script {
       }
       if (o.order) (t._order = o.order);
       if (t.ai && t._order) this.order([t], t._order);
+      if (t.ai) this._tuneAI(t);
       return t;
    }
-   group(tag) { return this.tags.get(tag) || []; }
+   /** A gun crew digs in on high, dry, open ground within 15 m of the planned spot (never in a
+    *  hollow it cannot see out of, in water, a trench, a house or deep in a wood). */
+   _siteSpot(x, z) {
+      const T = this.T; let best = [x, z], bh = -Infinity;
+      for (let i = -3; i <= 3; i++) for (let j = -3; j <= 3; j++) {
+         const px = x + i * 5, pz = z + j * 5, h = T.heightAt(px, pz);
+         if (T.water != null && h < T.water + 0.8) continue;
+         if ((T.trenchDist?.(px, pz) ?? Infinity) < 4 || T.objectsNear(px, pz, 4).length) continue;
+         let trees = 0; for (const ob of T.objectsNear(px, pz, 14)) if (ob.kind === 'tree') trees++;   // field of fire
+         const v = h - Math.hypot(i, j) * 0.15 - trees * 1.2;
+         if (v > bh) { bh = v; best = [px, pz]; }
+      }
+      return best;
+   }
+   /** Field workshop between phases: the player's tank gets `frac` of its HP back, modules and
+    *  crew patched, consumables and some ammunition restocked. */
+   refit(frac = 0.4, text = 'Instandsetzungstrupp ist bei euch: Schäden notdürftig behoben, Munition aufgefüllt.') {
+      const p = this.player; if (!p?.alive) return;
+      p.hp = Math.min(p.maxHP, p.hp + p.maxHP * frac);
+      for (const k in p.modules) { const m = p.modules[k]; m.state = 'ok'; m.hp = m.max; m.repairT = 0; }
+      for (const k in p.crew) { const c = p.crew[k]; c.alive = true; c.hp = 100; c.wounded = false; }
+      for (const k in p.consumables) p.consumables[k].count = Math.max(1, p.consumables[k].count);
+      const load = p.cfg.gun.load || {};
+      for (const k in p.ammoCount) p.ammoCount[k] = Math.max(p.ammoCount[k], Math.ceil((load[k] ?? 0) * 0.6));
+      if (text) this.radio(text, 'info');
+   }
+   _tuneAI(t) {            // emplacement crews aim worse than tank gunners at moving tanks (cfg.aiErr)
+      if (t.ai && t.cfg.aiErr && !t.ai._tuned) { t.ai._tuned = true; t.ai.D = { ...t.ai.D, err: t.ai.D.err * t.cfg.aiErr }; }
+   }
+   group(tag) { return Array.isArray(tag) ? tag.flatMap((g) => this.group(g)) : this.tags.get(tag) || []; }
    alive(tag) { let n = 0; for (const t of this.group(tag)) if (t.alive) n++; return n; }
    dead(tag) { return this.group(tag).length - this.alive(tag); }
    /** order = { kind:'hold'|'advance'|'route'|'ambush', x, z, pts:[[x,z]...], r (ambush trigger) } */
@@ -146,6 +209,7 @@ export class Script {
          }
       }
       this.acc += dt; if (this.acc < TICK) return; this.acc = 0;
+      this._huntTick();
       for (const tr of this.triggers) {
          if (tr.dead) continue;
          if (tr.cond(this)) { if (!tr.repeat) tr.dead = true; tr.fn(this); if (w.phase !== 'playing') return; }
@@ -155,8 +219,10 @@ export class Script {
    }
    _start() {
       this.started = true;
+      // headless autopilot plays like a careful human: good aim at weak spots, fights from cover
+      if (this._pilot && this.player?.ai) { const a = this.player.ai; a.careful = true; a.D = { ...a.D, err: 0.3, react: 0.5, aimWait: 2.5, convK: 1.2, smart: 1, angle: true }; }
       // AIs for everything spawned during setup exist now (World wired them); re-issue orders
-      for (const t of this.w.tanks) if (t.ai && t._order) this.order([t], t._order);
+      for (const t of this.w.tanks) { if (t.ai && t._order) this.order([t], t._order); if (t.ai) this._tuneAI(t); }
       for (const o of this.c.objectives) if (!o.hidden) this.w.emit('objective', { id: o.id, state: 'active', text: o.text });
       this.op.start?.(this);
    }
@@ -169,7 +235,7 @@ export function setupCampaign(world, opts) {
    const cls = opts.playerCls && op.tanks.includes(opts.playerCls) ? opts.playerCls : opts.playerCls === null ? op.tanks[0] : (opts.playerCls || op.tanks[0]);
    const sp = op.start0;
    const p = S.spawn(cls, 1, sp[0], sp[1], { yaw: sp[2] ?? 0, name: opts.playerName || 'Du', isPlayer: opts.playerCls !== null, tag: 'player' });
-   if (opts.playerCls === null) { S.autopilot = true; world.player = p; p.isPlayer = false; }
+   if (opts.playerCls === null) { S.autopilot = true; world.player = p; p.isPlayer = false; S._pilot = true; }
    op.script(S);
    return S;
 }
@@ -208,11 +274,12 @@ export const OPS = {
          S.when((S) => S.w.tanks.some((t) => t.team === 1 && t.alive && t.pos.z < zL - 12), (S) => {
             S.done('gap'); S.radio('Wir sind durch die Höcker. Bunker vor uns – auf die Scharten zielen!');
             S.goal(0, 35, 'Bunkerlinie'); S.order(S.group('allies'), { kind: 'advance', x: 0, z: 40 });
+            S.after(20, (S) => S.hunt(['pak', 'bunker'], 'Feindstellung'));
          });
          S.when((S) => true, (S) => { S.progress('bunker', S.dead('bunker')); S.progress('pak', S.dead('pak')); }, { repeat: true });
          S.when((S) => S.isDone('bunker') && S.isDone('pak'), (S) => {
             if (S.time < 540) S.done('b_time'); else S.fail('b_time');
-            S.show('counter'); S.phase('counter');
+            S.show('counter'); S.phase('counter'); S.refit(0.35);
             S.radio('Achtung! Deutsche Panzer im Anmarsch aus Nordost – Gegenstoß!', 'warn');
             for (const [x, z] of [[160, -420], [200, -440], [-150, -430]]) S.spawn('pz4h', 2, x, z, { tag: 'counter', name: 'Panzer IV', order: { kind: 'advance', x: 0, z: 40 } });
             S.goal(0, 0, 'Stellung halten');
@@ -246,7 +313,7 @@ export const OPS = {
          S.spawn('tiger2', 2, 0, -260, { tag: 'tiger', name: 'Königstiger (s.SS-Pz.Abt. 502)', order: { kind: 'ambush', x: 0, z: -260, r: 260 } });
          for (const [x, z, c] of [[-70, 440, 'is2'], [70, 440, 't34_85'], [140, 450, 't34_85']]) S.spawn(c, 1, x, z, { tag: 'allies', name: c === 'is2' ? 'IS-2' : 'T-34-85', order: { kind: 'advance', x: x * 0.5, z: 200 } });
          S.obj('trench1', 'Erste Grabenlinie überwinden');
-         S.obj('pak', 'PaK-Stellungen zerstören', { need: 6 });
+         S.obj('pak', 'Den Pak-Riegel brechen (5 von 6 Geschützen)', { need: 5 });
          S.obj('hill', 'Die Höhe einnehmen (30 s halten)');
          S.obj('b_tiger', 'Den Königstiger vernichten', { bonus: true, hidden: true });
          S.obj('b_allies', 'Kein eigener Panzer verloren', { bonus: true });
@@ -255,10 +322,11 @@ export const OPS = {
          S.when((S) => S.player && S.player.pos.z < 238, (S) => {
             S.done('trench1'); S.radio('Erster Graben genommen. Pak-Nester am Hang – mit Sprenggranaten ausräuchern!');
             S.goal(0, 80, 'Pak-Riegel'); S.order(S.group('allies'), { kind: 'advance', x: 0, z: 60 });
+            S.hunt('pak', 'PaK-Nest (gemeldet)');
          });
          S.when(() => true, (S) => S.progress('pak', S.dead('pak')), { repeat: true });
          let held = 0;
-         S.when((S) => S.isDone('pak'), (S) => { S.goal(0, -200, 'Höhe', 60); S.radio('Der Weg auf die Höhe ist frei. Nehmt den Kamm!'); S.order(S.group('allies'), { kind: 'advance', x: 0, z: -190 }); });
+         S.when((S) => S.isDone('pak'), (S) => { S._hunt = null; S.goal(0, -200, 'Höhe', 60); S.radio('Der Weg auf die Höhe ist frei. Nehmt den Kamm!'); S.order(S.group('allies'), { kind: 'advance', x: 0, z: -190 }); });
          S.when((S) => S.group('tiger')[0]?.spotted, (S) => { S.show('b_tiger'); S.radio('Königstiger auf dem Kamm! Flanke angreifen!', 'warn'); });
          S.when((S) => S.alive('tiger') === 0, (S) => { S.show('b_tiger'); S.done('b_tiger'); });
          S.when((S) => S.dead('allies') > 0, (S) => S.fail('b_allies'));

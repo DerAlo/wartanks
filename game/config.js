@@ -689,7 +689,7 @@ const SITE_RAW = [
    {  // 7,5 cm PaK 40 with its crew behind a thin shield: an AP hit rarely stops it, HE does
       id: 'pak40', site: 'pak', name: '7,5 cm PaK 40', short: 'PaK 40', nation: 'DE', cls: 'TD', tier: 5,
       hp: 260, mass: 1.5, engine: { hp: 1, fuel: 'diesel' }, vMax: 0, vRev: 0, traverse: 0, ground: [1, 1, 1],
-      view: 320, camo: { still: 0.45, move: 0.3 }, crew: ['commander', 'gunner', 'loader'],
+      view: 320, camo: { still: 0.45, move: 0.3 }, eye: 2.1, aiErr: 1.7, crew: ['commander', 'gunner', 'loader'],   // eye: crew leader standing behind the shield
       hull: { floorY: 0.3, w: 1.9, front: [['shield', 5, 20, 0.9]], roof: [5, 2.6], rear: [['urp', 5, 0, null]], floorT: 5, side: { t: 5 } },
       turret: null,
       mantlet: { w: 1.9, h: 0.9, d: 0.05, t: 5 },
@@ -700,7 +700,7 @@ const SITE_RAW = [
    {  // Torpedoboot (Flottentorpedoboot 1939 class, 10,5 cm guns): thin plating, big hull
       id: 'tboat', site: 'ship', name: 'Torpedoboot', short: 'T-Boot', nation: 'DE', cls: 'TD', tier: 7, draft: 3.2,
       hp: 3200, mass: 1700, engine: { hp: 1, fuel: 'diesel' }, vMax: 0, vRev: 0, traverse: 0, ground: [1, 1, 1],
-      view: 520, camo: { still: 0, move: 0 }, crew: ['commander', 'gunner', 'loader', 'radio'],
+      view: 520, camo: { still: 0, move: 0 }, eye: 14, aiErr: 2.2, crew: ['commander', 'gunner', 'loader', 'radio'],
       hull: { floorY: 0.0, w: 10, front: [['nose', 15, 40, 7.0]], roof: [12, 82], rear: [['urp', 12, 20, null]], floorT: 12, side: { t: 15, slope: 4 } },
       turret: { z: -26, ringR: 1.5, h: 2.2, roofT: 8, oct: [3.6, 1.6, 2.6, 0.5, 0.5], f: [12, 20], cheek: [12, 30], s: [10, 10], rr: [8, 10], r: [8, 0], traverse: 10 },
       mantlet: { w: 0.8, h: 0.6, d: 0.3, t: 12 },
