@@ -39,7 +39,7 @@ export function techTree() {
    return tree;
 }
 // Research tree: a tank with `parent` in config.js is researched from that tank (null = the nation's root);
-// a nation without parents (US, UK) is one line in tier order.
+// a nation without parents (only UK for now) is one line in tier order.
 const lineOf = (id) => techTree()[TANKS[id].nation];
 export const prevOf = (id) => {
    const T = TANKS[id];

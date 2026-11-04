@@ -375,7 +375,7 @@ localStorage (memory fallback).
 
 **Research tree** (branching): a tank's `parent` in config.js names the tank whose XP researches it
 (`null` = the nation's root, tier I); `prevOf(id)`, `nextsOf(id)` (all branches), `tankState().nexts`.
-Nations without `parent` fields (US, UK for now) fall back to one line in tier order. Parents are
+Nations without `parent` fields (UK for now) fall back to one line in tier order. Parents are
 always one tier lower (tests/tree.test.mjs). Elite = every tank in `nextsOf` researched.
 DE: Leichttraktor (I LT) → Pz II C (II LT) → Pz III E (III MT) → { Luchs (IV LT, leaf),
 Pz III J (IV MT) → { Pz IV H (V MT) → VK 36.01 H (VI HT) → { Panther (VII MT), Tiger I (VII HT) →
@@ -384,7 +384,11 @@ Jagdpanther (VII TD) → Ferdinand (VIII TD) → Jagdtiger (IX TD) } }.
 SU: MS-1 (I LT) → T-26 (II LT) → BT-7 (III LT) → T-28 (IV MT) → { T-34/76 (V MT) → { T-34-85 (VI MT)
 → T-44 (VII) → T-44-100 (VIII) → T-54 (IX) → T-62A (X MT), SU-100 (VI TD, leaf) }, KV-1 (V HT) →
 KV-85 (VI) → IS-2 (VII) → IS-3 (VIII) → IS-4 (IX) → IS-7 (X HT) }.
-Look/paint: `look 'maus'` adds the coaxial 7.5 cm barrel, `look 't28'` the two front MG turrets; `paint 'grau'` = early-war Panzergrau
+US: T1 Cunningham (I LT) → M2A4 (II LT) → M3 Stuart (III LT) → M3 Lee (IV MT) → { M4 (V MT) → M4A3E8 (VI)
+→ M26 (VII) → { M46 (VIII) → M47 (IX) → M48A1 (X MT), T32 (VIII HT) → M103 (IX) → T110E5 (X HT) },
+M10 (V TD) → M18 (VI) → M36 (VII) → T25 AT (VIII) → T95 (IX TD) }.
+Look/paint: `look 'maus'` adds the coaxial 7.5 cm barrel, `look 't28'` the two front MG turrets, `look 'lee'`
+the M3 Lee's 37 mm top turret (its real gun is the 75 mm sponson casemate gun, `turret: null`, arc ±15°); `paint 'grau'` = early-war Panzergrau
 (tiers I–III), `paint 'su30'` = 1930s Soviet 4BO green.
 
 **XP model, crew and perks** (WoT, simplified). Each nation is one line (`techTree()` order);

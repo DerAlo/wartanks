@@ -9,7 +9,7 @@ import { matchmake } from '../game/missions.js';
 import { makeRng } from '../game/utils.js';
 import { runBattle } from './sim.mjs';
 
-const FULL = ['DE', 'SU'];                       // nations with a complete I–X tree (US / UK follow later)
+const FULL = ['DE', 'SU', 'US'];                 // nations with a complete I–X tree
 const tree = P.techTree();
 
 test('every tier I–X is filled for the full nations, one root at tier I', () => {
@@ -94,7 +94,7 @@ test('matchmaking keeps tier I and tier X battles within ±1', () => {
 });
 
 test('bot battles at tier I and at tier X end with a result', () => {
-   for (const [player, seed] of [[tree.DE[0], 4], [tree.DE.at(-1), 6], [tree.SU[0], 4], [tree.SU.at(-1), 6]]) {
+   for (const [player, seed] of [[tree.DE[0], 4], [tree.DE.at(-1), 6], [tree.SU[0], 4], [tree.SU.at(-1), 6], [tree.US[0], 4], [tree.US.at(-1), 6]]) {
       const r = runBattle({ map: 'steppe', diff: 1, seed, player });
       assert.ok(r.result, player + ' battle ended');
       assert.ok(['win', 'loss', 'draw'].includes(r.result.outcome));

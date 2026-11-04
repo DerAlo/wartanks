@@ -36,7 +36,7 @@ test('every tank builds closed armour and front shots hit the front', () => {
          const c = part.center, P = part.planes;   // the centre is inside every plane
          assert.ok(P[k] * c[0] + P[k + 1] * c[1] + P[k + 2] * c[2] <= P[k + 3] + 1e-6, cfg.id + ' ' + part.name);
       }
-      const pm = plateMid(cfg, 'ufp'); pm[0] = 0.7;          // beside a casemate gun / mantlet
+      const pm = plateMid(cfg, 'ufp'); pm[0] = cfg.gun.mount === 'hull' && cfg.gun.pivot.x > 0.4 ? -0.7 : 0.7;   // beside a casemate / sponson gun
       const { o, d } = rayAt(pose(), pm, fromFront);
       const h = rayArmor(A, pose(), o, d);
       assert.ok(h.length > 0, cfg.id + ' no hit');

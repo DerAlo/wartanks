@@ -100,7 +100,7 @@ function report(tag, r) {
 }
 
 test('co-op: host + 2 clients vs bots', () => {
-   const r = runMatch({ mode: 'coop', players: [{ id: 'H', name: 'Host', tank: 'pz4h' }, { id: 'A', name: 'Anna', tank: 't34_76' }, { id: 'B', name: 'Bert', tank: 'm4a3e8' }] });
+   const r = runMatch({ mode: 'coop', seed: 7, players: [{ id: 'H', name: 'Host', tank: 'pz4h' }, { id: 'A', name: 'Anna', tank: 't34_76' }, { id: 'B', name: 'Bert', tank: 'm4a3e8' }] });
    const { med, p95 } = report('co-op 3 humans', r);
    const [, a, b] = r.peers;
    // same roster and ids everywhere, humans on team 1

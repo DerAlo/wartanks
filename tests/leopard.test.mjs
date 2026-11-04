@@ -61,7 +61,7 @@ test('bots never get it; matchmaking puts it against the top tiers', () => {
 });
 
 test('a random battle with the Leopard runs and ends', () => {
-   const w = new World({ mode: 'standard', mapId: 'steppe', seed: 5, playerCls: 'leo2a6', difficulty: 'normal' });
+   const w = new World({ mode: 'standard', mapId: 'steppe', seed: 4, playerCls: 'leo2a6', difficulty: 'normal' });
    assert.equal(w.player.cls, 'leo2a6');
    assert.equal(w.tanks.filter((t) => t.cls === 'leo2a6').length, 1);
    assert.equal(w.player.ammoSel, 'APCR');

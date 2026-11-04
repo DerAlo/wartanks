@@ -21,12 +21,20 @@ const CAMO = {
    su30: { base: '#56603a', spots: ['#4c5533', '#5f6a41'], style: 'plain' },
    // Bundeswehr NATO three-tone (cfg.paint 'nato'): bronze green base, leather brown and tar black blotches
    nato: { base: '#3f4630', spots: ['#5a4632', '#1f1f1b'], style: 'nato' },
+   // British deep bronze green, plain (interwar Vickers mediums and the post-war Centurion family; cfg.paint 'ukbg')
+   ukbg: { base: '#3d4530', spots: ['#353c2a', '#465037'], style: 'plain' },
+   // Caunter scheme, Western Desert 1940-41 (cfg.paint 'caunter'): light stone base, angled bands of silver grey and slate
+   caunter: { base: '#c8b88e', spots: ['#8f9590', '#4f5a58'], style: 'caunter' },
 };
 function camoTexture(n) {
    const c = CAMO[n] || CAMO.de, cv = document.createElement('canvas'); cv.width = cv.height = 256;
    const g = cv.getContext('2d'); g.fillStyle = c.base; g.fillRect(0, 0, 256, 256);
    const nato = c.style === 'nato';
-   for (let i = 0; i < (c.style === 'plain' ? 26 : nato ? 16 : 34); i++) {
+   if (c.style === 'caunter') for (let k = 0; k < 4; k++) {   // parallel bands at ~30°, tiling seamlessly
+      g.fillStyle = c.spots[k % 2]; const x0 = k * 64 + 10, w = k % 2 ? 22 : 16;
+      for (const dx of [-256, 0, 256]) { g.beginPath(); g.moveTo(x0 + dx, 0); g.lineTo(x0 + dx + w, 0); g.lineTo(x0 + dx + w + 128, 256); g.lineTo(x0 + dx + 128, 256); g.fill(); }
+   }
+   for (let i = 0; i < (c.style === 'caunter' ? 0 : c.style === 'plain' ? 26 : nato ? 16 : 34); i++) {
       g.fillStyle = c.spots[i % 2]; g.globalAlpha = c.style === 'plain' ? 0.35 : c.style === 'streak' ? 0.62 : nato ? 1 : 0.8;
       const x = hash(i, 1) * 256, y = hash(i, 2) * 256, r = nato ? 22 + hash(i, 3) * 30 : 10 + hash(i, 3) * 26;
       g.beginPath();
@@ -344,6 +352,13 @@ function buildHull(S) {
       const z = front + 0.8, y0 = Math.min(roofYAt(P, z - 0.34), roofYAt(P, z + 0.34)) - 0.02;
       A.cyl(s * H.w * 0.28, y0 + 0.21, z, 0.34, 0.34, 0.42, PAINT, 'y', 12);
       A.cyl(s * H.w * 0.28, y0 + 0.24, z - 0.55, 0.035, 0.035, 0.5, DARK, 'z', 6);
+   }
+   if (S.look === 'lee') {   // M3 Lee: the 37 mm turret sits off-centre left on the roof with the MG cupola on top (the 75 mm is in the sponson)
+      const z = front + (back - front) * 0.4, y = roofYAt(P, z), x = -0.22;
+      A.cyl(x, y + 0.3, z, 0.6, 0.66, 0.6, PAINT, 'y', 14);
+      A.cyl(x, y + 0.72, z + 0.12, 0.3, 0.32, 0.26, PAINT, 'y', 10);
+      A.box(x, y + 0.3, z - 0.66, 0.3, 0.24, 0.16, PAINT);
+      A.cyl(x, y + 0.3, z - 0.74 - 0.95, 0.032, 0.04, 1.9, DARK, 'z', 8);
    }
    if (S.mantlet && S.mantlet.mount === 'hull') { const m = S.mantlet; A.box(m.x, m.y, m.z, m.w, m.h, m.d, PAINT); }
    return A.build();
