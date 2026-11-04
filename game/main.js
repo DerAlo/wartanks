@@ -134,7 +134,7 @@ function restorePoses(world) {
 // ---- right mouse (WoT style): a short click locks the aim onto a spotted enemy (auto-aim; the
 // crosshair sticks to it until the next click or the target is lost), holding it is free look ----
 const RMB_HOLD = 0.25;
-function lockValid(world, p, t) { return t && t.alive && t.team !== p.team && t.spotted !== false && world.tanks.includes(t); }
+function lockValid(world, p, t) { return t && t.alive && t.team !== p.team && t.spotted !== false && t.visible !== false && world.tanks.includes(t); }
 function pickLock(world, p) {
    const a = G.aimTarget?.tank;
    if (lockValid(world, p, a)) return a;
@@ -191,6 +191,7 @@ function aimRay(world, p) {
    G.aimTarget = null;
    for (const t of world.tanks) {
       if (t === p) continue;
+      if (t.alive && t.team !== p.team && (t.spotted === false || t.visible === false)) continue;   // hidden enemies can't be aimed at
       const cx = t.pos.x - tmpO.x, cy = t.pos.y + 1.3 - tmpO.y, cz = t.pos.z - tmpO.z;
       const along = cx * tmpD.x + cy * tmpD.y + cz * tmpD.z;
       if (along < 0 || along > best) continue;
