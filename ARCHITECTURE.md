@@ -394,7 +394,14 @@ Look/paint: `look 'maus'` adds the coaxial 7.5 cm barrel, `look 't28'` the two f
 the M3 Lee's 37 mm top turret (its real gun is the 75 mm sponson casemate gun, `turret: null`, arc ±15°); `paint 'grau'` = early-war Panzergrau
 (tiers I–III), `paint 'su30'` = 1930s Soviet 4BO green, `paint 'ukbg'` = plain British deep bronze green
 (Vickers mediums, Centurion family), `paint 'caunter'` = 1940–41 desert Caunter bands (A10, A13, Matilda, Crusader).
-Gun `evac: f` draws a fume extractor at fraction f of the barrel (20-pdr, L7, L1). FV215b: `turret.z` > 0 = rear turret.
+Gun `evac: f` draws a fume extractor at fraction f of the barrel (20-pdr, L7, L1). FV215b: `turret.z` > 0 = rear turret.
+Fidelity options (generic, `config.js` + `tanks3d.js`): `turret.round: [n, pf, pr]` = cast turret outline (superellipse n-gon,
+front/rear exponents; each edge keeps the plate/t of the oct facing its normal points to, slopes ease between facings);
+`hull.pike: { len, tip }` = plan-view nose taper (IS-3/IS-7): `armor.js` cuts the hull pieces by the two pike planes and
+`tanks3d` draws those clipped loops, so visual = armour; `mantlet.type` 'bell' | 'saukopf' (visual inside the mantlet box);
+gun `brakeT` 'de' | 'su' | 'us' (default by nation); `turret.skirt` (Pz IV turret Schürzen, visual only); `run.hvss` (dual
+wheels, horizontal bogies), `run.gap1` (wider first road-wheel gap, T-54); `hull.spare: { plate, n, cols }` spare track links
+on a profile plate; `hull.drums: n` external fuel drums per side on the rear hull sides.
 
 **XP model, crew and perks** (WoT, simplified). Each nation is one line (`techTree()` order);
 tank XP researches only the next tank of its own line (the predecessor's XP is used first, the rest
