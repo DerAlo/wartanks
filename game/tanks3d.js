@@ -230,7 +230,7 @@ export function shapeOf(cfg = {}) {
    const rz = run.z ?? 0, rl = run.len ?? d.len * 0.9;
    return {
       cfg, nation: NAT[cfg.nation] || 'de', look: cfg.look || null, paint: CAMO[cfg.paint] ? cfg.paint : null, L: d.len, W: d.width, H: d.height,
-      hull: { profile, plateOf: (h.profile || []).map((p) => p.plate), spare: h.spare || null, drums: h.drums || 0, pike: h.pike || null, w: h.w ?? 2.6, lowerW: h.lowerW, sponsonY: h.sponsonY, floorY: h.floorY ?? 0.45, roofY: h.roofY ?? 1.6, slope: (h.sideSlope ?? 0) * DEG, zMin: h.zMin ?? -3, zMax: h.zMax ?? 3 },
+      hull: { profile, plateOf: (h.profile || []).map((p) => p.plate), spare: h.spare || null, drums: h.drums || 0, det: h.det || {}, pike: h.pike || null, w: h.w ?? 2.6, lowerW: h.lowerW, sponsonY: h.sponsonY, floorY: h.floorY ?? 0.45, roofY: h.roofY ?? 1.6, slope: (h.sideSlope ?? 0) * DEG, zMin: h.zMin ?? -3, zMax: h.zMax ?? 3 },
       turret: cfg.turret, mantlet: cfg.mantlet, gun: cfg.gun || { cal: 75, len: 3, pivot: { x: 0, y: 0.3, z: -0.6 }, mount: 'turret' },
       track: { x: run.x ?? d.width / 2 - 0.3, w: run.trackW ?? 0.5, z0: rz - rl / 2, z1: rz + rl / 2, top: run.h ?? 1.0, wheels: run.wheels ?? 6, r: run.wheelR ?? 0.35,
          inter: run.interleave ?? 0, bogies: run.bogies ?? 0, hvss: !!run.hvss, gap1: run.gap1 ?? 0, rollers: run.rollers ?? 0, sprF: run.sprocket !== 'rear', sprR: run.sprocketR ?? 0.3, idlR: run.idlerR ?? 0.28, allround: run.style === 'allround' },
@@ -250,6 +250,8 @@ function hullPiece(A, poly, halfW, y0, slope, col) {
 function roofYAt(profile, z) { let best = -1; for (let i = 0; i < profile.length; i++) { const a = profile[i], b = profile[(i + 1) % profile.length]; if ((a[0] - z) * (b[0] - z) <= 0 && a[0] !== b[0]) { const y = a[1] + (b[1] - a[1]) * (z - a[0]) / (b[0] - a[0]); if (y > best) best = y; } } return best; }
 // rearmost z of the side profile at height y
 function rearZAt(P, y) { let best = -Infinity; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; if ((a[1] - y) * (b[1] - y) <= 0 && a[1] !== b[1]) best = Math.max(best, a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1])); } return Number.isFinite(best) ? best : Math.max(...P.map((p) => p[0])); }
+// foremost z of the side profile at height y
+function frontZAt(P, y) { let best = Infinity; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; if ((a[1] - y) * (b[1] - y) <= 0 && a[1] !== b[1]) best = Math.min(best, a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1])); } return Number.isFinite(best) ? best : Math.min(...P.map((p) => p[0])); }
 // half-width of the hull's side wall at height y (mirrors hullPiece's slope)
 function roofHalfW(H, y) { const y0 = H.sponsonY != null && H.lowerW ? H.sponsonY : H.floorY; return Math.max(0.2, H.w / 2 - Math.max(0, y - y0) * Math.tan(H.slope || 0)); }
 // a flat roof stretch of length len near z (tries shifting along the hull); null if there is none
@@ -341,11 +343,18 @@ function buildHull(S) {
          A.box(x, wy0, z, T.w * 0.2, r * 0.9, z1 - z0 + r * 0.6, STEEL);
          A.cyl(x, wy0 + r * 0.75, z, 0.07, 0.07, (z1 - z0) * 0.8, STEEL, 'z', 8);
       }
+      else if (T.bogies && S.nation === 'us') for (let k = 0; k < T.bogies; k++) {   // VVSS (Sherman, Stuart, Lee): bracket over the wheel pair, return roller on a post at its rear top
+         const per = zs.length / T.bogies, z0 = zs[k * per], z1 = zs[k * per + per - 1], z = (z0 + z1) / 2, top = rollerY(T) - 0.1;
+         A.box(x, (wy0 + r * 0.45 + top) / 2, z, T.w * 0.5, top - wy0 - r * 0.45, z1 - z0 + r * 0.5, STEEL);
+         for (const d of [-1, 1]) A.box(x - s * T.w * 0.12, wy0 + r * 0.25, z + d * (z1 - z0) * 0.3, T.w * 0.2, 0.09, (z1 - z0) * 0.62, STEEL, -d * 0.5);   // wheel arms
+         A.box(x, (top + rollerY(T)) / 2, z + r * 0.55, 0.1, rollerY(T) - top + 0.02, 0.1, STEEL);
+      }
       else if (T.bogies) for (let k = 0; k < T.bogies; k++) { const per = zs.length / T.bogies, z = (zs[k * per] + zs[k * per + per - 1]) / 2; A.box(x - s * T.w * 0.35, wy0 + 0.23, z, 0.2, 0.45, r * 2.2, STEEL); }
       A.cyl(x, sy, sz, T.sprR, T.sprR, T.w * 0.75, STEEL, 'x', 12);
       for (let k = 0; k < 8; k++) A.box(x, sy + Math.cos(k * 0.785) * T.sprR, sz + Math.sin(k * 0.785) * T.sprR, T.w * 0.5, 0.07, 0.07, STEEL, k * 0.785);
       A.cyl(x, iy, iz, T.idlR, T.idlR, T.w * 0.6, DARK, 'x', 12);
-      for (let k = 0; k < T.rollers; k++) A.cyl(x, rollerY(T), T.z0 + (k + 1) * tl / (T.rollers + 1), 0.09, 0.09, T.w * 0.4, STEEL, 'x', 8);
+      const vvss = T.bogies && !T.hvss && S.nation === 'us' && T.rollers === T.bogies, per = zs.length / (T.bogies || 1);
+      for (let k = 0; k < T.rollers; k++) A.cyl(x, rollerY(T), vvss ? (zs[k * per] + zs[k * per + per - 1]) / 2 + r * 0.55 : T.z0 + (k + 1) * tl / (T.rollers + 1), 0.09, 0.09, T.w * 0.4, STEEL, 'x', 8);
    }
    if (leo) {
       // driver's hatch front right with three periscopes, low engine deck with grilles, rear exhaust grilles
@@ -390,7 +399,8 @@ function buildHull(S) {
          for (let c = 0; c < cols; c++) {
             const x = (c - (cols - 1) / 2) * (lw + 0.12) + (H.spare.x ?? 0);
             if (Math.abs(x) + lw / 2 > planHalfW(H, Math.min(z0, z1)) - 0.08) continue;
-            for (let k = 0; k < n; k++) { const u = (k + 0.5) / n * 0.92 + 0.04; A.box(x, y0 + dy * u + ny * 0.025, z0 + dz * u + nz * 0.025, lw, 0.045, L * 0.92 / n - 0.012, DARK, rx); }
+            const span = H.det.hoods && H.spare.plate === 'ufp' ? 0.6 : 0.92;   // driver hoods take the top of the glacis
+            for (let k = 0; k < n; k++) { const u = (k + 0.5) / n * span + 0.04; A.box(x, y0 + dy * u + ny * 0.025, z0 + dz * u + nz * 0.025, lw, 0.045, L * span / n - 0.012, DARK, rx); }
          }
       }
    }
@@ -399,8 +409,68 @@ function buildHull(S) {
       A.cyl(s * x, cy, z, r, r, 0.68, DARK, 'z', 10);
       A.box(s * (x - r * 0.6), cy, z, r * 1.3, 0.04, 0.05, BLACK);   // strap
    }
+   hullDetails(A, S, front, back);
    if (S.mantlet && S.mantlet.mount === 'hull') mantletGeo(A, S.mantlet, PAINT);
    return A.build();
+}
+// a point u (0 bottom .. 1 top) on hull plate id, lifted off it by `off` along the outward normal, and the plate's tilt
+function onPlate(H, id, u, off = 0) {
+   const P = H.profile, i = H.plateOf.indexOf(id); if (i < 0) return null;
+   let [z0, y0] = P[i], [z1, y1] = P[(i + 1) % P.length]; if (y1 < y0) [z0, y0, z1, y1] = [z1, y1, z0, y0];
+   const dz = z1 - z0, dy = y1 - y0, L = Math.hypot(dz, dy); let nz = dy / L, ny = -dz / L; if (nz * (z0 - (H.zMin + H.zMax) / 2) < 0) { nz = -nz; ny = -ny; }
+   return { z: z0 + dz * u + nz * off, y: y0 + dy * u + ny * off, rx: Math.atan2(-dy, dz), L, nz, ny };
+}
+// hull.det (visual only, config.js): nose 'cast' | 3 (Sherman rounded differential housing, 3 = bolted three-piece),
+// hoods (Sherman driver / co-driver hoods on the glacis), feifel (Tiger I air filters on the rear plate),
+// horns (Tiger I: side plates running forward past the front plate, m) + front mudguards, doors (Churchill
+// pannier side plate with mud chutes and escape door), boxes n (stowage boxes per side on the roof edge)
+function hullDetails(A, S, front, back) {
+   const H = S.hull, T = S.track, P = H.profile, D = H.det, wy0 = T.r + beltT(T);
+   if (D.nose) {
+      const i = H.plateOf.indexOf('nose'), r = 0.33, w = 2 * (T.x - T.w * 0.38);
+      if (i >= 0) {
+         const cz = P[i][0] + r * 0.95, cy = Math.max(P[i][1], H.floorY + r);
+         A.cyl(0, cy, cz, r, r, w, PAINT, 'x', 16);
+         if (D.nose === 3) for (const x of [-w / 6, w / 6]) A.cyl(x, cy, cz, r + 0.025, r + 0.025, 0.07, PAINT, 'x', 16);   // bolted flanges
+         for (const s of [-1, 1]) A.cyl(s * w / 2, cy, cz, r * 0.5, r * 0.62, 0.1, STEEL, 'x', 10);                      // final drive covers
+      }
+   }
+   if (D.hoods) for (const s of [-1, 1]) {
+      const q = onPlate(H, 'ufp', 0.8, 0.07); if (!q) break;
+      const x = s * H.w * 0.19;
+      A.box(x, q.y, q.z, 0.62, 0.2, 0.62, PAINT, q.rx);
+      A.box(x, q.y + q.ny * 0.11, q.z + q.nz * 0.11, 0.16, 0.06, 0.1, BLACK, q.rx);                                   // periscope
+      const g = onPlate(H, 'ufp', 0.97, 0.06); A.box(s * H.w * 0.4, g.y, g.z, 0.16, 0.12, 0.08, DARK, g.rx);            // headlight guard
+   }
+   if (D.feifel) for (const s of [-1, 1]) {
+      const ey = H.roofY - 0.3, zr = rearZAt(P, ey), x = s * Math.min(H.w * 0.38, roofHalfW(H, ey) - 0.25);
+      A.cyl(x, ey, zr + 0.17, 0.21, 0.21, 0.34, DARK, 'z', 12);
+      A.cyl(x, ey, zr + 0.35, 0.16, 0.2, 0.04, BLACK, 'z', 12);
+      A.box(x - s * 0.24, ey + 0.08, zr + 0.06, 0.28, 0.09, 0.09, DARK);                                                  // pipe to the engine bay
+   }
+   if (D.horns) {
+      const yb = H.sponsonY ?? T.top, zf = frontZAt(P, yb + 0.05), L = D.horns, yt = roofYAt(P, zf + 0.2) - 0.02;
+      for (const s of [-1, 1]) {
+         A.box(s * (H.w / 2 - 0.05), (yb + yt) / 2, zf - L / 2 + 0.06, 0.1, yt - yb, L + 0.12, PAINT);
+         const g0 = T.z0 - 0.08, g1 = zf - L + 0.02;
+         if (g1 - g0 > 0.08) A.box(s * T.x, T.top + 0.025, (g0 + g1) / 2, T.w + 0.06, 0.03, g1 - g0, PAINT);            // front mudguard
+      }
+   }
+   if (D.doors) for (const s of [-1, 1]) {
+      const { sz, iz } = sprocketIdler(T), za = Math.min(sz, iz) + 0.25, zb = Math.max(sz, iz) - 0.25, yb = wy0 + T.r + 0.04, yt = T.top - beltT(T) - 0.03;
+      const x = s * (T.x + T.w / 2 + 0.02);
+      A.box(x, (yb + yt) / 2, (za + zb) / 2, 0.04, yt - yb, zb - za, PAINT);                                            // pannier side
+      for (let k = 0; k < 7; k++) A.box(x + s * 0.005, yb + 0.12, za + (zb - za) * (k + 0.5) / 7, 0.04, 0.12, 0.22, BLACK);   // mud chutes
+      const dz = (za + zb) / 2 - 0.35, dy = (yb + yt) / 2 + 0.06;
+      A.box(x + s * 0.01, dy, dz, 0.03, 0.6, 0.62, BLACK);
+      A.box(x + s * 0.03, dy, dz, 0.03, 0.54, 0.56, PAINT);                                                              // escape door
+      A.box(x + s * 0.05, dy, dz + 0.2, 0.03, 0.06, 0.08, DARK);
+   }
+   if (D.boxes) for (const s of [-1, 1]) for (let k = 0; k < D.boxes; k++) {
+      const at = flatRoof(P, H, back - 0.7 - k * 0.95, 0.8); if (!at) continue;
+      A.box(s * (roofHalfW(H, at.y) - 0.22), at.y + 0.17, at.z, 0.36, 0.34, 0.8, PAINT);
+      A.box(s * (roofHalfW(H, at.y) - 0.22), at.y + 0.35, at.z, 0.38, 0.03, 0.82, DARK);
+   }
 }
 // mantlet shapes (visual, inside/at the armour box): 'box' (default, rolled plate), 'bell' (cast rounded
 // front: Panther A, T-34-85, IS), 'saukopf' (conical 'pig's head': Tiger II, Jagdpanther)
@@ -431,8 +501,24 @@ function buildTurret(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
       A.cyl(-cx * 0.9, T.h + 0.03, cz - 0.1, 0.26, 0.26, 0.06, PAINT, 'y', 10);
    }
    const bBack = Math.max(...base.map((p) => p[1]));
-   if (S.nation === 'de') A.box(0, T.h * 0.5, bBack + 0.18, Math.min(1.3, xMax * 1.3), T.h * 0.6, 0.36, PAINT);
-   else if (S.nation === 'us' || S.nation === 'uk') A.box(0, T.h * 0.55, bBack + 0.1, xMax * 0.9, T.h * 0.35, 0.2, DARK);
+   const TD = T.det || {};
+   if (TD.bustle) {   // turret bustle (Panther, Tiger II): the upper rear overhangs the turret's rear face
+      const [len, frac] = TD.bustle, yb = T.h * (1 - frac), zAt = (y) => bBack + (zBack - bBack) * y / T.h;
+      const hw = Math.max(...top.filter((p) => p[1] > zBack - 0.08).map((p) => Math.abs(p[0]))) - 0.02;
+      hullPiece(A, [[zAt(yb) - 0.03, yb], [zBack - 0.03, T.h], [zBack + len, T.h - 0.02], [zBack + len - 0.06, yb + 0.12]], hw, 0, 0, PAINT);
+   }
+   if (TD.bins) {   // Centurion: stowage bins along the turret sides and a rear basket
+      const sl = Math.tan(((T.faces.find((f) => f.id === 'tsl') || {}).slope || 0) * DEG), y = T.h * 0.45, hb = T.h * 0.62;
+      const hwAt = (z) => { let w = 0; for (let i = 0; i < n; i++) { const a = base[i], b = base[(i + 1) % n]; if ((a[1] - z) * (b[1] - z) <= 0 && a[1] !== b[1]) w = Math.max(w, Math.abs(a[0] + (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]))); } return w - y * sl; };
+      for (const s of [-1, 1]) for (const [za, zb] of [[-0.15, 0.55], [0.6, bBack - 0.2]]) {
+         const wa = hwAt(za), wb = hwAt(zb), ry = Math.atan2(wb - wa, zb - za);
+         A.box(s * ((wa + wb) / 2 + 0.16), y, (za + zb) / 2, 0.3, hb, Math.hypot(zb - za, wa - wb) - 0.04, PAINT, 0, s * ry);
+         A.box(s * ((wa + wb) / 2 + 0.16), y + hb / 2 + 0.01, (za + zb) / 2, 0.32, 0.025, Math.hypot(zb - za, wa - wb) - 0.02, DARK, 0, s * ry);
+      }
+      A.box(0, T.h * 0.5, bBack + 0.17, Math.min(1.7, hwAt(bBack - 0.3) * 1.5), T.h * 0.55, 0.34, PAINT);
+   }
+   if (S.nation === 'de' && TD.bin !== false && !TD.bustle) A.box(0, T.h * 0.5, bBack + 0.18, Math.min(1.3, xMax * 1.3), T.h * 0.6, 0.36, PAINT);
+   else if (!TD.bins && (S.nation === 'us' || S.nation === 'uk')) A.box(0, T.h * 0.55, bBack + 0.1, xMax * 0.9, T.h * 0.35, 0.2, DARK);
    A.box(xMax * 0.3, T.h + 0.1, zFront + 0.35, 0.12, 0.18, 0.12, DARK);
    if (T.skirt) {   // turret Schürzen (Pz IV H): spaced plates around the sides and rear on brackets
       const zb = Math.max(...base.map((p) => p[1])), hw = Math.max(...base.map((p) => p[0])) + 0.22, zf = zFront + 0.45, hh = T.h * 0.95;
@@ -591,6 +677,7 @@ function buildDecals(S, onTurret) {
       for (const s of [-1, 1]) { const xb = Math.max(...T.base.map((p) => p[0])), xt = Math.max(...T.top.map((p) => p[0])); quad(s * ((xb + xt) / 2 + 0.012), T.h * 0.5, 0.15, Math.min(0.5, T.h * 0.62), s); }
    } else if (!onTurret) {
       if (S.nation === 'us') quad(0, roofYAt(H.profile, H.zMax * 0.5) + 0.012, H.zMax * 0.5, 0.85, 0);
+      else if (H.det.doors) for (const s of [-1, 1]) { const T = S.track; quad(s * (T.x + T.w / 2 + 0.052), (T.r + beltT(T) + T.r + T.top) / 2, H.zMax * 0.4, 0.5, s); }   // on the pannier
       else for (const s of [-1, 1]) { const y0 = H.sponsonY ?? H.floorY, y = (y0 + H.roofY) / 2 + 0.1, hw = H.w / 2 - Math.max(0, y - y0) * Math.tan(H.slope); quad(s * (hw + 0.012), y, H.zMax * 0.35, Math.min(0.5, (H.roofY - y) * 1.4), s); }
    }
    const g = new THREE.BufferGeometry();
