@@ -230,7 +230,7 @@ export function shapeOf(cfg = {}) {
    const rz = run.z ?? 0, rl = run.len ?? d.len * 0.9;
    return {
       cfg, nation: NAT[cfg.nation] || 'de', look: cfg.look || null, paint: CAMO[cfg.paint] ? cfg.paint : null, L: d.len, W: d.width, H: d.height,
-      hull: { profile, pike: h.pike || null, w: h.w ?? 2.6, lowerW: h.lowerW, sponsonY: h.sponsonY, floorY: h.floorY ?? 0.45, roofY: h.roofY ?? 1.6, slope: (h.sideSlope ?? 0) * DEG, zMin: h.zMin ?? -3, zMax: h.zMax ?? 3 },
+      hull: { profile, plateOf: (h.profile || []).map((p) => p.plate), spare: h.spare || null, drums: h.drums || 0, pike: h.pike || null, w: h.w ?? 2.6, lowerW: h.lowerW, sponsonY: h.sponsonY, floorY: h.floorY ?? 0.45, roofY: h.roofY ?? 1.6, slope: (h.sideSlope ?? 0) * DEG, zMin: h.zMin ?? -3, zMax: h.zMax ?? 3 },
       turret: cfg.turret, mantlet: cfg.mantlet, gun: cfg.gun || { cal: 75, len: 3, pivot: { x: 0, y: 0.3, z: -0.6 }, mount: 'turret' },
       track: { x: run.x ?? d.width / 2 - 0.3, w: run.trackW ?? 0.5, z0: rz - rl / 2, z1: rz + rl / 2, top: run.h ?? 1.0, wheels: run.wheels ?? 6, r: run.wheelR ?? 0.35,
          inter: run.interleave ?? 0, bogies: run.bogies ?? 0, hvss: !!run.hvss, gap1: run.gap1 ?? 0, rollers: run.rollers ?? 0, sprF: run.sprocket !== 'rear', sprR: run.sprocketR ?? 0.3, idlR: run.idlerR ?? 0.28, allround: run.style === 'allround' },
@@ -380,6 +380,24 @@ function buildHull(S) {
       A.cyl(x, y + 0.72, z + 0.12, 0.3, 0.32, 0.26, PAINT, 'y', 10);
       A.box(x, y + 0.3, z - 0.66, 0.3, 0.24, 0.16, PAINT);
       A.cyl(x, y + 0.3, z - 0.74 - 0.95, 0.032, 0.04, 1.9, DARK, 'z', 8);
+   }
+   if (H.spare) {   // spare track links on a front plate (Pz IV nose, Sherman glacis): rows lying flat on that plate
+      const i = H.plateOf.indexOf(H.spare.plate);
+      if (i >= 0) {
+         const [z0, y0] = P[i], [z1, y1] = P[(i + 1) % P.length], dz = z1 - z0, dy = y1 - y0, L = Math.hypot(dz, dy);
+         let nz = dy / L, ny = -dz / L; if (nz > 0) { nz = -nz; ny = -ny; }        // outward (forward) normal of the plate
+         const n = H.spare.n ?? Math.max(2, Math.floor(L / 0.17)), cols = H.spare.cols ?? 2, lw = Math.min(0.5, T.w * 0.85), rx = Math.atan2(-dy, dz);
+         for (let c = 0; c < cols; c++) {
+            const x = (c - (cols - 1) / 2) * (lw + 0.12) + (H.spare.x ?? 0);
+            if (Math.abs(x) + lw / 2 > planHalfW(H, Math.min(z0, z1)) - 0.08) continue;
+            for (let k = 0; k < n; k++) { const u = (k + 0.5) / n * 0.92 + 0.04; A.box(x, y0 + dy * u + ny * 0.025, z0 + dz * u + nz * 0.025, lw, 0.045, L * 0.92 / n - 0.012, DARK, rx); }
+         }
+      }
+   }
+   if (H.drums) for (const s of [-1, 1]) for (let k = 0; k < H.drums; k++) {   // external fuel drums on the rear hull sides (T-34, IS-3)
+      const r = 0.19, cy = (H.sponsonY ?? H.floorY) + r + 0.05, z = Math.min(back, rearZAt(P, cy)) - 0.4 - k * 0.8, x = roofHalfW(H, cy) + r / Math.cos(H.slope || 0);
+      A.cyl(s * x, cy, z, r, r, 0.68, DARK, 'z', 10);
+      A.box(s * (x - r * 0.6), cy, z, r * 1.3, 0.04, 0.05, BLACK);   // strap
    }
    if (S.mantlet && S.mantlet.mount === 'hull') mantletGeo(A, S.mantlet, PAINT);
    return A.build();
