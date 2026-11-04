@@ -409,7 +409,7 @@ export const OPS = {
          this.start = (S) => S.radio('Alle Einheiten: Vorwärts über den Graben! Die Artillerie hält den Höhenrand nieder.');
          S.when((S) => S.player && S.player.pos.z < 238, (S) => {
             S.done('trench1'); S.radio('Erster Graben genommen. Pak-Nester am Hang – mit Sprenggranaten ausräuchern!');
-            S.goal(0, 80, 'Pak-Riegel'); S.order(S.group('allies'), { kind: 'advance', x: 0, z: 60 });
+            S.goal(0, 80, 'Pak-Riegel'); S.order(S.group('allies'), { kind: 'advance', x: 0, z: 110 });
             S.hunt('pak', 'PaK-Nest (gemeldet)');
          });
          S.when(() => true, (S) => S.progress('pak', S.dead('pak')), { repeat: true });
@@ -778,5 +778,144 @@ export const OPS = {
          });
       },
    },
+   totalize: {
+      id: 'totalize', name: 'Mondlicht über Caen', place: 'Straße Caen–Falaise bei Saint-Aignan', date: '7./8. August 1944', nation: 'UK',
+      map: 'dorf', seed: 7844, tanks: ['cromwell', 'churchill7'], start0: [0, 430, 0], fog: 0.7,
+      brief: [
+         'Operation Totalize. Zum ersten Mal greifen alliierte Panzer bei Nacht an: Scheinwerfer werfen „künstliches Mondlicht“ gegen die Wolken, Leuchtspur der Bofors zeigt die Richtung.',
+         'Eure Kolonne fährt im Dunkeln dicht aufgeschlossen auf das Dorf zu. Haltet Anschluss und räumt mit der Infanterie die Pak-Stellungen im Ort.',
+         'Bei Tagesanbruch muss das Dorf gehalten sein. Der Gegner hat schwere Reserven. Wo sie stehen, weiß niemand.',
+      ],
+      goals: ['Der Kolonne zum Dorf folgen', 'Pak-Stellungen im Dorf ausschalten', 'Das Dorf halten'],
+      tip: 'Nachts sieht man kaum 100 m weit. Hinter der Kolonne bleiben. Bei Tag nie frontal gegen schwere Panzer kämpfen.',
+      script(S) {
+         S.fog(0.7, 0x1b2330);                                      // night: dark blue-grey, little sight
+         const col = [['cromwell', -14, 300], ['churchill7', 14, 330], ['cromwell', -14, 360]];
+         for (const [c, x, z] of col) S.spawn(c, 1, x, z, { tag: 'col', name: TANKS[c].short || TANKS[c].name, order: { kind: 'route', pin: true, pts: [[x, 200], [x * 2, 150]] } });
+         // the defenders of the village: PaK nests and dug-in Panzer IV, half asleep, blind in the dark
+         for (const [x, z] of [[-60, 70], [55, 95], [-20, -40]]) S.spawn('pak40', 2, x, z, { tag: 'vil', aiErr: 2.4, viewMul: 0.5, order: { kind: 'hold', x, z } });
+         for (const [x, z] of [[-90, -10], [40, 30]]) S.spawn('pz4h', 2, x, z, { tag: 'vil', name: 'Panzer IV', aiErr: 2, viewMul: 0.5, order: { kind: 'ambush', x, z, r: 110 } });
+         S.obj('follow', 'Der Kolonne zum Dorfrand folgen');
+         S.obj('vil', 'Pak-Stellungen und Panzer im Dorf ausschalten', { need: 5 });
+         S.obj('tiger', 'Den Gegenangriff abwehren', { hidden: true, need: 3 });
+         S.obj('b_col', 'Kein Panzer der Kolonne verloren', { bonus: true });
+         S.obj('b_ace', 'Einen Tiger selbst vernichten', { bonus: true, hidden: true });
+         S.phase('night'); S.goal(0, 200, 'Bereitstellung Dorfrand', 30);
+         this.start = (S) => {
+            S.radio('Hier Kolonnenführer: Aufschließen, Abstand fünf Meter. Haltet euch an die Leuchtspur der Bofors – sie zeigt genau auf das Dorf.');
+            S.after(10, (S) => S.radio('Die Scheinwerfer gehen an. Wer stehen bleibt, verliert die Kolonne.'));
+         };
+         S.zone(0, 200, 60, (S) => {
+            S.done('follow'); S.phase('village'); S.radio('Dorfrand erreicht. Infanterie sitzt ab. Pak im Ort! Mit Sprenggranaten ausräuchern, wir decken euch.');
+            S.order(S.group('col').filter((t) => t.alive), { kind: 'advance', x: 0, z: 110 });
+            S.hunt('vil', 'Stellung (Mündungsfeuer)');
+         });
+         S.when((S) => S.c.phase === 'night' && S.time > 150, (S) => { S.done('follow'); S.phase('village'); S.hunt('vil', 'Stellung (Mündungsfeuer)'); S.order(S.group('col').filter((t) => t.alive), { kind: 'advance', x: 0, z: 110 }); });   // lost in the dark: the hunt starts anyway
+         S.when(() => true, (S) => S.progress('vil', S.dead('vil')), { repeat: true });
+         S.when((S) => S.dead('col') > 0, (S) => S.fail('b_col'));
+         // the twist: dawn shows the village held, and a group of Tigers coming down the road to retake it
+         let k0 = 0;
+         S.when((S) => S.isDone('vil'), (S) => {
+            S._hunt = null; S.phase('dawn'); S.timer(null);
+            S.refit(0.35, 'Dorf genommen! Der Munitionsträger ist durch. Auffüllen, gleich wird es hell.');
+            S.fadeFog(0.3, 50, (S) => S.fog(0.3, 0xb8c0c6));                 // dawn mist over the fields
+            const [hx, hz] = S.hullDown(95, -95, 30, 0, -400);
+            S.mark('orch', hx, hz, 'Obstgarten (Flanke)', 'area', 25); S.goal(hx, hz, 'Obstgarten – Flankenstellung', 18);
+            S.order(S.group('col').filter((t) => t.alive), { kind: 'ambush', x: -130, z: -60, r: 200 });
+            for (const x of [-170, -100]) S.spawn('m4a3e8', 1, x, 160, { tag: 'pol', name: 'Sherman (1. Poln. Pz.-Div.)', order: { kind: 'route', pts: [[x, -40]] } });
+            S.after(20, (S) => S.radio('Polnische Shermans schließen links auf. Sie halten die Westseite der Straße.'));
+            S.after(40, (S) => {
+               S.radio('Hier Beobachter: Schwere Panzer auf der Straße von Falaise her, Tiger und Panzer IV! Sie wollen das Dorf zurück.', 'warn');
+               S.after(5, (S) => S.radio('Nicht frontal! Lasst sie an euch vorbei auf das Dorf zufahren und schießt in die Seite.'));
+               S.show('tiger'); S.show('b_ace'); S.phase('tigers'); S._t0 = S.time; k0 = S.player?.stats.kills || 0;
+               for (const [c, dx, dt] of [['tiger1', -8, 0], ['pz4h', 8, 16], ['tiger1', -8, 32]]) S.after(dt, (S) => S.spawn(c, 2, dx, -470, { yaw: Math.PI, tag: 'tiger', name: c === 'pz4h' ? 'Panzer IV' : 'Tiger', aiErr: 2.4, viewMul: 0.55,
+                  order: { kind: 'route', pin: true, pts: [[dx, -250], [dx, -110], [dx * 3, -20]] } }));
+               // stay in the orchard until they are level with it (their sides show), then go after them
+               S.when((S) => S.time > S._t0 + 90 || (S.alive('tiger') > 0 && S.group('tiger').every((t) => !t.alive || t.pos.z > -110)), (S) => S.hunt('tiger', 'Tiger (Flanke)'));
+            });
+         });
+         S.when((S) => S.c.phase === 'tigers', (S) => {
+            S.progress('tiger', S.dead('tiger'));
+            if ((S.player?.stats.kills || 0) > k0 && S.get('b_ace').state === 'active') S.done('b_ace');   // only Tigers are left to kill now
+         }, { repeat: true });
+         S.when((S) => S.c.phase === 'tigers' && S.isDone('tiger'), (S) => {
+            if (S.dead('col') === 0) S.done('b_col');
+            if (S.get('b_ace').state === 'active') S.fail('b_ace');
+            S.radio('Der Gegenangriff ist zerschlagen. Das Dorf ist unser – um einen Preis, den man bei Tag erst sieht.');
+            S.win('Dorf gehalten');
+         });
+         // a Tiger in the village square for 45 s (in all) retakes it
+         let lost = 0;
+         S.when((S) => S.c.phase === 'tigers' && S.group('tiger').some((t) => t.alive && t.cls === 'tiger1' && Math.hypot(t.pos.x, t.pos.z) < 55), (S) => {
+            lost += 0.25; S.timer('Dorf fällt', Math.max(0, 45 - lost)); if (lost >= 45) S.lose('Das Dorf ist verloren');
+         }, { repeat: true });
+      },
+   },
+   koeder: {
+      id: 'koeder', name: 'Der Köder', place: 'Waldgebiet bei Brody, Westukraine', date: '15. Juli 1944', nation: 'SU',
+      map: 'waldhuegel', seed: 7144, tanks: ['t34_85', 'su100'], start0: [-40, 420, 0],
+      brief: [
+         'Juli 1944, Lwiw-Sandomierz-Operation. Die Aufklärung meldet eine deutsche Versorgungskolonne auf der Waldstraße, nur schwach geschützt.',
+         'Euer Zug soll sie aus dem Hinterhalt am Waldrand vernichten und dann sofort zurück in den Wald. Ein leichter Auftrag, sagt der Stab.',
+         'Der Zugführer fragt sich, warum eine Kolonne bei Tag über offenes Gelände fährt.',
+      ],
+      goals: ['Hinterhalt an der Waldstraße beziehen', 'Die Kolonne vernichten', 'Zurück zum Sammelpunkt'],
+      tip: 'Aus dem Busch schießen, dann die Stellung wechseln. Wird es eng: nicht kämpfen, fahren.',
+      script(S) {
+         const amb = S.hullDown(-120, 70, 35, -120, -40), rally = [40, 330];
+         S.spawn('t34_85', 1, 10, 430, { tag: 'mate', name: 'T-34-85 (Lt. Orlowa)' });
+         S.obj('pos', 'Hinterhalt am Waldrand beziehen');
+         S.obj('col', 'Die Kolonne zerschlagen', { need: 2 });
+         S.obj('out', 'Ausbruch: zum Sammelpunkt im Wald', { hidden: true });
+         S.obj('b_mate', 'Lt. Orlowa kommt durch', { bonus: true });
+         S.obj('b_panther', 'Einen Panther vernichten', { bonus: true, hidden: true });
+         S.phase('move'); S.mark('amb', amb[0], amb[1], 'Hinterhalt', 'area', 25); S.goal(amb[0], amb[1], 'Hinterhalt', 18);
+         this.start = (S) => S.radio('Zug, hier Kompanie: Die Kolonne ist in zehn Minuten an euch. Stellung am Waldrand, Feuer erst auf mein Kommando.');
+         S.every(10, (S) => { if (S.c.phase !== 'out' && S.player) S.order(S.group('mate').filter((t) => t.alive), { kind: 'ambush', x: S.player.pos.x + 40, z: S.player.pos.z + 15, r: 250 }); });
+         const go = (S) => {
+            if (S.c.phase !== 'move') return;
+            S.done('pos'); S.phase('wait'); S.radio('In Stellung. Motorengeräusche von Westen. Wartet, bis sie auf der Straße sind.');
+            // the bait: three Panzer IV, slow along the road, not looking about much
+            for (let i = 0; i < 3; i++) S.after(10 + i * 7, (S) => S.spawn('pz4h', 2, -480, -96, { yaw: Math.PI / 2, tag: 'col', name: 'Panzer IV (Kolonne)', aiErr: 1.6, viewMul: 0.5,
+               order: { kind: 'route', pin: true, pts: [[-200, -40], [0, 0], [200, 40], [480, 96]] } }));
+         };
+         S.zone(amb[0], amb[1], 30, go);
+         S.when((S) => S.time > 120, go);
+         // "Feuer!" when the head of the column is in the killing zone below the ambush
+         S.when((S) => S.c.phase === 'wait' && S.group('col').some((t) => t.alive && t.pos.x > amb[0] - 120), (S) => {
+            S.phase('fire'); S.radio('Feuer frei!'); S.goal(amb[0], amb[1], 'Hinterhalt – Feuer auf die Kolonne', 18);
+            if (S.autopilot && S.player) S.order([S.player], { kind: 'ambush', x: amb[0], z: amb[1], r: 320 });   // fire from the ambush, do not charge
+         });
+         S.when(() => true, (S) => S.progress('col', S.dead('col')), { repeat: true });
+         S.when((S) => S.dead('mate') > 0, (S) => S.fail('b_mate'));
+         // the twist: the column was the bait. Panthers from the east, a Tiger from the west close the road.
+         S.when((S) => (S.c.phase === 'fire' && S.dead('col') >= 2) || (S.c.phase === 'fire' && S.time > 330), (S) => {
+            S.phase('trap'); S.radio('Kompanie an Zug: Panther auf der Straße von Osten, ein Tiger von Westen! Das war ein Köder – die warten seit Tagen auf uns!', 'warn');
+            S.show('b_panther');
+            // the rest of the "column" breaks off at full speed: it was only there to draw the ambush out
+            S.order(S.group('col').filter((t) => t.alive), { kind: 'route', pin: true, pts: [[200, 40], [480, 96]] });
+            S.after(4, (S) => S.radio('Die Kolonne dreht ab und gibt Gas. Sie sollte uns nur herauslocken.'));
+            for (const [dt, x] of [[0, 480], [8, 500]]) S.after(dt, (S) => S.spawn('panther', 2, x, 96, { yaw: -Math.PI / 2, tag: 'trap', name: 'Panther', aiErr: 1.9, viewMul: 0.6, order: { kind: 'route', pts: [[200, 60], [40, 120]] } }));
+            S.after(20, (S) => S.spawn('tiger1', 2, -490, -100, { yaw: Math.PI / 2, tag: 'trap', name: 'Tiger', aiErr: 2, viewMul: 0.6, order: { kind: 'route', pts: [[-200, -40], [-120, 60]] } }));
+            S.after(8, (S) => {
+               S._hunt = null; S.phase('out'); S.show('out'); if (!S.isDone('col')) S.fail('col');
+               S.radio('Abbrechen! Alles zurück zum Sammelpunkt im Wald, die Brigade schießt Nebel vor euch!', 'warn');
+               S.fog(0.55, 0xa0a49c);                                  // smoke shells between the trap and the forest
+               S.after(70, (S) => S.fadeFog(0.1, 40));
+               if (S.autopilot && S.player) S.order([S.player], { kind: 'route', pin: true, pts: [[amb[0] - 10, amb[1] + 140], rally] });
+               S.mark('rally', rally[0], rally[1], 'Sammelpunkt', 'area', 45); S.goal(rally[0], rally[1], 'Sammelpunkt', 40);
+               S.order(S.group('mate').filter((t) => t.alive), { kind: 'route', pin: true, pts: [[rally[0] - 20, 300], [rally[0] - 20, rally[1]]] });
+               for (const x of [-60, 140]) S.spawn('su100', 1, x, 470, { tag: 'cover', name: 'SU-100 (Brigade)', order: { kind: 'ambush', x, z: 470, r: 450 } });
+            });
+         });
+         S.when((S) => S.group('trap').some((t) => t.cls === 'panther' && !t.alive), (S) => S.done('b_panther'));
+         S.when((S) => S.c.phase === 'out' && S.inZone('player', rally[0], rally[1], 45), (S) => {
+            if (S.alive('mate') > 0) S.done('b_mate'); else S.fail('b_mate');
+            if (S.get('b_panther').state === 'active') S.fail('b_panther');
+            S.done('out'); S.radio('Am Sammelpunkt. Der Köder hat seinen Preis gekostet – aber nicht den ganzen Zug.');
+            S.win('Aus der Falle entkommen');
+         });
+      },
+   },
 };
-export const OP_LIST = ['westwall', 'arracourt', 'lasttiger', 'danzig', 'seelow', 'spaehtrupp', 'beute'];
+export const OP_LIST = ['westwall', 'arracourt', 'lasttiger', 'danzig', 'seelow', 'spaehtrupp', 'beute', 'totalize', 'koeder'];

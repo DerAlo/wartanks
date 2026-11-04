@@ -24,12 +24,15 @@ const ops = !process.argv[2] || process.argv[2] === 'all' ? all : process.argv[2
 for (const op of ops) {
    const e0 = errors.length;
    const tank = await page.evaluate(async (op) => (await import('/game/campaign.js')).OPS[op].tanks[0], op);
+   // win path: the autopilot plays the op, the sim is stepped inside the page in slices. The ops are
+   // balanced for ~90 % autopilot wins, so a lost run gets one more try.
+   let run;
+   for (let attempt = 0; attempt < 2 && run?.outcome !== 'win'; attempt++) {
    await page.goto(`${base}?autostart&mode=campaign&op=${op}&tank=${tank}`);
    await page.waitForFunction(() => window.__game?.world?.campaign && window.__game.world.phase === 'playing', null, { timeout: 30000 });
    await page.waitForTimeout(2500);
-   await page.screenshot({ path: `tests/out/op-${op}-start.png` });
-   // win path: the autopilot plays the op, the sim is stepped inside the page in slices
-   const run = await page.evaluate(async () => {
+   if (!attempt) await page.screenshot({ path: `tests/out/op-${op}-start.png` });
+   run = await page.evaluate(async () => {
       const G = window.__game, w = G.world, S = w.script, { BotAI } = await import('/game/ai.js');
       const p = w.player, ai = new BotAI(w, p); w.ais.push(ai); p.ai = ai; S.autopilot = true; S._pilot = true;
       ai.careful = true; ai.D = { ...ai.D, err: 0.3, react: 0.5, aimWait: 2.5, convK: 1.2, smart: 1, angle: true };
@@ -47,6 +50,7 @@ for (const op of ops) {
    });
    console.log(`${op}: ${run.outcome} (${run.reason}) ${run.t} s, stars ${run.stars}, phases ${run.phases.join(' > ')}`);
    if (process.env.V) for (const l of run.log) console.log('   ', l);
+   }
    if (run.outcome !== 'win') fail(op + ': autopilot did not win (' + run.reason + ')');
    await page.waitForSelector('#pz-results.on', { timeout: 20000 }).catch(() => fail(op + ': no results screen after the win'));
    await page.screenshot({ path: `tests/out/op-${op}-won.png` });

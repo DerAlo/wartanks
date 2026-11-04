@@ -596,7 +596,7 @@ can run an operation unchanged and clients only render `world.campaign`.
 * Maps: `noRandom: true` in `MAPS` (e.g. the sea-half `kueste`) keeps a map out of `RANDOM_MAPS`, the
   pool the menu's "random" map draws from. Such maps are reached only through the campaign or by
   choosing them directly.
-* Twist helpers (used by the story ops `spaehtrupp`, `beute`, …), all sim-side:
+* Twist helpers (used by the story ops `spaehtrupp`, `beute`, `totalize` (night → dawn via `fadeFog`), `koeder`), all sim-side:
   * `S.countdown(label, s, fn)` → timer object `{ label, left }` (lengthen with `.left += n`, relabel;
     a later `S.timer` replaces it and its `fn` never fires). `S.retext(id, text)` rewrites an
     objective (re-emits `objective`). `S.fog(amount, color?)` / `S.fadeFog(amount, s, fn)` change
