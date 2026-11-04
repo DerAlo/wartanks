@@ -342,6 +342,27 @@ researchXP, price, canResearch, canBuy }`, `research(p, id)` / `buy(p, id) -> { 
 prices tier 4–8: 30k/90k/200k/450k/900k; start: 150k credits and the first tank of each
 nation. Works without localStorage (memory fallback).
 
+**XP model, crew and perks** (WoT, simplified). Each nation is one line (`techTree()` order);
+tank XP researches only the next tank of its own line (the predecessor's XP is used first, the rest
+from free XP). Free XP = 5 % of battle XP, usable anywhere. A tank is **elite** when every successor
+in its line is researched (the last of a line: once researched); `convertXP(p, id, n|'all')` turns
+elite tank XP into free XP 1:1 for `CONVERT_CREDITS` = 25 Kr per XP. Every tank has a crew
+`p.tanks[id].crew = { xp, perks: [ids] }` (old profiles: empty crew; `sanitize` cleans the list and
+cuts it to the earned points). Crew XP = battle XP (×`ELITE_CREW_K` 1.5 on an elite tank);
+`trainCrew` moves tank XP to crew XP 1:1 for free. Skill point n costs `crewPointXP(n)` = 1000·1.45ⁿ
+(rounded to 50; 8 points ≈ 41k XP); each point learns one perk; `resetPerks` is free.
+`crewState`, `learnPerk`, `perksOf(p, id)`, `isElite`, `crewLevel(xp)`.
+Perks (`config.PERKS`, `PERK_LIST`, `cleanPerks(list)`, `perkMods(list)`): Feinabstimmung
+(disp ×0.92 fully aimed), Ruhige Hand (move/turn bloom ×0.85), Schnellladen (reload ×0.95),
+Reparatur (field repair ×1.25), Tarnung (camo ×1.1), Adlerauge (view ×1.05), Waffenbrüder
+(reload/aim ×0.975, view/camo ×1.025), Feuerwehr (fire chance ×0.75, burn-out ×1.5).
+`tank.setPerks(list)` / `new Tank(cfg, { perks })` sets `tank.perks` and `tank.pk` (multipliers,
+all 1 without perks) used by `_aim`, reload, `viewRangeNow`, `_modulesTick`, `_fireTick`,
+`tank.camo` and state.js' fire chance. Single player: `startBattle({ playerPerks })` (main.js);
+net games: the lobby sends `perks` with the tank, the host cleans them (`cleanPerks`), they travel in
+`start.slots[].perks` and `setup.buildWorld` applies them on every peer. Bots have none. Training and
+campaign: perks apply, no XP.
+
 ## Rendering & controls (client)
 
 * Third-person orbit camera around the turret, mouse = aim (camera direction defines the aim

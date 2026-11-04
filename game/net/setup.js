@@ -10,20 +10,21 @@
 // 1..n in roster order on every peer, so they match on the wire.
 import { World } from '../state.js';
 import { MISSIONS, matchmake } from '../missions.js';
-import { TANKS } from '../config.js';
+import { TANKS, cleanPerks } from '../config.js';
 import { BotAI } from '../ai.js';
 import { makeRng, hashSeed } from '../utils.js';
 
 const validTank = (cls) => (TANKS[cls] ? cls : 'pz4h');
 
-/** Host: roster and slots from the lobby session. slots[i] = { name, tank, wteam, idx } (idx in its World team). */
+/** Host: roster and slots from the lobby session. slots[i] = { name, tank, perks, wteam, idx } (idx in its World team).
+ *  perks: the captain's crew skills, clamped to a legal list (config.cleanPerks: known ids, no doubles). */
 export function makeRoster(session) {
    const mission = MISSIONS[session.mission] ? session.mission : 'standard';
    const size = MISSIONS[mission].teamSize || 7;
    const P = session.players;
    const rng = makeRng(hashSeed(session.seed >>> 0, 'netmm'));
    const hostTeam = P[0]?.team ?? 1;
-   const slots = P.map((p) => ({ name: String(p.name || 'Spieler').slice(0, 24), tank: validTank(p.tank), team: session.mode === 'pvp' ? (p.team ?? 1) : undefined, wteam: session.mode === 'pvp' && (p.team ?? 1) !== hostTeam ? 2 : 1 }));
+   const slots = P.map((p) => ({ name: String(p.name || 'Spieler').slice(0, 24), tank: validTank(p.tank), perks: cleanPerks(p.perks), team: session.mode === 'pvp' ? (p.team ?? 1) : undefined, wteam: session.mode === 'pvp' && (p.team ?? 1) !== hostTeam ? 2 : 1 }));
    const n1 = slots.filter((s) => s.wteam === 1).length, n2 = slots.length - n1;
    const roster = matchmake(slots[0]?.tank || 'pz4h', Math.max(size, n1, n2), rng);
    const k = { 1: 0, 2: 0 };
@@ -44,7 +45,7 @@ export function buildWorld(start) {
    for (const s of world.net.slots) {
       s.tid = s.wteam === 1 ? s.idx + 1 : n1 + s.idx + 1;
       const t = world.tankById(s.tid);
-      if (t) { t.name = s.name; t.human = true; }
+      if (t) { t.name = s.name; t.human = true; t.setPerks(s.perks); }   // crew skills: cleaned again on every peer, bots have none
    }
    for (const [id, yaw] of start.deadObj || []) {
       const o = world.terrain.objects[id];

@@ -57,7 +57,7 @@ session = {
    mapId,                        // maps.js id (the lobby resolves 'random' before the start)
    difficulty: 'leicht' | 'normal' | 'schwer',   // PvP: bots always 'normal'
    seed,                         // uint32 from the host
-   players: [{ id, name, tank, team? }],         // host first = slot order; team 1|2 in PvP
+   players: [{ id, name, tank, perks, team? }],  // host first = slot order; team 1|2 in PvP; perks = crew skills (cleanPerks)
    onEnd(result),                // once: { aborted, reason, victory, outcome, xp, credits, stats, pvp? }
    onSuccessor?(id),             // host: the successor it named (the lobby sends it the seats)
    onHost?(id)                   // after a migration: the new host (may be this peer)
@@ -86,7 +86,11 @@ the room.
   then each captain's tank is written over the first free place of his World team.
 - `buildWorld(start)` (all): `new World({ mode, mapId, seed, difficulty, roster })`, tank ids
   renumbered 1..n in roster order (team 1 then team 2), captains' names, `tank.human = true`,
-  terrain objects already destroyed (`deadObj`, for a late join) applied.
+  terrain objects already destroyed (`deadObj`, for a late join) applied, captains' crew skills
+  (`tank.setPerks(slot.perks)`, cleaned again; bots get none).
+- Crew skills: the lobby `hello` / `set {tank}` carry `perks` (the own profile's list for that
+  tank, `lobby.ownPerks`); the host keeps them per player only through `config.cleanPerks` (known
+  ids, no doubles, at most `MAX_PERKS`), so a forged list cannot buff beyond the modest legal set.
 - `setOwn(world, tankId)`, `setHuman(world, tank, on)`: a captain's tank has no BotAI on the host
   while he is connected; it gets one back when he leaves or his connection is lost (and loses it
   again when he is heard from).
@@ -98,7 +102,7 @@ the room.
 | k | direction | content |
 |---|---|---|
 | `hello` | client -> host, every 0.3 s until `start` | `v` |
-| `start` | host -> one client | `v, mode, mission, mapId, difficulty, seed, roster {team1, team2}, slots [{name, tank, team?, wteam, idx, tid}], self` (slot), `rejoin` 0/1, `deadObj [[objId, fallYaw]]` |
+| `start` | host -> one client | `v, mode, mission, mapId, difficulty, seed, roster {team1, team2}, slots [{name, tank, perks, team?, wteam, idx, tid}], self` (slot), `rejoin` 0/1, `deadObj [[objId, fallYaw]]` |
 | `refuse` | host -> client | not in the match / `why: 'version'` |
 | `st` | host -> all, 4 Hz | `t` tick, `ph` phase, `cd` countdown, `tl` time left, `caps [[progress, capper, n]]`, `hs` successor's peer id |
 | `me` | host -> each client, 1 Hz | `s` = the captain's `tank.stats` |

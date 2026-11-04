@@ -38,7 +38,7 @@ import { coopSlots } from './coop.js';
 import { pvpMissions, pvpSlots, TEAM_MAX } from './pvp.js';
 import { MISSIONS } from '../missions.js';
 import { MAPS, MAP_LIST, RANDOM_MAPS } from '../maps.js';
-import { TANKS, TANK_LIST } from '../config.js';
+import { TANKS, TANK_LIST, cleanPerks } from '../config.js';
 
 export { NET_VERSION };
 export const NAME_KEY = 'wartanks.net.name';
@@ -85,6 +85,9 @@ export function pickTank(profile, preferred) {
    const own = ownTanks(profile);
    return own.includes(preferred) ? preferred : own.includes(profile?.selected) ? profile.selected : own[0] || null;
 }
+
+// the crew skills the own profile has on that tank (progress.js crew.perks); the host cleans every list
+export const ownPerks = (profile, tank) => cleanPerks(profile?.tanks?.[tank]?.crew?.perks);
 
 // listing entries come from other browsers: never trust their shape
 function cleanEntry(d) {
@@ -303,7 +306,7 @@ export class Lobby {
          difficulty: mode === 'pvp' ? 'normal' : DIFFICULTIES.includes(opts.difficulty) ? opts.difficulty : 'normal',
          max: Math.min(modeSlots(mode, mission), Math.max(MIN_PLAYERS[mode], Math.floor(opts.max) || modeSlots(mode, mission))),
          locked: !!password, teamsLocked: false, state: 'lobby', hostId: this.selfId,
-         players: [{ id: this.selfId, name: this.name, tank, ready: false, team: mode === 'pvp' ? 1 : 0 }],
+         players: [{ id: this.selfId, name: this.name, tank, perks: ownPerks(this.getProfile(), tank), ready: false, team: mode === 'pvp' ? 1 : 0 }],
       };
       this.chat = [];
       try {
@@ -418,7 +421,7 @@ export class Lobby {
       // 'random': the host rolls the map once, everybody plays the same one
       const mapId = r.mapId === RANDOM_MAP ? RANDOM_MAPS[seed % RANDOM_MAPS.length] : r.mapId;   // sent explicitly: clients never re-derive it
       const msg = { t: 'start', mode: r.mode, mission: r.mission, mapId, difficulty: r.difficulty, seed,
-         players: r.players.map(p => ({ id: p.id, name: p.name, tank: p.tank, ...(r.mode === 'pvp' ? { team: p.team } : null) })) };
+         players: r.players.map(p => ({ id: p.id, name: p.name, tank: p.tank, perks: cleanPerks(p.perks), ...(r.mode === 'pvp' ? { team: p.team } : null) })) };
       r.state = 'running';
       for (const p of r.players) p.ready = false;
       this.rt.send('room', msg);
@@ -426,7 +429,7 @@ export class Lobby {
       this._seats.clear(); this._back.clear(); this._startMsg = msg;
       // the host's own seat is kept here: the way back after it left the match to a successor
       for (const p of msg.players) {
-         const seat = { orig: p.id, id: p.id, token: randId(24), name: p.name, tank: p.tank, team: p.team || 0 }, sid = randId(10);
+         const seat = { orig: p.id, id: p.id, token: randId(24), name: p.name, tank: p.tank, perks: p.perks, team: p.team || 0 }, sid = randId(10);
          this._seats.set(sid, seat);
          if (p.id === this.selfId) saveSeat({ room: r.id, hostId: this.selfId, seat: sid, token: seat.token, key: this._key, mission: r.mission, name: r.name, at: Date.now() });
          else this.rt.send('room', { t: 'seat', seat: sid, token: seat.token }, p.id);
@@ -443,7 +446,7 @@ export class Lobby {
       const old = seat.id;
       seat.id = from;
       r.players = r.players.filter(x => x.id !== old && x.id !== from);
-      const p = { id: from, name: seat.name, tank: seat.tank, team: seat.team || 0, ready: false, at: Date.now() };
+      const p = { id: from, name: seat.name, tank: seat.tank, perks: cleanPerks(seat.perks), team: seat.team || 0, ready: false, at: Date.now() };
       r.players.push(p);
       this._say(null, `${p.name} ist zurück im Gefecht.`);
       this.session.transport._rejoin(old, from);
@@ -458,7 +461,7 @@ export class Lobby {
    // seats, the start message, the banned peers)
    _sendSeats() {
       if (!this._succ || !this.rt || !this.isHost || !this._startMsg) return;
-      this.rt.send('room', { t: 'seats', seats: [...this._seats].map(([sid, x]) => [sid, x.orig, x.id, x.token, x.name, x.tank]),
+      this.rt.send('room', { t: 'seats', seats: [...this._seats].map(([sid, x]) => [sid, x.orig, x.id, x.token, x.name, x.tank, x.perks || []]),
          start: this._startMsg, banned: [...this._banned].slice(0, 64) }, this._succ);
    }
    // everybody: `id` runs the match now (game.js, host migration). The room and the listing move
@@ -474,12 +477,12 @@ export class Lobby {
       r.players = r.players.filter(p => p.id !== old);
       if (id !== this.selfId) {
          // ask the new host for the room state (its first one may have come before the switch)
-         this.rt.send('room', { t: 'hello', name: this.name, tank: this.me?.tank || null }, id);
+         this.rt.send('room', { t: 'hello', name: this.name, tank: this.me?.tank || null, perks: ownPerks(this.getProfile(), this.me?.tank) }, id);
          this.cb.onRoom?.();
          return;
       }
       const h = this._heir; this._heir = null;
-      this._seats = new Map((h?.seats || []).map(([sid, orig, pid, token, name, tank]) => [sid, { orig, id: pid, token, name, tank }]));
+      this._seats = new Map((h?.seats || []).map(([sid, orig, pid, token, name, tank, perks]) => [sid, { orig, id: pid, token, name, tank, perks: cleanPerks(perks) }]));
       this._startMsg = h?.start || null;
       for (const b of h?.banned || []) this._banned.add(b);
       this._back.clear(); this._approved.clear(); this._succ = null;
@@ -523,7 +526,7 @@ export class Lobby {
          const result = await new Promise((resolve) => {
             const t = setTimeout(() => resolve('timeout'), CONNECT_MS);
             this._hello = (r) => { clearTimeout(t); resolve(r); };
-            const hello = () => rt.send('room', { t: 'hello', name: this.name, tank: this._tank = pickTank(this.getProfile(), this._tank) }, entry.hostId);
+            const hello = () => { const tank = this._tank = pickTank(this.getProfile(), this._tank); rt.send('room', { t: 'hello', name: this.name, tank, perks: ownPerks(this.getProfile(), tank) }, entry.hostId); };
             rt.on('room', (m, from) => { if (from === entry.hostId) this._clientMsg(m); });
             rt.onPeerJoin((id) => { if (id === entry.hostId) hello(); });
             if (rt.peers().includes(entry.hostId)) hello();
@@ -614,7 +617,7 @@ export class Lobby {
          if (p) { this.rt.send('room', this._state(), from); return; }
          const why = this._banned.has(from) ? 'banned' : !this._approved.has(from) ? 'gone' : r.state !== 'lobby' ? 'running' : r.players.length >= r.max ? 'full' : null;
          if (why) { this.rt.send('room', { t: 'deny', why }, from); return; }
-         p = { id: from, name: cleanName(m.name) || 'Kommandant', tank: validTank(m.tank) ? m.tank : null, ready: false, at: Date.now(),
+         p = { id: from, name: cleanName(m.name) || 'Kommandant', tank: validTank(m.tank) ? m.tank : null, perks: cleanPerks(m.perks), ready: false, at: Date.now(),
             team: r.mode === 'pvp' ? this._freeTeam() : 0 };
          r.players.push(p);
          this._say(null, `${p.name} ist beigetreten.`);
@@ -623,7 +626,7 @@ export class Lobby {
       else if (m.t === 'set') {
          if (r.state !== 'lobby' && ('tank' in m || 'ready' in m)) return;
          if (typeof m.name === 'string' && cleanName(m.name)) p.name = cleanName(m.name);
-         if ('tank' in m) { p.tank = validTank(m.tank) ? m.tank : null; if (!p.tank) p.ready = false; }
+         if ('tank' in m) { p.tank = validTank(m.tank) ? m.tank : null; p.perks = cleanPerks(m.perks); if (!p.tank) p.ready = false; }
          if ('ready' in m) p.ready = !!m.ready && !!p.tank;
          if ('team' in m && this._teamOk(p, m.team, false)) p.team = m.team;
          this._sync();
@@ -643,7 +646,7 @@ export class Lobby {
          this.room = {
             id: base.id, hostId: base.hostId, name: cleanName(m.room.name, 32), mode: String(m.room.mode), mission: String(m.room.mission), mapId: String(m.room.mapId ?? RANDOM_MAP).slice(0, 40), difficulty: String(m.room.difficulty),
             max: Number(m.room.max) || 1, locked: !!m.room.locked, teamsLocked: !!m.room.teamsLocked, state: m.room.state === 'running' ? 'running' : 'lobby',
-            players: m.players.slice(0, 16).map(p => ({ id: String(p.id), name: cleanName(p.name) || '?', tank: validTank(p.tank) ? p.tank : null, ready: !!p.ready,
+            players: m.players.slice(0, 16).map(p => ({ id: String(p.id), name: cleanName(p.name) || '?', tank: validTank(p.tank) ? p.tank : null, perks: cleanPerks(p.perks), ready: !!p.ready,
                via: p.via === 'direct' || p.via === 'relay' ? p.via : '', team: TEAMS.includes(p.team) ? p.team : 0, lost: !!p.lost })),
          };
          const me = this.me;
@@ -676,7 +679,7 @@ export class Lobby {
    _state() {
       const r = this.room;
       return { t: 'state', room: { name: r.name, mode: r.mode, mission: r.mission, mapId: r.mapId, difficulty: r.difficulty, max: r.max, locked: r.locked, teamsLocked: !!r.teamsLocked, state: r.state },
-         players: r.players.map(p => ({ id: p.id, name: p.name, tank: p.tank, ready: p.ready, via: this.via(p.id), team: p.team || 0, ...(p.lost ? { lost: 1 } : null) })) };
+         players: r.players.map(p => ({ id: p.id, name: p.name, tank: p.tank, perks: cleanPerks(p.perks), ready: p.ready, via: this.via(p.id), team: p.team || 0, ...(p.lost ? { lost: 1 } : null) })) };
    }
    // how a player is connected to the host: 'direct' | 'relay' | '' (the host itself, or unknown).
    // The host and the player concerned know it first-hand, the others from the room state.
@@ -697,13 +700,15 @@ export class Lobby {
    _fixOwnTank() {
       const me = this.me, tank = pickTank(this.getProfile(), this._tank);
       if (!me || !tank || me.tank === tank) return;
-      if (this.isHost) me.tank = tank; else this.rt?.send('room', { t: 'set', tank }, this.room.hostId);
+      const perks = ownPerks(this.getProfile(), tank);
+      if (this.isHost) { me.tank = tank; me.perks = perks; } else this.rt?.send('room', { t: 'set', tank, perks }, this.room.hostId);
    }
    setTank(tank) {
       const r = this.room;
       if (!r || r.state !== 'lobby' || !ownTanks(this.getProfile()).includes(tank)) return;
       this._tank = tank;
-      if (this.isHost) { this.me.tank = tank; this._sync(); } else this.rt.send('room', { t: 'set', tank }, r.hostId);
+      const perks = ownPerks(this.getProfile(), tank);
+      if (this.isHost) { this.me.tank = tank; this.me.perks = perks; this._sync(); } else this.rt.send('room', { t: 'set', tank, perks }, r.hostId);
    }
    setReady(on) {
       const r = this.room;
@@ -731,7 +736,7 @@ export class Lobby {
    // ------------------------------------------------------------ match hand-over
    _begin(m) {
       if (this.session) return;
-      const players = m.players.map(p => ({ id: String(p.id), name: String(p.name), tank: String(p.tank), ...(TEAMS.includes(p.team) ? { team: p.team } : null) }));
+      const players = m.players.map(p => ({ id: String(p.id), name: String(p.name), tank: String(p.tank), perks: cleanPerks(p.perks), ...(TEAMS.includes(p.team) ? { team: p.team } : null) }));
       let done = false;
       const transport = sessionTransport(this.rt, players.map(p => p.id), () => this.leaveRoom());
       const session = {

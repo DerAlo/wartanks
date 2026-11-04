@@ -77,7 +77,7 @@ export const AMMO = {
 export const BALLISTICS = {
    PEN_RANDOM: 0.25,        // ±25 % (triangular) on penetration
    DMG_RANDOM: 0.25,        // ±25 % on damage
-   DISP_MUL: 0.85,          // global accuracy: all guns 15 % tighter (playtest: 'manchmal echt zäh')
+   DISP_MUL: 0.82,          // global accuracy: all guns 18 % tighter (playtest: 'manchmal echt zäh', then 'noch eine Nuance genauer')
    AIM_MUL: 0.85,           // global aim time scale (faster convergence)
    DMG_MUL: 1.3,            // global damage scale: hits must hurt (playtest: 'treffer machen wenig schaden')
    TRACK_K: 1.0,            // share of the shell's damage a track hit deals to the track (ricochet: half)
@@ -121,6 +121,39 @@ export const CONSUMABLES = {
    medkit: { name: 'Verbandskasten', short: 'San', cd: 90, desc: 'Heilt verwundete Besatzung' },
    extinguisher: { name: 'Feuerlöscher', short: 'Lösch', cd: 60, desc: 'Löscht einen Brand' },
 };
+
+// Crew skills ('Fertigkeiten', WoT perks). Each tank's crew learns them with skill points from crew
+// XP (progress.js). The effects are modest multipliers on mechanics the sim really has; perkMods()
+// folds a list into one set the Tank applies (tank.setPerks). Keys of `fx` and what they scale:
+//   disp   base dispersion when fully aimed     bloom  dispersion added by driving / hull / turret turning
+//   reload reload time   aim  aim time          camo   camouflage values   view  view range
+//   repair field repair speed of modules       fire   chance of catching fire   burnOut  chance per second a fire dies
+export const PERKS = {
+   feinabstimmung: { name: 'Feinabstimmung', role: 'Richtschütze', desc: 'Voll eingezielt streut die Kanone 8 % weniger.', fx: { disp: 0.92 } },
+   ruhigeHand:     { name: 'Ruhige Hand', role: 'Richtschütze', desc: 'Fahren, Wannen- und Turmdrehen vergrößern die Streuung 15 % weniger.', fx: { bloom: 0.85 } },
+   schnellladen:   { name: 'Schnellladen', role: 'Ladeschütze', desc: 'Nachladezeit −5 %.', fx: { reload: 0.95 } },
+   reparatur:      { name: 'Reparatur', role: 'Fahrer', desc: 'Zerstörte Module (Ketten, Motor …) werden im Feld 25 % schneller instand gesetzt.', fx: { repair: 1.25 } },
+   tarnung:        { name: 'Tarnung', role: 'alle', desc: 'Tarnwert +10 % (stehend und fahrend): später entdeckt.', fx: { camo: 1.1 } },
+   adlerauge:      { name: 'Adlerauge', role: 'Kommandant', desc: 'Sichtweite +5 %.', fx: { view: 1.05 } },
+   waffenbrueder:  { name: 'Waffenbrüder', role: 'alle', desc: 'Eingespielte Besatzung: Nachladen und Zielzeit −2,5 %, Sichtweite und Tarnung +2,5 %.', fx: { reload: 0.975, aim: 0.975, view: 1.025, camo: 1.025 } },
+   feuerwehr:      { name: 'Feuerwehr', role: 'alle', desc: 'Motor- und Tanktreffer setzen den Panzer 25 % seltener in Brand, Brände erlöschen schneller.', fx: { fire: 0.75, burnOut: 1.5 } },
+};
+export const PERK_LIST = Object.keys(PERKS);
+export const MAX_PERKS = PERK_LIST.length;
+const PERK_KEYS = ['disp', 'bloom', 'reload', 'aim', 'camo', 'view', 'repair', 'fire', 'burnOut'];
+/** Legal perk list from anything (net input, old profiles): known ids, no doubles, at most MAX_PERKS. */
+export function cleanPerks(list) {
+   if (!Array.isArray(list)) return [];
+   const out = [];
+   for (const id of list) if (typeof id === 'string' && Object.prototype.hasOwnProperty.call(PERKS, id) && !out.includes(id) && out.length < MAX_PERKS) out.push(id);
+   return out;
+}
+/** One multiplier per mechanic from a perk list (unknown / double entries ignored). */
+export function perkMods(list) {
+   const m = {}; for (const k of PERK_KEYS) m[k] = 1;
+   for (const id of cleanPerks(list)) for (const k in PERKS[id].fx) m[k] *= PERKS[id].fx[k];
+   return m;
+}
 
 export const PLATE_NAMES = {
    belly: 'Bugunterseite', lfp: 'Untere Bugplatte', nose: 'Bugnase', glac: 'Glacis', ufp: 'Obere Bugplatte',

@@ -8,13 +8,26 @@
 //   calcRewards(world) -> { xp, credits, freeXP, breakdown }     (player, from world.stats + result)
 //   applyRewards(p, tankId, rewards)
 //   exportProfile(p) -> string, importProfile(str) -> profile (throws on garbage)
+//   isElite(p, id)                                   every successor in the line researched (or none)
+//   convertXP(p, id, n) -> { ok, reason }             elite tank XP -> free XP, CONVERT_CREDITS Kr per EP
+//   crewState(p, id) -> { xp, points, used, free, perks, need, into, elite }
+//   learnPerk(p, id, perk) / resetPerks(p, id) / trainCrew(p, id, n) (tank XP -> crew XP 1:1)
+//   perksOf(p, id) -> [perk ids]                     what the tank takes into battle (single + net)
+//
+// XP model (WoT, simplified): battle XP goes to the tank (its own line: researches the next tank of
+// the same nation), 5 % extra as free XP (anything), and the same amount (×1.5 on an elite tank) to
+// the tank's crew, whose crew XP buys skill points for perks (config.PERKS).
 //   recordCampaign(p, opId, result) / campaignUnlocked(p, opId, order)   campaign ('Feldzug') records:
 //   p.campaign[opId] = { done, stars, bestTime, tries }
-import { TANKS, TANK_LIST, NATION_ORDER } from './config.js';
+import { TANKS, TANK_LIST, NATION_ORDER, PERKS, MAX_PERKS, cleanPerks } from './config.js';
 
 const KEY = 'wartanks.profile.v1';
 export const RESEARCH_XP = { 4: 0, 5: 2500, 6: 6000, 7: 12000, 8: 22000 };
 export const PRICE = { 4: 30000, 5: 90000, 6: 200000, 7: 450000, 8: 900000 };
+export const CONVERT_CREDITS = 25;       // Kr per converted EP (a tier V–VI battle earns ~15–25k Kr, ~800–1200 EP)
+export const ELITE_CREW_K = 1.5;         // crew XP bonus on an elite tank
+/** Crew XP for skill point n (0-based): 1000, 1450, 2100, … (WoT: 210k for the first; here a few battles). */
+export const crewPointXP = (n) => Math.round(1000 * 1.45 ** n / 50) * 50;
 let memStore = null;
 const store = () => { try { return globalThis.localStorage || null; } catch { return null; } };
 
@@ -24,10 +37,12 @@ export function techTree() {
    return tree;
 }
 const prevOf = (id) => { const ch = techTree()[TANKS[id].nation]; const i = ch.indexOf(id); return i > 0 ? ch[i - 1] : null; };
+const nextOf = (id) => { const ch = techTree()[TANKS[id].nation]; const i = ch.indexOf(id); return i >= 0 && i < ch.length - 1 ? ch[i + 1] : null; };
+const newCrew = () => ({ xp: 0, perks: [] });
 
 export function newProfile() {
    const p = { v: 1, credits: 150000, freeXP: 0, tanks: {}, selected: null, battles: 0, wins: 0, campaign: {} };
-   for (const id of TANK_LIST) p.tanks[id] = { xp: 0, owned: false, researched: false, battles: 0, wins: 0, dmg: 0, kills: 0 };
+   for (const id of TANK_LIST) p.tanks[id] = { xp: 0, owned: false, researched: false, battles: 0, wins: 0, dmg: 0, kills: 0, crew: newCrew() };
    for (const ch of Object.values(techTree())) if (ch.length) { p.tanks[ch[0]].owned = p.tanks[ch[0]].researched = true; p.selected ??= ch[0]; }
    return p;
 }
@@ -35,7 +50,13 @@ function sanitize(p) {
    const base = newProfile();
    if (!p || typeof p !== 'object' || p.v !== 1) return base;
    const out = { ...base, ...p, tanks: { ...base.tanks } };
-   for (const id of TANK_LIST) if (p.tanks?.[id]) out.tanks[id] = { ...base.tanks[id], ...p.tanks[id] };
+   for (const id of TANK_LIST) if (p.tanks?.[id]) {
+      const t = out.tanks[id] = { ...base.tanks[id], ...p.tanks[id] };
+      t.xp = Math.max(0, +t.xp || 0);
+      const c = p.tanks[id].crew;                          // old profiles have no crew: an empty one
+      t.crew = { xp: Math.max(0, +c?.xp || 0), perks: cleanPerks(c?.perks) };
+      while (t.crew.perks.length > crewLevel(t.crew.xp).points) t.crew.perks.pop();
+   }
    if (!TANKS[out.selected] || !out.tanks[out.selected].owned) out.selected = base.selected;
    out.credits = Math.max(0, +out.credits || 0); out.freeXP = Math.max(0, +out.freeXP || 0);
    out.campaign = {};                                   // old profiles have none
@@ -58,7 +79,7 @@ export function tankState(p, id) {
    const T = TANKS[id], st = p.tanks[id], prev = prevOf(id);
    const need = RESEARCH_XP[T.tier] ?? 0, price = PRICE[T.tier] ?? 0;
    const avail = (prev ? p.tanks[prev].xp : 0) + p.freeXP;
-   return { owned: st.owned, researched: st.researched, xp: st.xp, prev, researchXP: need, price,
+   return { owned: st.owned, researched: st.researched, xp: st.xp, prev, next: nextOf(id), elite: isElite(p, id), researchXP: need, price,
       canResearch: !st.researched && (!prev || p.tanks[prev].researched) && avail >= need,
       canBuy: st.researched && !st.owned && p.credits >= price };
 }
@@ -83,6 +104,62 @@ export function buy(p, id) {
    return { ok: true };
 }
 
+// ---------- elite, conversion, crew ----------
+/** Elite: every successor in the tank's line is researched (the last tank of a line: once researched). */
+export function isElite(p, id) {
+   const st = p.tanks[id]; if (!st?.researched) return false;
+   const n = nextOf(id);
+   return !n || !!p.tanks[n].researched;
+}
+/** Tank XP of an elite tank -> free XP, 1:1, CONVERT_CREDITS Kr per EP. n = 'all' or a number. */
+export function convertXP(p, id, n = 'all') {
+   const st = p.tanks[id]; if (!st) return { ok: false, reason: 'Unbekannter Panzer' };
+   if (!isElite(p, id)) return { ok: false, reason: 'Nur Elite-Panzer: erst alle Nachfolger erforschen' };
+   let amt = Math.floor(n === 'all' ? st.xp : Math.min(+n || 0, st.xp));
+   amt = Math.min(amt, Math.floor(p.credits / CONVERT_CREDITS));
+   if (amt <= 0) return { ok: false, reason: st.xp <= 0 ? 'Keine Panzer-EP zum Umwandeln' : 'Nicht genug Kreditpunkte' };
+   st.xp -= amt; p.freeXP += amt; p.credits -= amt * CONVERT_CREDITS;
+   saveProfile(p);
+   return { ok: true, xp: amt, credits: amt * CONVERT_CREDITS };
+}
+/** Skill points from crew XP: points earned, XP into the next point and what it needs. */
+export function crewLevel(xp) {
+   let points = 0, rest = Math.max(0, xp || 0);
+   while (points < MAX_PERKS && rest >= crewPointXP(points)) { rest -= crewPointXP(points); points++; }
+   return { points, into: points < MAX_PERKS ? rest : 0, need: points < MAX_PERKS ? crewPointXP(points) : 0 };
+}
+export function crewState(p, id) {
+   const c = p.tanks[id]?.crew || newCrew(), L = crewLevel(c.xp);
+   return { xp: c.xp, points: L.points, used: c.perks.length, free: L.points - c.perks.length, perks: [...c.perks], into: L.into, need: L.need, max: MAX_PERKS, elite: isElite(p, id) };
+}
+export function perksOf(p, id) { return cleanPerks(p?.tanks?.[id]?.crew?.perks); }
+export function learnPerk(p, id, perk) {
+   const st = p.tanks[id]; if (!st) return { ok: false, reason: 'Unbekannter Panzer' };
+   if (!st.owned) return { ok: false, reason: 'Panzer nicht im Besitz' };
+   if (!PERKS[perk]) return { ok: false, reason: 'Unbekannte Fertigkeit' };
+   if (st.crew.perks.includes(perk)) return { ok: false, reason: 'Bereits gelernt' };
+   if (crewState(p, id).free <= 0) return { ok: false, reason: 'Kein freier Fertigkeitspunkt' };
+   st.crew.perks.push(perk);
+   saveProfile(p);
+   return { ok: true };
+}
+/** Free re-training: all points back (the crew XP stays). */
+export function resetPerks(p, id) {
+   const st = p.tanks[id]; if (!st || !st.crew.perks.length) return { ok: false, reason: 'Keine Fertigkeiten gelernt' };
+   st.crew.perks = [];
+   saveProfile(p);
+   return { ok: true };
+}
+/** Tank XP -> crew XP of the same tank, 1:1, free (the XP is then missing for research). */
+export function trainCrew(p, id, n = 'all') {
+   const st = p.tanks[id]; if (!st?.owned) return { ok: false, reason: 'Panzer nicht im Besitz' };
+   const amt = Math.floor(n === 'all' ? st.xp : Math.min(+n || 0, st.xp));
+   if (amt <= 0) return { ok: false, reason: 'Keine Panzer-EP vorhanden' };
+   st.xp -= amt; st.crew.xp += amt;
+   saveProfile(p);
+   return { ok: true, xp: amt };
+}
+
 const AMMO_COST = { AP: 1, APCR: 6, HEAT: 5, HE: 0.8 };
 /** Rewards for the local player from world.stats and world.result. */
 export function calcRewards(world) {
@@ -103,7 +180,9 @@ export function calcRewards(world) {
 }
 export function applyRewards(p, tankId, r) {
    const t = p.tanks[tankId]; if (!t || !r || !t.owned) return p;   // test drive (?tank= not owned): nothing credited
-   t.xp += r.xp || 0; p.freeXP += r.freeXP || 0; p.credits = Math.max(0, p.credits + (r.credits || 0));
+   const elite = isElite(p, tankId);
+   t.xp += r.xp || 0; p.freeXP += r.freeXP || 0;
+   t.crew.xp += Math.round((r.xp || 0) * (elite ? ELITE_CREW_K : 1)); p.credits = Math.max(0, p.credits + (r.credits || 0));
    t.battles++; p.battles++;
    if (r.outcome === 'win') { t.wins++; p.wins++; }
    if (r.dmg) t.dmg += r.dmg; if (r.kills) t.kills += r.kills;

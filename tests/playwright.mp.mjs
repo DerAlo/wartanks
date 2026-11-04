@@ -29,6 +29,8 @@ try {
       return p;
    };
    const A = await mk('A'), B = await mk('B');
+   // crew skills travel with the tank: every owned tank of the shared profile gets two perks
+   await A.evaluate(() => { const P = __game.mods.progressM, p = P.loadProfile(); for (const id in p.tanks) if (p.tanks[id].owned) p.tanks[id].crew = { xp: 2450, perks: ['feinabstimmung', 'tarnung'] }; P.saveProfile(p); });
    for (const [p, n] of [[A, 'Anna'], [B, 'Bert']]) {
       await p.click('#pz-mp'); await p.waitForSelector('#mp:not(.hidden) #mp-list');
       await p.fill('#mp-name', n); await p.dispatchEvent('#mp-name', 'change');
@@ -53,6 +55,10 @@ try {
    await A.waitForFunction(() => document.querySelector('#mp-players .mp-row:not(.me)')?.dataset.ready === '1', null, { timeout: 30000 });
    await A.click('#mp-start');
    for (const p of [A, B]) await p.waitForFunction(() => window.__game?.world && window.__game.net, null, { timeout: 90000 });
+   for (const p of [A, B]) {
+      const pk = await p.evaluate(() => __game.world.tanks.map((t) => [!!t.human, t.perks.join()]));
+      assert.ok(pk.filter(([h]) => h).length === 2 && pk.every(([h, k]) => k === (h ? 'feinabstimmung,tarnung' : '')), 'captains carry their perks, bots none: ' + JSON.stringify(pk));
+   }
    console.log('match running on both pages', await B.evaluate(() => ({ host: __game.net.isHost, via: __game.net.transport.link?.(__game.net.transport.hostId)?.via })));
    // wait for the countdown, then drive and fire
    const diag = () => Promise.all([A, B].map((p) => p.evaluate(() => ({ ph: __game.world?.phase, cd: __game.world?.countdown, t: __game.world?.time, fps: __game.fps, net: !!__game.net, warm: __game.R?.warming, progs: __game.R?.renderer.info.programs?.length, fr: __game.frame }))));

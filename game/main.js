@@ -40,6 +40,7 @@ export function startBattle(opts = {}) {
    for (const k in opts) if (opts[k] === undefined) delete opts[k];
    if (!stateM.World) { console.error('[main] state.js missing: no battle possible'); menu?.show('garage'); return; }
    const world = G.world = opts.world || new stateM.World({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
+   if (!opts.world && opts.playerPerks && world.player?.setPerks) world.player.setPerks(opts.playerPerks);   // crew skills from the garage (net games: setup.buildWorld)
    G.battleOpts = { ...opts }; delete G.battleOpts.world; G.endT = 0; G.paused = false;
    const th = fogTheme(themeOf(world.mapId ?? opts.mapId), world.campaign?.fog || 0);   // misty ops (Arracourt)
    R.setTheme(th); sky.setTheme(th, R.sunDir);

@@ -179,7 +179,8 @@ export class World {
             this.damage(tank, tank.hp, src, 'ammoRack');
             return;
          }
-         if ((c.id === 'engine' && r < (st === 'destroyed' ? 0.25 : 0.1)) || (c.id === 'fuel' && r < (st === 'destroyed' ? 0.5 : 0.2))) {
+         const fk = tank.pk?.fire ?? 1;                 // crew skill 'Feuerwehr'
+         if ((c.id === 'engine' && r < (st === 'destroyed' ? 0.25 : 0.1) * fk) || (c.id === 'fuel' && r < (st === 'destroyed' ? 0.5 : 0.2) * fk)) {
             if (tank.ignite(srcId)) this.emit('fire', { srcId, dstId: tank.id, pos });
          }
       }

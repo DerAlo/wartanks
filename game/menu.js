@@ -87,6 +87,20 @@ const CSS = `
 .pz-ammo th { font-size: 10px; color: var(--ink-3); letter-spacing: .1em; font-weight: 600; } .pz-ammo td:first-child, .pz-ammo th:first-child { text-align: left; }
 .pz-ammo i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
 .pz-prog { margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.pz-xp { margin-top: 10px; border: 1px solid var(--rule); padding: 8px 10px; background: rgba(255,255,255,.2); }
+.pz-xp h4 { display: flex; align-items: center; gap: 8px; }
+.pz-xp .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; font-size: 13px; }
+.pz-elite { font: 700 10px var(--font); letter-spacing: .18em; color: #1b1206; background: var(--signal); padding: 1px 6px; }
+#menu button.pz-q { padding: 0 !important; width: 20px; height: 20px; border-radius: 50%; font-size: 12px; line-height: 18px; text-align: center; letter-spacing: 0; }
+.pz-pk { color: var(--olive); } .pz-pk::after { content: ' ▲'; font-size: 9px; vertical-align: 2px; }
+.pz-bar { height: 8px; background: rgba(0,0,0,.12); border: 1px solid var(--rule); margin: 4px 0; } .pz-bar i { display: block; height: 100%; background: var(--signal); }
+.pz-help { font-size: 13px; line-height: 1.45; max-width: 600px; } .pz-help p { margin: 0 0 8px; } .pz-help b { color: var(--olive); }
+.pz-crew .hd { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.pz-perks { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
+.pz-perk { border: 1px solid var(--rule); padding: 8px 10px; cursor: pointer; pointer-events: auto; background: rgba(255,255,255,.25); }
+.pz-perk:hover { border-color: var(--olive); } .pz-perk.on { background: var(--khaki); border-color: var(--olive); cursor: default; }
+.pz-perk.no { opacity: .55; cursor: default; } .pz-perk b { font-size: 14px; } .pz-perk .r { float: right; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+.pz-perk p { margin: 3px 0 0; font-size: 12px; color: var(--ink-2); } .pz-perk.on b::before { content: '✔ '; color: var(--olive); }
 .pz-setup { position: absolute; left: 296px; right: 386px; bottom: 12px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; }
 .pz-setup .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .pz-setup select { font: 600 13px var(--font); padding: 7px; background: var(--khaki); border: 1px solid var(--khaki-3); color: var(--ink); }
@@ -221,6 +235,39 @@ export class Menu {
       if (r && !r.ok) this.toast(r.reason || 'Nicht möglich');
       else if (r?.ok) { this.toast(fn === 'buy' ? 'Gekauft: ' + this.C.TANKS[id].name : 'Erforscht: ' + this.C.TANKS[id].name); this.ctx.getAudio?.()?.ui?.('buy'); }
    }
+   perks(id) { return this.P?.perksOf ? this.P.perksOf(this.prof(), id) : []; }
+   /** Crew / conversion actions (progress.js), then every garage panel shows the new state. */
+   crewAct(fn, arg) {
+      const id = this.sel.cls, r = this.P?.[fn]?.(this.prof(), id, arg);
+      if (r && !r.ok) this.toast(r.reason || 'Nicht möglich');
+      else if (r?.ok) {
+         const P = this.C.PERKS || {};
+         this.toast(fn === 'learnPerk' ? 'Fertigkeit gelernt: ' + (P[arg]?.name || arg) : fn === 'resetPerks' ? 'Besatzung umgeschult: alle Punkte frei'
+            : fn === 'trainCrew' ? `${fmt(r.xp)} EP an die Besatzung` : `${fmt(r.xp)} EP umgewandelt (−${fmt(r.credits)} Kr)`);
+         this.ctx.getAudio?.()?.ui?.('buy');
+      }
+      this.renderList(); this.renderStats(); this.renderSetup();
+      if (this.$('#pz-crew').classList.contains('on')) this.renderCrew();
+   }
+   renderCrew() {
+      const C = this.C, c = C.TANKS?.[this.sel.cls]; if (!c || !this.P?.crewState) return;
+      const cs = this.P.crewState(this.prof(), c.id), ts = this.ts(c.id) || {}, own = ts.owned;
+      const P = C.PERKS || {}, list = C.PERK_LIST || Object.keys(P);
+      const names = (c.crew || []).map((m) => C.CREW_NAMES?.[m.roles?.[0]] || m.id);
+      const full = cs.points >= cs.max, pct = full ? 100 : Math.round(100 * cs.into / (cs.need || 1));
+      this.$('#pz-crewc').innerHTML = `<h2 class="pz-st">Besatzung · ${esc(c.short || c.name)}</h2>
+         <div class="hd"><span>${names.length} Mann: ${esc(names.join(', '))}</span>${cs.elite ? '<span class="pz-elite">ELITE · +50 % Besatzungs-EP</span>' : ''}</div>
+         <div class="hd" style="margin-top:8px"><span><b>${fmt(cs.xp)}</b> Besatzungs-EP</span><span>Fertigkeitspunkte: <b>${cs.points}</b> / ${cs.max}</span><span>frei: <b>${cs.free}</b></span></div>
+         <div class="pz-bar" title="${full ? 'Alle Punkte erreicht' : `${fmt(cs.into)} / ${fmt(cs.need)} EP bis zum nächsten Punkt`}"><i style="width:${pct}%"></i></div>
+         <div class="pz-k">${full ? 'Alle Fertigkeitspunkte erreicht' : `Nächster Punkt: ${fmt(cs.into)} / ${fmt(cs.need)} EP`}</div>
+         <div class="pz-perks">${list.map((k) => { const on = cs.perks.includes(k), can = own && !on && cs.free > 0;
+            return `<div class="pz-perk ${on ? 'on' : can ? '' : 'no'}" ${can ? `data-a="perk" data-v="${k}"` : ''} title="${on ? 'gelernt' : can ? 'Klicken zum Lernen (1 Punkt)' : 'Kein freier Fertigkeitspunkt'}">
+               <span class="r">${esc(P[k].role)}</span><b>${esc(P[k].name)}</b><p>${esc(P[k].desc)}</p></div>`; }).join('')}</div>
+         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:13px">
+            <button data-a="trainCrew" ${own && ts.xp > 0 ? '' : 'disabled'} title="Alle Panzer-EP dieses Panzers kostenlos 1 : 1 an die Besatzung geben (sie fehlen dann für die Forschung)">Panzer-EP → Besatzung (${fmt(ts.xp)})</button>
+            <button data-a="resetPerks" ${cs.used ? '' : 'disabled'} title="Alle Fertigkeiten verlernen, die Punkte werden wieder frei (kostenlos)">Umschulen</button></div>
+         <div class="bt"><button data-a="help">? Erklärung</button><button class="pri" data-a="closeCrew">Fertig</button></div>`;
+   }
    applyResult(snap) {
       if (!this.P || !snap.result) return;
       if (snap.mode === 'campaign') {   // operations: a record (stars, best time) instead of XP/credits; any listed tank may be used
@@ -276,6 +323,14 @@ export class Menu {
    <div class="bt"><button id="pz-reload" style="display:none" data-a="reload">Jetzt neu laden</button><button class="pri" data-a="closeSettings">Fertig</button></div></div></div>
 <div class="pz-modal" id="pz-pause"><div class="pz-card"><h2 class="pz-st">Pause</h2><div class="col">
    <button class="pri" data-a="resume">Fortsetzen</button><button data-a="settings">Einstellungen</button><button data-a="leave">Gefecht verlassen</button></div></div></div>
+<div class="pz-modal" id="pz-crew"><div class="pz-card pz-crew" id="pz-crewc"></div></div>
+<div class="pz-modal" id="pz-help"><div class="pz-card"><h2 class="pz-st">Erfahrung &amp; Besatzung</h2><div class="pz-help">
+   <p><b>Panzer-EP</b> verdient jeder Panzer im Gefecht. Sie erforschen den <b>nächsten Panzer derselben Linie</b> (gleiche Nation, nächster Eintrag in der Liste links). Für die Forschung zählen nur die EP des direkten Vorgängers.</p>
+   <p><b>Freie EP</b>: 5 % jeder Gefechtserfahrung gehen zusätzlich in einen gemeinsamen Topf. Freie EP erforschen jeden Panzer und ergänzen fehlende Panzer-EP.</p>
+   <p><b>Elite</b>: Sind alle Nachfolger eines Panzers erforscht, wird er zum Elite-Panzer. Seine Panzer-EP kannst du dann <b>in freie EP umwandeln</b> (1 : 1, je EP ${fmt(this.P?.CONVERT_CREDITS ?? 25)} Kreditpunkte). Die Besatzung eines Elite-Panzers lernt 50 % schneller.</p>
+   <p><b>Besatzung</b>: Jeder Panzer hat eigene Besatzung. Sie bekommt dieselben EP wie der Panzer. Besatzungs-EP füllen <b>Fertigkeitspunkte</b> (jeder Punkt kostet mehr als der vorige). Mit jedem Punkt lernst du eine <b>Fertigkeit</b>, z. B. Feinabstimmung (genauer voll eingezielt). Panzer-EP lassen sich auch kostenlos 1 : 1 in Besatzungs-EP umschulen – sie fehlen dann für die Forschung. Umschulen der Fertigkeiten ist kostenlos.</p>
+   <p>Fertigkeiten wirken in allen Gefechten, auch im Mehrspieler und auf dem Übungsplatz (dort gibt es keine EP).</p>
+</div><div class="bt"><button class="pri" data-a="closeHelp">Verstanden</button></div></div></div>
 <div class="pz-modal" id="pz-results"><div class="pz-card pz-res" id="pz-resc"></div></div>`;
    }
 
@@ -320,6 +375,14 @@ export class Menu {
          case 'settings': this.openSettings(); break;
          case 'mp': import('./mpui.js').then((m) => m.openMultiplayer(this)).catch((e) => console.warn('[menu] mpui', e)); break;   // multiplayer screen (lazy)
          case 'closeSettings': this.$('#pz-settings').classList.remove('on'); break;
+         case 'help': this.$('#pz-help').classList.add('on'); break;
+         case 'closeHelp': this.$('#pz-help').classList.remove('on'); break;
+         case 'crew': this.renderCrew(); this.$('#pz-crew').classList.add('on'); break;
+         case 'closeCrew': this.$('#pz-crew').classList.remove('on'); break;
+         case 'perk': this.crewAct('learnPerk', el.dataset.v); break;
+         case 'resetPerks': this.crewAct('resetPerks'); break;
+         case 'trainCrew': this.crewAct('trainCrew', 'all'); break;
+         case 'convert': this.crewAct('convertXP', el.dataset.v === 'all' ? 'all' : +el.dataset.v); break;
          case 'reload': location.reload(); break;
          case 'armor': this.setArmorView(!this.armorView); break;
          case 'nominal': case 'eff': this.effMode = a === 'eff'; this.$('#pz-avm').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.a === a)); this.renderLegend(); break;
@@ -365,7 +428,7 @@ export class Menu {
    go() {
       const ids = this.mods.mapsM?.RANDOM_MAPS || this.mapList, mapId = this.sel.map === 'random' || !this.maps[this.sel.map] ? ids[(Math.random() * ids.length) | 0] : this.sel.map;
       if (!this.owned(this.sel.cls)) return;
-      this.ctx.startBattle({ mode: this.sel.mode, mapId, seed: (Math.random() * 1e9) | 0, playerCls: this.sel.cls, difficulty: this.sel.diff });
+      this.ctx.startBattle({ mode: this.sel.mode, mapId, seed: (Math.random() * 1e9) | 0, playerCls: this.sel.cls, difficulty: this.sel.diff, playerPerks: this.perks(this.sel.cls) });
    }
 
    select(id) {
@@ -423,33 +486,47 @@ export class Menu {
       const am = (o) => o ? `<span title="effektiv ${fmt(o.eff)} mm">${fmt(o.t)}</span>` : '<span>–</span>';
       const pw = c.engine?.hp && c.mass ? c.engine.hp / c.mass : null;
       const tt = c.turretTraverse ?? c.turret?.traverse;
+      // crew skills of this tank: shown values include them (▲ = changed by a skill, tooltip = without)
+      const perks = this.perks(c.id), K = C.perkMods ? C.perkMods(perks) : {};
+      const pv = (base, k, d, unit) => { const v = base * (K[k] ?? 1); return Math.abs(v - base) > 1e-9 ? `<span class="pz-pk" title="ohne Fertigkeiten ${fmt(base, d)}${unit}">${fmt(v, d)}${unit}</span>` : fmt(base, d) + unit; };
       let prog = '';
       if (this.P) {
-         const s = this.ts(c.id) || {};
-         prog = `<div class="pz-prog"><span>${fmt(s.xp)} EP auf diesem Panzer</span>
-            ${!s.researched ? `<button data-prog="research" ${s.canResearch ? '' : 'disabled'}>Erforschen · ${fmt(s.researchXP)} EP</button>` : ''}
-            ${s.researched && !s.owned ? `<button class="pri" data-prog="buy" ${s.canBuy ? '' : 'disabled'}>Kaufen · ${fmt(s.price)} Kr</button>` : ''}
-            ${!s.researched && s.prev ? `<span class="pz-k">benötigt EP von ${esc(this.C.TANKS[s.prev]?.name)}</span>` : ''}</div>`;
+         const s = this.ts(c.id) || {}, cs = this.P.crewState?.(this.prof(), c.id);
+         const prevN = s.prev ? this.C.TANKS[s.prev] : null, nextN = s.next ? this.C.TANKS[s.next] : null;
+         const prevXP = s.prev ? this.ts(s.prev)?.xp ?? 0 : 0, CR = this.P.CONVERT_CREDITS ?? 25;
+         const canConv = s.elite && s.xp > 0 && this.credits() >= CR;
+         prog = `<div class="pz-xp"><h4 class="pz-st" style="margin:0;font-size:12px;color:var(--olive)">Erfahrung${s.elite ? ' <span class="pz-elite" title="Alle Nachfolger erforscht">ELITE</span>' : ''}<span style="flex:1"></span><button class="pz-q" data-a="help" title="Wie funktionieren EP, freie EP und Besatzung?">?</button></h4>
+            <div class="row"><span title="Verdient mit diesem Panzer. Erforscht ${nextN ? esc(nextN.name) : 'den nächsten Panzer seiner Linie'}."><b>${fmt(s.xp)}</b> Panzer-EP</span><span>·</span><span title="Für jeden Panzer nutzbar"><b>${fmt(this.freeXp())}</b> freie EP</span></div>
+            ${!s.researched ? `<div class="row"><button data-prog="research" ${s.canResearch ? '' : 'disabled'}>Erforschen · ${fmt(s.researchXP)} EP</button>
+               ${prevN ? `<span class="pz-k" title="Zuerst werden die EP des Vorgängers verbraucht, der Rest aus freien EP">${fmt(prevXP)} EP von ${esc(prevN.short || prevN.name)} + ${fmt(this.freeXp())} frei</span>` : ''}</div>` : ''}
+            ${s.researched && !s.owned ? `<div class="row"><button class="pri" data-prog="buy" ${s.canBuy ? '' : 'disabled'}>Kaufen · ${fmt(s.price)} Kr</button></div>` : ''}
+            ${s.owned && nextN && !s.elite ? `<div class="row pz-k">Nächster in der Linie: ${esc(nextN.name)} (${fmt(s.xp)} / ${fmt(this.ts(s.next)?.researchXP)} EP)</div>` : ''}
+            ${s.elite && s.owned ? `<div class="row" title="Elite: Panzer-EP 1 : 1 in freie EP umwandeln, je EP ${fmt(CR)} Kreditpunkte"><span>In freie EP:</span>
+               <button data-a="convert" data-v="1000" ${canConv ? '' : 'disabled'}>${fmt(Math.min(1000, s.xp))} EP · ${fmt(Math.min(1000, s.xp) * CR)} Kr</button>
+               <button data-a="convert" data-v="all" ${canConv ? '' : 'disabled'}>Alle · ${fmt(Math.min(s.xp, Math.floor(this.credits() / CR)) * CR)} Kr</button></div>` : ''}
+            ${cs && s.owned ? `<div class="row"><button data-a="crew" class="${cs.free > 0 ? 'pri' : ''}">Besatzung &amp; Fertigkeiten${cs.free > 0 ? ` · ${cs.free} frei` : ''}</button>
+               <span class="pz-k">${cs.perks.length ? esc(cs.perks.map((k) => C.PERKS?.[k]?.name || k).join(', ')) : 'keine Fertigkeiten'}</span></div>` : ''}</div>`;
       }
       this.$('#pz-stats').innerHTML = `
          <div class="pz-meta">${clsIcon(c.cls)}<span>${esc(C.CLASSES?.[c.cls]?.name || c.cls)}</span>·<span>Stufe ${C.TIER_ROMAN?.[c.tier] || c.tier}</span>·<span>${esc(C.NATIONS?.[c.nation]?.name || c.nation)}</span></div>
          <div class="pz-name pz-st">${esc(c.name)}</div>
          ${kv('Strukturpunkte', fmt(c.hp))}${kv('Gewicht', fmt(c.mass, 1) + ' t')}
+         ${prog}
          <div class="pz-sec"><h4>Feuerkraft</h4>
             ${kv('Kanone', esc(g.name))}${kv('Kaliber', fmt(g.cal, g.cal % 1 ? 1 : 0) + ' mm')}
             ${kv('Durchschlag', ammo.map((a) => fmt(a.pen)).join(' / ') + ' mm')}${kv('Schaden', ammo.map((a) => fmt(a.dmg)).join(' / '))}
-            ${kv('Nachladezeit', fmt(g.reload, 1) + ' s')}${kv('Schaden pro Minute', fmt((ap.dmg || 0) * 60 / (g.reload || 1)))}
-            ${kv('Zielzeit', fmt(g.aim, 1) + ' s')}${kv('Streuung auf 100 m', fmt(g.disp, 2) + ' m')}${kv('Höhenrichtbereich', `+${fmt(g.elev)}° / ${fmt(g.depr)}°`)}
+            ${kv('Nachladezeit', pv(g.reload, 'reload', 2, ' s'))}${kv('Schaden pro Minute', fmt((ap.dmg || 0) * 60 / ((g.reload || 1) * (K.reload ?? 1))))}
+            ${kv('Zielzeit', pv(g.aim, 'aim', 2, ' s'))}${kv('Streuung auf 100 m', pv(g.disp, 'disp', 3, ' m'))}${K.bloom && K.bloom !== 1 ? kv('Streuung in Bewegung', `<span class="pz-pk">−${fmt((1 - K.bloom) * 100)} %</span>`) : ''}${kv('Höhenrichtbereich', `+${fmt(g.elev)}° / ${fmt(g.depr)}°`)}
             ${g.arc ? kv('Seitenrichtbereich', `${fmt(g.arc[0])}° / +${fmt(g.arc[1])}°`) : ''}</div>
          <div class="pz-sec"><h4>Panzerung (mm)</h4>${ar ? `<div class="pz-arm"><span class="h"></span><span class="h">Front</span><span class="h">Seite</span><span class="h">Heck</span>
             <span>Wanne</span>${am(ar.hf)}${am(ar.hs)}${am(ar.hr)}${c.turret ? `<span>Turm</span>${am(ar.tf)}${am(ar.ts)}${am(ar.tr)}` : ''}</div>` : ''}</div>
          <div class="pz-sec"><h4>Mobilität</h4>${kv('Höchstgeschw. vor / zurück', `${fmt(c.vMax)} / ${fmt(c.vRev)} km/h`)}${kv('Motor', fmt(c.engine?.hp) + ' PS')}
             ${kv('Leistungsgewicht', fmt(pw, 1) + ' PS/t')}${kv('Wannendrehgeschw.', fmt(c.traverse) + ' °/s')}${kv('Turmdrehgeschw.', c.turret ? fmt(tt) + ' °/s' : '–')}</div>
-         <div class="pz-sec"><h4>Aufklärung</h4>${kv('Sichtweite', fmt(c.view) + ' m')}${kv('Tarnwert stehend / fahrend', `${fmt((c.camo?.still || 0) * 100)} % / ${fmt((c.camo?.move || 0) * 100)} %`)}</div>
+         <div class="pz-sec"><h4>Aufklärung</h4>${kv('Sichtweite', pv(c.view, 'view', 0, ' m'))}${kv('Tarnwert stehend / fahrend', `${pv((c.camo?.still || 0) * 100, 'camo', 1, ' %')} / ${pv((c.camo?.move || 0) * 100, 'camo', 1, ' %')}`)}
+            ${(K.repair ?? 1) !== 1 ? kv('Reparaturtempo', `<span class="pz-pk">+${fmt((K.repair - 1) * 100)} %</span>`) : ''}${(K.fire ?? 1) !== 1 ? kv('Brandgefahr', `<span class="pz-pk">−${fmt((1 - K.fire) * 100)} %</span>`) : ''}</div>
          <div class="pz-sec"><h4>Munition</h4><table class="pz-ammo"><tr><th>Typ</th><th>DS 100/500 m</th><th>Schaden</th><th>v₀ m/s</th><th>Vorrat</th></tr>
             ${ammo.map((a) => `<tr><td><i style="background:${A[a.type]?.color || '#ccc'}"></i>${esc(a.type)} <span style="color:var(--ink-3)">${esc(a.name)}</span></td>
-               <td>${fmt(a.pen)} / ${fmt(a.pen500 ?? a.pen)}</td><td>${fmt(a.dmg)}</td><td>${fmt(a.vel)}</td><td>${fmt(g.load?.[a.type])}</td></tr>`).join('')}</table></div>
-         ${prog}`;
+               <td>${fmt(a.pen)} / ${fmt(a.pen500 ?? a.pen)}</td><td>${fmt(a.dmg)}</td><td>${fmt(a.vel)}</td><td>${fmt(g.load?.[a.type])}</td></tr>`).join('')}</table></div>`;
    }
 
    renderSetup() {
@@ -709,7 +786,7 @@ export class Menu {
    }
    startOp(op, cls, diff) {
       this.viewCls = null;
-      this.ctx.startBattle({ mode: 'campaign', op, playerCls: cls, difficulty: diff });
+      this.ctx.startBattle({ mode: 'campaign', op, playerCls: cls, difficulty: diff, playerPerks: this.perks(cls) });
    }
    showCampResults(r) {
       const res = r.result || {}, cr = res.campaign || {}, st = r.stats || {}, CM = this.CM, o = CM?.OPS[cr.op || r.op] || {};
@@ -751,7 +828,7 @@ export class Menu {
             ${box('Schaden verursacht', fmt(st.dmg))}${box('Abschüsse', fmt(st.kills))}${box('Aufgeklärt', fmt(st.spotted))}${box('Schaden blockiert', fmt(st.blocked))}
             ${box('Schüsse', fmt(st.shots))}${box('Treffer', fmt(st.hits))}${box('Durchschläge', fmt(st.pens))}${box('Abpraller / kein DS', fmt(st.bounces))}
             ${st.assist != null ? box('Unterstützung', fmt(st.assist)) : ''}${st.received != null ? box('Schaden erhalten', fmt(st.received)) : ''}
-            ${res.unowned ? box('Belohnung', 'keine – Panzer nicht im Besitz') : (res.xp != null ? box('Erfahrung', '+' + fmt(res.xp) + ' EP', true) : '') + (res.credits != null ? box('Kreditpunkte', '+' + fmt(res.credits), true) : '')}
+            ${res.unowned ? box('Belohnung', 'keine – Panzer nicht im Besitz') : (res.xp != null ? box('Erfahrung', '+' + fmt(res.xp) + ' EP', true) : '') + (res.credits != null ? box('Kreditpunkte', '+' + fmt(res.credits), true) : '') + (res.xp ? box('Freie EP', '+' + fmt(res.freeXP), true) + box('Besatzungs-EP', '+' + fmt(Math.round(res.xp * (this.ts(r.playerCls)?.elite ? (this.P?.ELITE_CREW_K ?? 1.5) : 1))), true) : '')}
          </div>
          <div class="bt"><button class="pri" data-a="toGarage">Zurück zur Garage</button></div>`;
       this.$('#pz-results').classList.add('on');

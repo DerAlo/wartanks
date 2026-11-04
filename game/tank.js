@@ -14,7 +14,7 @@
 //   world.onTankEffect(kind, tank, obj)            'treeFall' | 'objectBreak' | 'splash' | 'drown'
 //   world.onBurn(tank, dmg)                        fire damage tick (World applies + attributes)
 //   world.infiniteAmmo                             training ground
-import { TANKS, MODULES, CONSUMABLES, CLASS_DEFAULTS, GROUND, WORLD } from './config.js';
+import { TANKS, MODULES, CONSUMABLES, CLASS_DEFAULTS, GROUND, WORLD, perkMods, cleanPerks } from './config.js';
 import { armorInstance, gunWorld } from './armor.js';
 import { fireShell, solveElevation } from './ballistics.js';
 import { clamp, approach, approachAngle, angleDelta, poseMatrix, mulMat3T, DEG } from './utils.js';
@@ -93,6 +93,8 @@ export class Tank {
       // spotting (spotting.js writes these)
       this.viewRange = cfg.view; this.spotted = false; this.detected = false; this.spotT = 0; this.seenBy = 0;
       this.camo = cfg.camo;
+      this.perks = []; this.pk = perkMods([]);    // crew skills (setPerks): multipliers, all 1 without perks
+      if (o.perks) this.setPerks(o.perks);
       this.consumables = {};
       for (const id in CONSUMABLES) this.consumables[id] = { count: 1, cd: 0 };
       this.input = { throttle: 0, steer: 0, brake: false, cruise: 0, fire: false, lockId: null };
@@ -101,6 +103,16 @@ export class Tank {
       this._m = new Float64Array(9);
       this._pose = { pos: this.pos, yaw: 0, pitch: 0, roll: 0, turretYaw: 0, gunPitch: 0, m: this._m };
       if (o.terrain) this.placeOn(o.terrain);
+   }
+
+   /** Crew skills (config.PERKS): the list is cleaned to a legal set, then its multipliers apply. */
+   setPerks(list) {
+      const cfg = this.cfg, g = cfg.gun;
+      this.perks = cleanPerks(list); const k = this.pk = perkMods(this.perks);
+      this.baseDisp = g.disp * k.disp;
+      this.camo = { ...cfg.camo, still: (cfg.camo?.still ?? 0) * k.camo, move: (cfg.camo?.move ?? 0) * k.camo };
+      this.reloadMax = g.reload * k.reload * (this.roleAlive('loader') ? 1 : 1.35);
+      return this;
    }
 
    // ---------------------------------------------------------------- derived
@@ -114,7 +126,7 @@ export class Tank {
    }
    round() { return this.cfg.gun.ammoByType[this.ammoSel]; }
    viewRangeNow() {
-      let v = this.cfg.view * (this.viewMul ?? 1);
+      let v = this.cfg.view * (this.viewMul ?? 1) * this.pk.view;
       if (!this.roleAlive('commander')) v *= 0.85;
       const o = this.mod('optics'); if (o === 'damaged') v *= 0.8; else if (o === 'destroyed') v *= 0.6;
       return v;
@@ -173,7 +185,7 @@ export class Tank {
          if (this.mod('gun') === 'damaged') rate /= 1.1;
          if (this.mod('gun') !== 'destroyed') this.reload = Math.max(0, this.reload - dt * rate);
       }
-      this.reloadMax = this.cfg.gun.reload * (this.roleAlive('loader') ? 1 : 1.35);
+      this.reloadMax = this.cfg.gun.reload * this.pk.reload * (this.roleAlive('loader') ? 1 : 1.35);
       this.viewRange = this.viewRangeNow();
       if (this.input.fire && this.bot && this.reload <= 0) this.fire(world);
    }
@@ -389,10 +401,10 @@ export class Tank {
       let base = this.baseDisp;
       if (!this.roleAlive('gunner')) base *= 1.25;
       if (this.mod('gun') === 'damaged') base *= 1.3;
-      const bloom = 1 + this.dispMove * Math.abs(this.speed) * 1.5 + this.dispHull * Math.abs(this.yawRate) / DEG * 0.1
-         + this.dispTurret * Math.abs(this.turretRate) / DEG * 0.1;
+      const bloom = 1 + (this.dispMove * Math.abs(this.speed) * 1.5 + this.dispHull * Math.abs(this.yawRate) / DEG * 0.1
+         + this.dispTurret * Math.abs(this.turretRate) / DEG * 0.1) * this.pk.bloom;
       const target = base * bloom;
-      const aimT = g.aim * (this.roleAlive('gunner') ? 1 : 1.25);
+      const aimT = g.aim * this.pk.aim * (this.roleAlive('gunner') ? 1 : 1.25);
       if (target >= this.aimDisp) this.aimDisp = target;
       else this.aimDisp = target + (this.aimDisp - target) * Math.exp(-dt / aimT);
    }
@@ -459,7 +471,7 @@ export class Tank {
       for (const id in this.modules) {
          const m = this.modules[id];
          if (m.state === 'destroyed') {          // field repair to 'damaged'
-            m.repairT -= dt * (this.roleAlive('driver') ? 1 : 0.8);
+            m.repairT -= dt * this.pk.repair * (this.roleAlive('driver') ? 1 : 0.8);
             if (m.repairT <= 0) { m.state = 'damaged'; m.hp = Math.round(m.max * 0.5); }
          }
       }
@@ -470,7 +482,7 @@ export class Tank {
       const dmg = this.maxHP * 0.022 * dt;
       if (world.onBurn) world.onBurn(this, dmg); else { this.hp -= dmg; if (this.hp <= 0) this.destroy(); }
       const rng = world.rng || Math.random;
-      if (rng() < dt * 0.11 * (this.burnT > 4 ? 1 : 0.3)) this.burning = false;
+      if (rng() < dt * 0.11 * this.pk.burnOut * (this.burnT > 4 ? 1 : 0.3)) this.burning = false;
       if (this.bot && this.burnT > 1.2 && this.consumables.extinguisher?.count > 0) this.useConsumable('extinguisher');
    }
 
