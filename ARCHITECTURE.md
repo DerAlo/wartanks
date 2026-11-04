@@ -353,6 +353,17 @@ lists them under "Sonderfahrzeuge", the campaign briefing adds them to every ope
 (`lobby.validTank` = `config.isDrivable`: tree + cheat tanks, never emplacements). `matchmake` clamps
 the player's tier to the tree's top tier.
 
+**Leopard 2A6** (`leo2a6`, `config.CHEAT_RAW`, the only cheat tank): tier X MT, 2400 HP, 62 t, 1500 PS
+diesel, 72/31 km/h. Same armour format as the tree: hull nose 600 mm at 30°, glacis 60 mm at 82°
+(bounces), lower plate 250 mm at 52°; the turret octagon has a 1.2 m front chamfer, so the cheeks
+are the 2A6's add-on wedges (560 mm, 45° in plan, 22° back) and the narrow front face (650 mm) sits
+behind a 450 mm mantlet; flanks 70 mm + 40 mm skirts stay penetrable. Gun 120 mm Rh L/55:
+DM53 APFSDS as `APCR` (650 mm, explicit `pen500` 630, 1670 m/s), DM12 HEAT-MP, DM11 HE; no `AP`
+round, so it starts on APCR. `cfg.look = 'leo2'` gives tanks3d its own details (arrowhead wedge
+prisms ahead of the cheeks, EMES/PERI sights, bustle racks, smoke dischargers, segmented thermal
+sleeve with bore evacuator and muzzle reference sensor, heavy front skirt plates, modern hull deck
+without tools/exhausts); `cfg.paint = 'nato'` picks the NATO three-tone camouflage (`CAMO.nato`).
+
 As implemented: `loadProfile()`, `saveProfile(p)`, `resetProfile()`, `newProfile()`,
 `techTree() -> { DE:[ids by tier], ... }`, `tankState(p, id) -> { owned, researched, xp, prev,
 researchXP, price, canResearch, canBuy }`, `research(p, id)` / `buy(p, id) -> { ok, reason }`,

@@ -31,7 +31,7 @@ test('every tank builds closed armour and front shots hit the front', () => {
    for (const cfg of Object.values(TANKS)) {
       if (cfg.site) continue;                  // campaign emplacements: covered in campaign.test.mjs
       const A = buildArmor(cfg);
-      assert.ok(A.boundR > 2 && A.boundR < 9, cfg.id + ' boundR ' + A.boundR);
+      assert.ok(A.boundR > 2 && A.boundR < 10, cfg.id + ' boundR ' + A.boundR);   // < 10: the Leopard's 6 m L/55 reaches past 9
       for (const part of A.parts) for (let k = 0; k < part.planes.length; k += 4) {
          const c = part.center, P = part.planes;   // the centre is inside every plane
          assert.ok(P[k] * c[0] + P[k + 1] * c[1] + P[k + 2] * c[2] <= P[k + 3] + 1e-6, cfg.id + ' ' + part.name);

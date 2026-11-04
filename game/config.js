@@ -766,7 +766,29 @@ for (const raw of SITE_RAW) { const cfg = finalize(raw); TANKS[cfg.id] = cfg; SI
 // ---- cheat-only tanks (the logo cheat, profile.cheat): in TANKS but not in TANK_LIST, so they never
 // appear in the tech tree, the shop, matchmaking, training targets or bot rosters. The garage, the
 // campaign briefing and the MP lobby offer them once the profile has the cheat.
-const CHEAT_RAW = [];
+// Cheat-only vehicles (logo cheat, see progress.maxOutProfile): in TANKS but never in TANK_LIST, so no tech
+// tree, shop, matchmaking pool, training target or bot. `look` / `paint` pick their own tanks3d details.
+const CHEAT_RAW = [
+   {
+      id: 'leo2a6', name: 'Leopard 2A6', short: 'Leopard 2', nation: 'DE', cls: 'MT', tier: 10, look: 'leo2', paint: 'nato',
+      hp: 2400, mass: 62.3, engine: { hp: 1500, fuel: 'diesel' }, vMax: 72, vRev: 31, traverse: 52, ground: [0.85, 0.95, 1.4],
+      view: 440, camo: { still: 0.12, move: 0.08 }, crew: ['commander', 'gunner', 'loader', 'driver'],
+      // composite armour as equivalent steel: nose ~700 mm effective, wedge cheeks ~800, glacis bounces almost anything
+      hull: { floorY: 0.52, w: 3.56, lowerW: 2.3, sponsonY: 1.12, front: [['lfp', 250, 52, 0.35], ['nose', 600, 30, 0.45], ['ufp', 60, 82, 0.22]], roof: [40, 5.15],
+         rear: [['urp', 40, 8, 0.6], ['lrp', 30, -20, null]], floorT: 30, side: { t: 70, tLow: 40, tSpon: 30 } },
+      // arrowhead turret: the big front chamfer makes the 2A6's add-on wedges the cheeks, the narrow front is the mantlet
+      turret: { z: 0.45, ringR: 1.1, h: 0.8, roofT: 60, oct: [3.3, 2.25, 1.95, 1.2, 0.3], f: [650, 4], cheek: [560, 22], s: [200, 3], rr: [80, 3], r: [60, 3], traverse: 48, cupT: 60 },
+      mantlet: { w: 0.72, h: 0.62, d: 0.3, t: 450 },
+      skirts: { t: 40, h: 0.62, y0: 0.5 },
+      gun: { name: '120 mm Rh L/55', cal: 120, len: 6.2, reload: 6.0, disp: 0.22, aim: 1.5, elev: 20, depr: -9, cap: 42,
+         load: { APCR: 24, HEAT: 13, HE: 5 },
+         ammo: [{ type: 'APCR', name: 'DM53 APFSDS', pen: 650, pen500: 630, dmg: 540, vel: 1670 },
+            { type: 'HEAT', name: 'DM12 HEAT-MP', pen: 480, dmg: 540, vel: 1140 },
+            { type: 'HE', name: 'DM11 HE', pen: 70, dmg: 720, vel: 1000 }] },
+      run: R.torsion({ wheels: 7, wheelR: 0.35, rollers: 4, trackW: 0.635, sprocketR: 0.34, idlerR: 0.33, len: 6.95, h: 1.06 }),
+      layout: { ammo: 'bustle', fuel: 'sides' },
+   },
+];
 export const CHEAT_TANKS = [];
 for (const raw of CHEAT_RAW) { const cfg = finalize(raw); cfg.cheat = true; TANKS[cfg.id] = cfg; CHEAT_TANKS.push(cfg.id); }
 /** Tanks a player may drive (garage / net games): the tech tree plus the cheat-only ones; never sites. */

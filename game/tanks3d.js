@@ -16,13 +16,16 @@ const CAMO = {
    su: { base: '#4a5034', spots: ['#41472e', '#555b3c'], style: 'plain' },
    us: { base: '#585a39', spots: ['#4e5133', '#62643f'], style: 'plain' },
    uk: { base: '#6b6847', spots: ['#4d4a34', '#7a7452'], style: 'blotch' },
+   // Bundeswehr NATO three-tone (cfg.paint 'nato'): bronze green base, leather brown and tar black blotches
+   nato: { base: '#3f4630', spots: ['#5a4632', '#1f1f1b'], style: 'nato' },
 };
 function camoTexture(n) {
    const c = CAMO[n] || CAMO.de, cv = document.createElement('canvas'); cv.width = cv.height = 256;
    const g = cv.getContext('2d'); g.fillStyle = c.base; g.fillRect(0, 0, 256, 256);
-   for (let i = 0; i < (c.style === 'plain' ? 26 : 34); i++) {
-      g.fillStyle = c.spots[i % 2]; g.globalAlpha = c.style === 'plain' ? 0.35 : c.style === 'streak' ? 0.62 : 0.8;
-      const x = hash(i, 1) * 256, y = hash(i, 2) * 256, r = 10 + hash(i, 3) * 26;
+   const nato = c.style === 'nato';
+   for (let i = 0; i < (c.style === 'plain' ? 26 : nato ? 16 : 34); i++) {
+      g.fillStyle = c.spots[i % 2]; g.globalAlpha = c.style === 'plain' ? 0.35 : c.style === 'streak' ? 0.62 : nato ? 1 : 0.8;
+      const x = hash(i, 1) * 256, y = hash(i, 2) * 256, r = nato ? 22 + hash(i, 3) * 30 : 10 + hash(i, 3) * 26;
       g.beginPath();
       for (let k = 0; k < 9; k++) {
          const a = k / 9 * Math.PI * 2, rr = r * (0.6 + hash(i, k) * 0.7) * (c.style === 'streak' ? (k % 2 ? 0.35 : 1.4) : 1);
@@ -214,7 +217,7 @@ export function shapeOf(cfg = {}) {
    const profile = (h.profile || [{ z: -3, y: 0.45 }, { z: -3, y: 1.6 }, { z: 3, y: 1.6 }, { z: 3, y: 0.45 }]).map((p) => [p.z, p.y]);
    const rz = run.z ?? 0, rl = run.len ?? d.len * 0.9;
    return {
-      cfg, nation: NAT[cfg.nation] || 'de', L: d.len, W: d.width, H: d.height,
+      cfg, nation: NAT[cfg.nation] || 'de', look: cfg.look || null, paint: CAMO[cfg.paint] ? cfg.paint : null, L: d.len, W: d.width, H: d.height,
       hull: { profile, w: h.w ?? 2.6, lowerW: h.lowerW, sponsonY: h.sponsonY, floorY: h.floorY ?? 0.45, roofY: h.roofY ?? 1.6, slope: (h.sideSlope ?? 0) * DEG, zMin: h.zMin ?? -3, zMax: h.zMax ?? 3 },
       turret: cfg.turret, mantlet: cfg.mantlet, gun: cfg.gun || { cal: 75, len: 3, pivot: { x: 0, y: 0.3, z: -0.6 }, mount: 'turret' },
       track: { x: run.x ?? d.width / 2 - 0.3, w: run.trackW ?? 0.5, z0: rz - rl / 2, z1: rz + rl / 2, top: run.h ?? 1.0, wheels: run.wheels ?? 6, r: run.wheelR ?? 0.35,
@@ -267,8 +270,9 @@ function buildHull(S) {
       hullPiece(A, clipY(P, H.sponsonY, true), H.w / 2, H.sponsonY, H.slope, PAINT);
    } else hullPiece(A, P, H.w / 2, H.floorY, H.slope, PAINT);
    const front = H.zMin, back = H.zMax, tz = (T.z0 + T.z1) / 2, tl = T.z1 - T.z0;
-   const covered = H.w / 2 >= T.x + T.w / 2 - 0.05;
+   const covered = H.w / 2 >= T.x + T.w / 2 - 0.05, leo = S.look === 'leo2';
    for (const s of [-1, 1]) {
+      if (leo) break;                    // modern tank: no tools strapped on the hull
       const fy = T.top + 0.04;
       if (!covered && !T.allround) A.box(s * T.x, fy, tz, T.w + 0.1, 0.04, tl + 0.1, PAINT);
       if (!covered && !T.allround) {   // on the track fender
@@ -285,7 +289,15 @@ function buildHull(S) {
          else A.cyl(x, at.y + 0.035, at.z, 0.035, 0.035, len, DARK, 'z', 6);
       }
    }
-   if (S.skirts) for (const s of [-1, 1]) { const sk = S.skirts, y0 = sk.y0 ?? 0.6, hh = sk.h ?? 0.6; for (let k = 0; k < 6; k++) A.box(s * (T.x + T.w / 2 + 0.06), y0 + hh / 2, T.z0 + tl * (k + 0.5) / 6, 0.025, hh, tl / 6 - 0.04, PAINT, 0, 0, s * 0.03); }
+   if (S.skirts && leo) for (const s of [-1, 1]) {   // Leopard 2: three heavy armoured skirt plates in front, thin rubber-edged ones behind
+      const sk = S.skirts, y0 = sk.y0 ?? 0.6, hh = sk.h ?? 0.6, x = s * (T.x + T.w / 2 + 0.06), top = y0 + hh;
+      const zF = Math.min(T.z0, H.zMin + 0.55), heavy = 1.95, rest = T.z1 - 0.1 - (zF + heavy);
+      for (let k = 0; k < 3; k++) A.box(x + s * 0.03, y0 + hh / 2, zF + heavy * (k + 0.5) / 3, 0.09, hh, heavy / 3 - 0.03, PAINT);
+      for (let k = 0; k < 4; k++) A.box(x, y0 + hh / 2 + 0.03, zF + heavy + rest * (k + 0.5) / 4, 0.03, hh - 0.06, rest / 4 - 0.03, PAINT);
+      A.box(x, y0 + 0.02, zF + heavy + rest / 2, 0.035, 0.05, rest, BLACK);                  // rubber lower edge
+      A.box(x - s * 0.04, top + 0.015, (zF + T.z1) / 2, 0.16, 0.03, T.z1 - zF, PAINT);      // fender edge above the plates
+   }
+   else if (S.skirts) for (const s of [-1, 1]) { const sk = S.skirts, y0 = sk.y0 ?? 0.6, hh = sk.h ?? 0.6; for (let k = 0; k < 6; k++) A.box(s * (T.x + T.w / 2 + 0.06), y0 + hh / 2, T.z0 + tl * (k + 0.5) / 6, 0.025, hh, tl / 6 - 0.04, PAINT, 0, 0, s * 0.03); }
    const zs = wheelZs(T), r = T.r, { sz, sy, iz, iy } = sprocketIdler(T), wy0 = r + beltT(T);
    const TYRE = [0.13, 0.13, 0.12];
    for (const s of [-1, 1]) {
@@ -302,6 +314,20 @@ function buildHull(S) {
       for (let k = 0; k < 8; k++) A.box(x, sy + Math.cos(k * 0.785) * T.sprR, sz + Math.sin(k * 0.785) * T.sprR, T.w * 0.5, 0.07, 0.07, STEEL, k * 0.785);
       A.cyl(x, iy, iz, T.idlR, T.idlR, T.w * 0.6, DARK, 'x', 12);
       for (let k = 0; k < T.rollers; k++) A.cyl(x, rollerY(T), T.z0 + (k + 1) * tl / (T.rollers + 1), 0.09, 0.09, T.w * 0.4, STEEL, 'x', 8);
+   }
+   if (leo) {
+      // driver's hatch front right with three periscopes, low engine deck with grilles, rear exhaust grilles
+      const dz = front + 1.95, dy = roofYAt(P, dz);
+      A.box(H.w * 0.17, dy + 0.03, dz + 0.1, 0.6, 0.06, 0.55, PAINT);
+      for (let k = 0; k < 3; k++) A.box(H.w * 0.17 + (k - 1) * 0.17, dy + 0.07, dz - 0.22, 0.12, 0.08, 0.06, BLACK);
+      for (const s of [-1, 1]) A.box(s * 0.98, roofYAt(P, front + 1.6) + 0.04, front + 1.6, 0.18, 0.08, 0.12, DARK);   // headlight guards
+      const gz = back - 1.25;
+      for (const s of [-1, 1]) A.box(s * 0.75, roofYAt(P, gz) + 0.02, gz, 0.9, 0.04, 1.9, DARK);
+      for (let k = 0; k < 6; k++) A.box(0, roofYAt(P, gz) + 0.045, gz - 0.85 + k * 0.34, 2.4, 0.02, 0.05, BLACK);
+      const ey = H.roofY - 0.28;
+      for (const s of [-1, 1]) A.box(s * 0.95, ey, rearZAt(P, ey) + 0.025, 0.9, 0.32, 0.05, BLACK);
+      for (const s of [-1, 1]) A.box(s * 0.45, ey - 0.45, rearZAt(P, ey - 0.45) + 0.06, 0.3, 0.12, 0.12, DARK);    // tow eyes
+      return A.build();
    }
    const hz = front + (back - front) * 0.18, hy = roofYAt(P, hz);
    for (const s of [-1, 1]) A.cyl(s * H.w * 0.2, hy + 0.035, hz, 0.28, 0.28, 0.07, PAINT, 'y', 10);
@@ -321,6 +347,7 @@ function buildTurret(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
    for (let i = 0; i < n; i++) { const j = (i + 1) % n; A.quad(B[i], B[j], U[j], U[i], PAINT, ctr); }
    for (let i = 1; i < n - 1; i++) { A.tri(U[0], U[i], U[i + 1], PAINT, ctr); A.tri(B[0], B[i], B[i + 1], PAINT, ctr); }
    const zs = top.map((p) => p[1]), zBack = Math.max(...zs), zFront = Math.min(...zs), xMax = Math.max(...top.map((p) => p[0]));
+   if (S.look === 'leo2') { leoTurret(A, S, PAINT, DARK); return A.build(); }
    if (!T.openTop) {
       const cz = zFront + (zBack - zFront) * 0.68, cx = -Math.min(0.42, xMax * 0.55);
       A.cyl(cx, T.h + 0.14, cz, 0.34, 0.31, 0.28, PAINT, 'y', 12);
@@ -338,6 +365,22 @@ function buildTurret(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
 function buildGun(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
    const A = new Acc(), G = S.gun, r = Math.max(0.04, G.cal / 1000 * 0.72);
    const m = S.mantlet, start = m ? -(Math.abs(m.z - G.pivot.z) + m.d / 2) : 0;   // barrel leaves the mantlet face
+   if (S.look === 'leo2') {
+      // Rh 120 L/55: slim smoothbore in a segmented thermal sleeve, bore evacuator, muzzle reference sensor on top
+      const len = G.len + start, rb = 0.075;
+      A.box(0, 0, start + 0.12, m ? m.w * 0.55 : 0.4, m ? m.h * 0.7 : 0.35, 0.3, PAINT);        // gun shield collar
+      const segs = 6, sl = len / segs;
+      for (let k = 0; k < segs; k++) {
+         const z = start - sl * (k + 0.5), rr = rb * (1.12 - k * 0.025);
+         A.cyl(0, 0, z, rr, rr, sl - 0.05, PAINT, 'z', 12);
+         A.cyl(0, 0, z - sl / 2 + 0.01, rr + 0.012, rr + 0.012, 0.05, DARK, 'z', 12);          // sleeve clamp
+      }
+      A.cyl(0, 0, start - len * 0.42, rb * 1.75, rb * 1.75, 0.55, PAINT, 'z', 12);             // bore evacuator
+      A.cyl(0, 0, -G.len + 0.08, rb * 0.95, rb * 0.95, 0.16, DARK, 'z', 12);                   // bare muzzle
+      A.box(0, rb + 0.05, -G.len + 0.28, 0.07, 0.07, 0.12, DARK);                              // muzzle reference sensor
+      A.box(0, rb + 0.02, -G.len + 0.36, 0.02, 0.05, 0.04, DARK);
+      return A.build();
+   }
    A.cyl(0, 0, start + 0.1, r * 2.3, r * 2.5, 0.45, PAINT, 'z', 12);
    const len = G.len + start;
    A.cyl(0, 0, start - len / 2, r * 1.4, r, len, DARK, 'z', 12);
@@ -453,6 +496,58 @@ function buildDecals(S, onTurret) {
    const g = new THREE.BufferGeometry();
    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
    g.computeVertexNormals(); return g;
+}
+
+// Leopard 2A6 turret dressing (cfg.look 'leo2'): the octagon from config.js already is the arrowhead (big
+// front chamfer = the add-on wedges as the cheeks); here: spaced wedge plates standing proud of the cheeks and
+// reaching past the recessed mantlet, EMES gunner's sight, PERI R17, hatches, bustle racks, smoke dischargers.
+function leoTurret(A, S, PAINT, DARK) {
+   const T = S.turret, base = T.base, top = T.top, h = T.h;
+   const zs = top.map((p) => p[1]), zFront = Math.min(...zs), xMax = Math.max(...top.map((p) => p[0]));
+   const bBack = Math.max(...base.map((p) => p[1]));
+   // wedges: cheek faces are base[1]->base[2] (left) and base[7]->base[0] (right); each a solid prism (plan
+   // triangle) whose top slopes down to its tip, the tip 0.3 m ahead of the turret front beside the mantlet
+   for (const s of [-1, 1]) {
+      const fc = base[s < 0 ? 1 : 0], sc = base[s < 0 ? 2 : 7];       // front corner (beside the mantlet), side corner
+      const tf = top[s < 0 ? 1 : 0], ts = top[s < 0 ? 2 : 7];
+      const out = 0.07, nx = s * 0.7071 * out, nz = -0.7071 * out;      // stand-off of the wedge from the cheek
+      const tip = [fc[0] + nx - s * 0.02, fc[1] - 0.5];
+      const rear = [sc[0] + nx, sc[1] + nz + 0.05], inner = [fc[0] - s * 0.03, fc[1] + 0.02];
+      const yb = 0.06, yR = h + 0.03, yT = h * 0.42;
+      const rearT = [ts[0] + nx, ts[1] + nz + 0.05], innerT = [tf[0] - s * 0.03, tf[1] + 0.02];
+      const P = [[tip[0], yb, tip[1]], [rear[0], yb, rear[1]], [inner[0], yb, inner[1]], [tip[0], yT, tip[1] + 0.06], [rearT[0], yR, rearT[1]], [innerT[0], yR - 0.06, innerT[1]]];
+      const c = P.reduce((a, p) => [a[0] + p[0] / 6, a[1] + p[1] / 6, a[2] + p[2] / 6], [0, 0, 0]);
+      A.tri(P[0], P[1], P[2], PAINT, c); A.tri(P[3], P[4], P[5], PAINT, c);
+      for (const [i, j] of [[0, 1], [1, 2], [2, 0]]) A.quad(P[i], P[j], P[j + 3], P[i + 3], PAINT, c);
+      A.box(s * (xMax + 0.01), h * 0.5, rear[1] + 0.03, 0.04, h * 0.85, 0.05, DARK);     // seam where the wedge meets the side
+      A.box(inner[0] - s * 0.02, h * 0.45, (tip[1] + inner[1]) / 2, 0.05, h * 0.8, inner[1] - tip[1], BLACK);   // shadow gap beside the mantlet
+   }
+   // roof: EMES 15 gunner's sight front right, PERI R17 on its pedestal behind it, commander's hatch right, loader's left
+   const ez = zFront + 0.75;
+   A.box(0.62, h + 0.16, ez, 0.42, 0.32, 0.62, PAINT);
+   A.box(0.62, h + 0.17, ez - 0.32, 0.36, 0.2, 0.03, BLACK);
+   A.box(0.62, h + 0.35, ez + 0.05, 0.3, 0.06, 0.4, PAINT);                                   // armoured flap
+   const pz = zFront + 1.35, px = 0.95;
+   A.cyl(px, h + 0.14, pz, 0.17, 0.17, 0.28, PAINT, 'y', 10);
+   A.box(px, h + 0.42, pz, 0.36, 0.3, 0.36, PAINT);
+   A.box(px, h + 0.42, pz - 0.185, 0.24, 0.12, 0.02, BLACK);
+   A.box(px, h + 0.6, pz, 0.38, 0.05, 0.38, DARK);
+   A.cyl(0.45, h + 0.04, pz + 0.55, 0.36, 0.36, 0.08, PAINT, 'y', 12);
+   for (let k = 0; k < 8; k++) A.box(0.45 + Math.cos(k * 0.785) * 0.4, h + 0.09, pz + 0.55 + Math.sin(k * 0.785) * 0.4, 0.06, 0.07, 0.1, BLACK, 0, -k * 0.785);
+   A.cyl(-0.6, h + 0.035, pz + 0.45, 0.34, 0.34, 0.07, PAINT, 'y', 12);
+   A.box(-0.6, h + 0.28, pz + 0.05, 0.05, 0.05, 0.9, BLACK);                                  // loader's MG3
+   A.box(-0.6, h + 0.16, pz + 0.3, 0.04, 0.22, 0.04, DARK);
+   A.box(-0.85, h + 0.08, zFront + 0.9, 0.22, 0.14, 0.16, DARK);                              // loader's periscope
+   // bustle: stowage rack on the back plate and the rear sides
+   A.box(0, h * 0.5, bBack + 0.2, xMax * 1.5, h * 0.62, 0.38, DARK);
+   for (const s of [-1, 1]) A.box(s * (xMax + 0.1), h * 0.62, bBack - 0.55, 0.2, h * 0.4, 1.0, DARK);
+   // smoke dischargers: 2 x 4 tubes on each side
+   for (const s of [-1, 1]) for (let k = 0; k < 4; k++) for (let j = 0; j < 2; j++)
+      A.cyl(s * (xMax + 0.09), h * 0.38 + j * 0.15, bBack - 1.35 + k * 0.17, 0.05, 0.05, 0.24, STEEL, 'x', 8);
+   // crosswind sensor mast on the rear roof
+   A.cyl(0, h + 0.25, bBack - 0.25, 0.02, 0.02, 0.5, DARK, 'y', 6);
+   A.box(0, h + 0.5, bBack - 0.25, 0.12, 0.04, 0.04, DARK);
+   if (S.mantlet) { const m = S.mantlet; A.box(m.x, m.y, m.z, m.w, m.h, m.d, PAINT); A.box(m.x, m.y + m.h * 0.18, m.z - m.d / 2 - 0.01, m.w * 0.25, m.h * 0.22, 0.02, BLACK); }
 }
 
 const GEO_CACHE = new Map();
@@ -715,7 +810,7 @@ export function buildSiteModel(cfg, key = cfg?.id || 'site') {
 // ---------------- model ----------------
 export function buildTankModel(cfg, key = cfg?.id || 'x') {
    if (cfg?.site) return buildSiteModel(cfg, key);
-   const sh = shared(), g = geometryFor(cfg, key), S = g.S, mat0 = sh.camo[S.nation] || sh.camo.de;
+   const sh = shared(), g = geometryFor(cfg, key), S = g.S, mat0 = sh.camo[S.paint || S.nation] || sh.camo.de;
    const root = new THREE.Group();
    const body = new THREE.Group(); root.add(body);              // pitch/roll
    const hull = new THREE.Mesh(g.hull, mat0); body.add(hull);
