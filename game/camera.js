@@ -12,7 +12,7 @@ export class TankCamera {
    constructor(cam) {
       this.cam = cam;
       this.yaw = 0; this.pitch = -0.08;            // view direction, world
-      this.level = 2; this.dist = TP_DIST[2]; this.lastMag = 1;
+      this.level = 2; this.dist = TP_DIST[2];
       this.freeLook = false; this.aimYaw = 0; this.aimPitch = 0;
       this.dir = new THREE.Vector3(); this.pivot = new THREE.Vector3();
       this._acc = 0; this._fov = BASE_FOV; this.shake = 0;
@@ -28,11 +28,10 @@ export class TankCamera {
          const was = this.scoped;
          this.level = clamp(this.level + s, 0, TP_DIST.length + MAGS.length - 1);
          if (this.scoped !== was) changed = true;
-         if (this.scoped) this.lastMag = this.level - TP_DIST.length;
       }
       return changed;
    }
-   toggleScope() { this.level = this.scoped ? TP_DIST.length - 1 : TP_DIST.length + this.lastMag; }
+   toggleScope() { this.level = this.scoped ? TP_DIST.length - 1 : TP_DIST.length; }   // always enter at the lowest magnification (like WoT) — re-entering at 16x is disorienting
    look(dx, dy, sens) {
       const z = this.zoom, k = sens / Math.max(1, z * 0.8);
       this.yaw -= dx * k; this.pitch = clamp(this.pitch - dy * k, -1.2, this.scoped ? 0.45 : 0.6);
