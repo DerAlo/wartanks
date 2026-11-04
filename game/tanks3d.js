@@ -408,6 +408,7 @@ function buildGun(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
    const len = G.len + start;
    A.cyl(0, 0, start - len / 2, r * 1.4, r, len, DARK, 'z', 12);
    A.cyl(0, 0, start - len * 0.35, r * 1.6, r * 1.6, 0.22, DARK, 'z', 10);
+   if (G.evac) A.cyl(0, 0, -G.len * G.evac, r * 1.9, r * 1.9, 0.5, PAINT, 'z', 12);   // fume extractor (bore evacuator), G.evac = fraction of the barrel from the breech
    if (G.brake) { A.cyl(0, 0, -G.len + 0.15, r * 2, r * 2, 0.3, DARK, 'z', 10); A.box(0, 0, -G.len + 0.15, r * 4.4, r * 2.6, 0.13, DARK); }
    if (S.look === 'maus') {   // coaxial 7.5 cm KwK 44 L/36.5 beside the 12.8 cm, in the same mantlet
       const cl = 2.75, cr = 0.055, cx = -(m ? m.w * 0.3 : 0.35);

@@ -375,7 +375,7 @@ localStorage (memory fallback).
 
 **Research tree** (branching): a tank's `parent` in config.js names the tank whose XP researches it
 (`null` = the nation's root, tier I); `prevOf(id)`, `nextsOf(id)` (all branches), `tankState().nexts`.
-Nations without `parent` fields (UK for now) fall back to one line in tier order. Parents are
+A nation without `parent` fields would fall back to one line in tier order (all four have trees now). Parents are
 always one tier lower (tests/tree.test.mjs). Elite = every tank in `nextsOf` researched.
 DE: Leichttraktor (I LT) → Pz II C (II LT) → Pz III E (III MT) → { Luchs (IV LT, leaf),
 Pz III J (IV MT) → { Pz IV H (V MT) → VK 36.01 H (VI HT) → { Panther (VII MT), Tiger I (VII HT) →
@@ -387,9 +387,14 @@ KV-85 (VI) → IS-2 (VII) → IS-3 (VIII) → IS-4 (IX) → IS-7 (X HT) }.
 US: T1 Cunningham (I LT) → M2A4 (II LT) → M3 Stuart (III LT) → M3 Lee (IV MT) → { M4 (V MT) → M4A3E8 (VI)
 → M26 (VII) → { M46 (VIII) → M47 (IX) → M48A1 (X MT), T32 (VIII HT) → M103 (IX) → T110E5 (X HT) },
 M10 (V TD) → M18 (VI) → M36 (VII) → T25 AT (VIII) → T95 (IX TD) }.
+UK: Vickers Medium I (I MT) → Vickers Medium II (II MT) → A10 (III LT) → { A13 (IV LT) → Crusader (V MT) →
+{ Cromwell (VI MT) → Comet (VII) → Centurion I (VIII) → Centurion 7/1 (IX) → Centurion 10 (X MT), Achilles (VI TD, leaf) },
+Matilda (IV HT) → Churchill III (V) → Churchill VII (VI) → Black Prince (VII) → Caernarvon (VIII) → Conqueror (IX) → FV215b (X HT) }.
 Look/paint: `look 'maus'` adds the coaxial 7.5 cm barrel, `look 't28'` the two front MG turrets, `look 'lee'`
 the M3 Lee's 37 mm top turret (its real gun is the 75 mm sponson casemate gun, `turret: null`, arc ±15°); `paint 'grau'` = early-war Panzergrau
-(tiers I–III), `paint 'su30'` = 1930s Soviet 4BO green.
+(tiers I–III), `paint 'su30'` = 1930s Soviet 4BO green, `paint 'ukbg'` = plain British deep bronze green
+(Vickers mediums, Centurion family), `paint 'caunter'` = 1940–41 desert Caunter bands (A10, A13, Matilda, Crusader).
+Gun `evac: f` draws a fume extractor at fraction f of the barrel (20-pdr, L7, L1). FV215b: `turret.z` > 0 = rear turret.
 
 **XP model, crew and perks** (WoT, simplified). Each nation is one line (`techTree()` order);
 tank XP researches only the next tank of its own line (the predecessor's XP is used first, the rest
