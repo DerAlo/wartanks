@@ -389,6 +389,36 @@ function octTurret(w, lenF, lenR, cF, cR, f, cheek, s, rr, r) {
    return { base, faces };
 }
 
+// Cast / rounded turret (spec.round = [n, pf, pr]): an n-gon on a superellipse through the oct box
+// (width w, lenF ahead of and lenR behind the ring), exponent pf for the front half and pr for the rear
+// (2 = elliptic like a cast Soviet dome, 6+ = nearly flat like the Tiger I's horseshoe front). Edge 0 is
+// the front centre (z = -lenF); every edge takes the plate, thickness and slope of the oct facing its
+// outward normal points to, so the armour stays the same per facing, only the outline is round.
+function roundTurret(w, lenF, lenR, round, spec) {
+   const [n, pf, pr] = round, hw = w / 2, base = [], st = 2 * Math.PI / n;
+   const sp = (v, p) => Math.sign(v) * Math.abs(v) ** (2 / p);
+   for (let k = 0; k < n; k++) {
+      const a = -st / 2 + k * st, c = Math.cos(a), front = c > 1e-9, p = front ? pf : pr;
+      const L = front ? lenF / Math.cos(st / 2) ** (2 / pf) : lenR;
+      base.push([+(-hw * sp(Math.sin(a), p)).toFixed(4), +(-L * sp(c, p)).toFixed(4)]);
+   }
+   const faces = [];
+   for (let k = 0; k < n; k++) {
+      const P = base[k], Q = base[(k + 1) % n], dx = Q[0] - P[0], dz = Q[1] - P[1];
+      // outward normal (base runs right->left across the front): (-dz, dx) points out; angle from -z
+      const nx = -dz, nz = dx, ang = Math.atan2(Math.abs(nx), -nz) / D2R, left = nx < 0;
+      const [id, a] = ang < 30 ? ['tf', spec.f] : ang < 58 ? [left ? 'tcl' : 'tcr', spec.cheek] : ang < 122 ? [left ? 'tsl' : 'tsr', spec.s]
+         : ang < 155 ? [left ? 'trl' : 'trr', spec.rr] : ['tr', spec.r];
+      // slope eases between the facings (front 0°, cheek 45°, side 90°, rear corner 140°, rear 180°):
+      // a step between neighbouring short edges would fold the inset roof polygon
+      const K = [[0, spec.f[1]], [45, spec.cheek[1]], [90, spec.s[1]], [140, spec.rr[1]], [180, spec.r[1]]];
+      let j = 0; while (j < 3 && ang > K[j + 1][0]) j++;
+      const u = Math.min(1, Math.max(0, (ang - K[j][0]) / (K[j + 1][0] - K[j][0])));
+      faces.push({ id, t: a[0], slope: +(K[j][1] + (K[j + 1][1] - K[j][1]) * u).toFixed(2) });
+   }
+   return { base, faces };
+}
+
 // ================================ VEHICLES ================================
 // hull: { floorY, front:[[plate, t, deg, dy]...], roof:[t, len], rear:[[plate, t, deg, dy|null]...],
 //         floorT, side:{ t, slope, tLow, tSpon }, w, lowerW?, sponsonY? }
@@ -571,7 +601,7 @@ const RAW = [
       view: 350, camo: { still: 0.14, move: 0.10 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
       hull: { floorY: 0.4, w: 2.05, front: [['lfp', 30, -55, 0.25], ['nose', 80, 14, 0.4], ['glac', 25, 72, 0.15], ['ufp', 80, 10, 0.55]],
          roof: [16, 5.1], rear: [['urp', 20, 10, 0.6], ['lrp', 20, -25, null]], floorT: 10, side: { t: 30 } },
-      turret: { z: -0.3, ringR: 0.8, h: 0.7, roofT: 18, oct: [1.75, 0.85, 1.05, 0.35, 0.3], f: [50, 10], cheek: [30, 25], s: [30, 25], rr: [30, 20], r: [30, 15], traverse: 26 },
+      turret: { skirt: true, z: -0.3, ringR: 0.8, h: 0.7, roofT: 18, oct: [1.75, 0.85, 1.05, 0.35, 0.3], f: [50, 10], cheek: [30, 25], s: [30, 25], rr: [30, 20], r: [30, 15], traverse: 26 },
       mantlet: { w: 0.7, h: 0.42, d: 0.12, t: 50 },
       skirts: { t: 5, h: 0.75, y0: 0.55 },
       gun: gun(G.kwk40_75),
@@ -585,7 +615,7 @@ const RAW = [
       hull: { floorY: 0.56, w: 3.3, lowerW: 1.95, sponsonY: 1.15, front: [['lfp', 60, -55, 0.5], ['ufp', 80, 55, 0.85]], roof: [16, 5.14],
          rear: [['urp', 40, 30, 0.9], ['lrp', 16, -55, null]], floorT: 16, side: { t: 40, slope: 40, tLow: 40, tSpon: 16 } },
       turret: { z: -0.1, ringR: 0.83, h: 0.92, roofT: 16, oct: [2.1, 1.05, 1.25, 0.35, 0.2], f: [100, 12], cheek: [45, 25], s: [45, 25], rr: [45, 25], r: [45, 25], traverse: 30 },
-      mantlet: { w: 1.05, h: 0.55, d: 0.2, t: 100 },
+      mantlet: { type: 'bell', w: 1.05, h: 0.55, d: 0.2, t: 100 },
       skirts: { t: 5, h: 0.6, y0: 0.6 },
       gun: gun(G.kwk42_75),
       run: R.interleaved({ wheels: 8, len: 6.2, h: 1.15 }),
@@ -598,7 +628,7 @@ const RAW = [
       hull: { floorY: 0.47, w: 3.4, lowerW: 1.85, sponsonY: 1.1,
          front: [['belly', 25, -60, 0.15], ['lfp', 100, 24, 0.35], ['glac', 60, 80, 0.1], ['ufp', 100, 9, 0.78]], roof: [25, 5.35],
          rear: [['urp', 80, 8, 0.9], ['lrp', 25, -50, null]], floorT: 25, side: { t: 80, tLow: 60, tSpon: 25 } },
-      turret: { z: -0.1, ringR: 0.93, h: 0.85, roofT: 25, oct: [2.15, 0.95, 1.35, 0.25, 0.55], f: [100, 8], cheek: [80, 0], s: [80, 0], rr: [80, 0], r: [80, 0], traverse: 20 },
+      turret: { round: [16, 8, 2.4], z: -0.1, ringR: 0.93, h: 0.85, roofT: 25, oct: [2.15, 0.95, 1.35, 0.25, 0.55], f: [100, 8], cheek: [80, 0], s: [80, 0], rr: [80, 0], r: [80, 0], traverse: 20 },
       mantlet: { w: 1.7, h: 0.62, d: 0.2, t: 110 },
       gun: gun(G.kwk36_88),
       run: R.interleaved({ wheels: 8, wheelR: 0.4, interleave: 3, trackW: 0.725, len: 5.6, h: 1.1 }),
@@ -611,7 +641,7 @@ const RAW = [
       hull: { floorY: 0.49, w: 3.6, lowerW: 1.95, sponsonY: 1.15, front: [['lfp', 100, -50, 0.55], ['ufp', 150, 50, 0.95]], roof: [40, 5.7],
          rear: [['urp', 80, 30, 0.95], ['lrp', 40, -45, null]], floorT: 25, side: { t: 80, slope: 25, tLow: 80, tSpon: 25 } },
       turret: { z: -0.3, ringR: 0.93, h: 0.85, roofT: 40, oct: [2.5, 1.0, 1.75, 0.3, 0.15], f: [180, 9], cheek: [80, 21], s: [80, 21], rr: [80, 21], r: [80, 21], traverse: 24 },
-      mantlet: { w: 0.75, h: 0.7, d: 0.35, t: 100 },
+      mantlet: { type: 'saukopf', w: 0.75, h: 0.7, d: 0.35, t: 100 },
       gun: gun(G.kwk43_88),
       run: R.interleaved({ wheels: 9, wheelR: 0.4, interleave: 2, trackW: 0.8, len: 6.6, h: 1.15 }),
       layout: { ammo: 'sponson', fuel: 'rear' },
@@ -623,7 +653,7 @@ const RAW = [
       hull: { floorY: 0.56, w: 3.3, lowerW: 1.95, sponsonY: 1.15, front: [['lfp', 60, -55, 0.5], ['ufp', 80, 55, 1.15]], roof: [25, 3.44],
          rear: [['eng', 25, 72, 0.45], ['urp', 40, 30, 0.7], ['lrp', 16, -55, null]], floorT: 16, side: { t: 50, slope: 30, tLow: 40, tSpon: 16 } },
       turret: null,
-      mantlet: { w: 0.8, h: 0.7, d: 0.35, t: 120 },
+      mantlet: { type: 'saukopf', w: 0.8, h: 0.7, d: 0.35, t: 120 },
       gun: gun(G.kwk43_88, { name: '8,8 cm PaK 43/3 L/71', reload: 7.5, disp: 0.30, aim: 1.9, elev: 14, depr: -8, arc: [-11, 11], mount: 'hull', pivotY: 1.72, pivotX: 0.1, traverse: 12 }),
       run: R.interleaved({ wheels: 8, len: 6.2, h: 1.15 }),
       layout: { ammo: 'sponson', fuel: 'rear' },
@@ -686,8 +716,8 @@ const RAW = [
       view: 350, camo: { still: 0.05, move: 0.03 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.43, w: 3.25, lowerW: 1.9, sponsonY: 1.15, front: [['lfp', 75, -30, 0.4], ['glac', 60, 65, 0.25], ['ufp', 75, 25, 0.8]],
          roof: [30, 5.0], rear: [['urp', 60, 30, 0.85], ['lrp', 60, -40, null]], floorT: 30, side: { t: 60, tLow: 60, tSpon: 30 } },
-      turret: { z: -0.3, ringR: 0.9, h: 0.8, roofT: 30, oct: [2.25, 1.0, 1.35, 0.45, 0.5], f: [100, 20], cheek: [100, 30], s: [90, 20], rr: [90, 25], r: [90, 25], traverse: 22 },
-      mantlet: { w: 0.85, h: 0.5, d: 0.22, t: 100 },
+      turret: { round: [14, 2.6, 2.4], z: -0.3, ringR: 0.9, h: 0.8, roofT: 30, oct: [2.25, 1.0, 1.35, 0.45, 0.5], f: [100, 20], cheek: [100, 30], s: [90, 20], rr: [90, 25], r: [90, 25], traverse: 22 },
+      mantlet: { type: 'bell', w: 0.85, h: 0.5, d: 0.22, t: 100 },
       gun: gun(G.zis53_85, { name: '85 mm D-5T', reload: 7.0 }),
       run: R.torsion({ wheels: 6, wheelR: 0.3, trackW: 0.7, len: 5.8, h: 1.1 }),
       layout: { ammo: 'floor', fuel: 'sides' },
@@ -698,8 +728,8 @@ const RAW = [
       view: 370, camo: { still: 0.13, move: 0.10 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.42, w: 3.0, front: [['lfp', 90, -30, 0.3], ['ufp', 120, 60, 0.72]], roof: [20, 4.1],
          rear: [['urp', 45, 45, 0.5], ['lrp', 45, -30, null]], floorT: 15, side: { t: 75 } },
-      turret: { z: -0.55, ringR: 0.85, h: 0.72, roofT: 20, oct: [2.3, 0.95, 1.4, 0.35, 0.3], f: [120, 15], cheek: [90, 25], s: [75, 20], rr: [60, 15], r: [60, 10], traverse: 38 },
-      mantlet: { w: 0.75, h: 0.45, d: 0.2, t: 120 },
+      turret: { round: [14, 2.4, 2.4], z: -0.55, ringR: 0.85, h: 0.72, roofT: 20, oct: [2.3, 0.95, 1.4, 0.35, 0.3], f: [120, 15], cheek: [90, 25], s: [75, 20], rr: [60, 15], r: [60, 10], traverse: 38 },
+      mantlet: { type: 'bell', w: 0.75, h: 0.45, d: 0.2, t: 120 },
       gun: gun(G.zis53_85, { reload: 6.4, disp: 0.38 }),
       run: R.torsion({ wheels: 5, wheelR: 0.415, rollers: 0, trackW: 0.5, len: 5.5, h: 1.0 }),
       layout: { ammo: 'floor', fuel: 'sides' },
@@ -710,8 +740,8 @@ const RAW = [
       view: 380, camo: { still: 0.12, move: 0.09 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.42, w: 3.0, front: [['lfp', 90, -30, 0.3], ['ufp', 120, 60, 0.72]], roof: [20, 4.1],
          rear: [['urp', 45, 45, 0.5], ['lrp', 45, -30, null]], floorT: 15, side: { t: 75 } },
-      turret: { z: -0.5, ringR: 0.9, h: 0.75, roofT: 25, oct: [2.4, 1.05, 1.4, 0.45, 0.4], f: [160, 20], cheek: [130, 30], s: [90, 25], rr: [75, 20], r: [60, 15], traverse: 34 },
-      mantlet: { w: 0.8, h: 0.5, d: 0.22, t: 160 },
+      turret: { round: [14, 2.4, 2.4], z: -0.5, ringR: 0.9, h: 0.75, roofT: 25, oct: [2.4, 1.05, 1.4, 0.45, 0.4], f: [160, 20], cheek: [130, 30], s: [90, 25], rr: [75, 20], r: [60, 15], traverse: 34 },
+      mantlet: { type: 'bell', w: 0.8, h: 0.5, d: 0.22, t: 160 },
       gun: gun(G.d10t_100),
       run: R.torsion({ wheels: 5, wheelR: 0.415, rollers: 0, trackW: 0.55, len: 5.5, h: 1.0 }),
       layout: { ammo: 'floor', fuel: 'sides' },
@@ -722,11 +752,11 @@ const RAW = [
       view: 390, camo: { still: 0.14, move: 0.10 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.42, w: 3.27, front: [['lfp', 100, -55, 0.42], ['ufp', 100, 60, 0.78]], roof: [30, 4.6],
          rear: [['urp', 45, 20, 0.6], ['lrp', 20, -20, null]], floorT: 20, side: { t: 80 } },
-      turret: { z: -0.45, ringR: 0.92, h: 0.78, roofT: 30, oct: [2.55, 1.2, 1.25, 0.62, 0.58], f: [200, 30], cheek: [200, 38], s: [160, 42], rr: [130, 42], r: [65, 42], traverse: 40 },
-      mantlet: { w: 0.7, h: 0.48, d: 0.18, t: 200 },
+      turret: { round: [16, 2, 2], z: -0.45, ringR: 0.92, h: 0.78, roofT: 30, oct: [2.55, 1.2, 1.25, 0.62, 0.58], f: [200, 30], cheek: [200, 38], s: [160, 42], rr: [130, 42], r: [65, 42], traverse: 40 },
+      mantlet: { type: 'bell', w: 0.7, h: 0.48, d: 0.18, t: 200 },
       gun: gun(G.d10t_100, { reload: 8.0, disp: 0.35, aim: 2.2, ammo: [{ type: 'AP', name: 'BR-412D', pen: 210, dmg: 300, vel: 895 },
          { type: 'APCR', name: 'BR-412P', pen: 270, dmg: 300, vel: 1120 }, { type: 'HE', name: 'OF-412', pen: 50, dmg: 400, vel: 900 }] }),
-      run: R.torsion({ wheels: 5, wheelR: 0.41, rollers: 0, trackW: 0.58, len: 5.8, h: 1.0 }),
+      run: R.torsion({ wheels: 5, gap1: 0.35, wheelR: 0.41, rollers: 0, trackW: 0.58, len: 5.8, h: 1.0 }),
       layout: { ammo: 'floor', fuel: 'sides' },
    },
    {
@@ -735,8 +765,8 @@ const RAW = [
       view: 400, camo: { still: 0.14, move: 0.10 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.42, w: 3.3, front: [['lfp', 100, -55, 0.42], ['ufp', 100, 60, 0.78]], roof: [30, 5.0],
          rear: [['urp', 45, 20, 0.6], ['lrp', 20, -20, null]], floorT: 20, side: { t: 80 } },
-      turret: { z: -0.35, ringR: 1.0, h: 0.78, roofT: 30, oct: [2.65, 1.3, 1.3, 0.72, 0.72], f: [240, 34], cheek: [220, 40], s: [150, 45], rr: [100, 45], r: [60, 45], traverse: 40 },
-      mantlet: { w: 0.62, h: 0.45, d: 0.18, t: 240 },
+      turret: { round: [16, 2, 2], z: -0.35, ringR: 1.0, h: 0.78, roofT: 30, oct: [2.65, 1.3, 1.3, 0.72, 0.72], f: [240, 34], cheek: [220, 40], s: [150, 45], rr: [100, 45], r: [60, 45], traverse: 40 },
+      mantlet: { type: 'bell', w: 0.62, h: 0.45, d: 0.18, t: 240 },
       gun: gun(G.u5ts_115),
       run: R.torsion({ wheels: 5, wheelR: 0.41, rollers: 0, trackW: 0.58, len: 6.1, h: 1.0 }),
       layout: { ammo: 'floor', fuel: 'sides' },
@@ -745,10 +775,10 @@ const RAW = [
       id: 'is3', name: 'IS-3', short: 'IS-3', nation: 'SU', cls: 'HT', tier: 8, parent: 'is2',
       hp: 1750, mass: 46.5, engine: { hp: 520, fuel: 'diesel' }, vMax: 40, vRev: 13, traverse: 26, ground: [1.0, 1.2, 2.0],
       view: 370, camo: { still: 0.07, move: 0.04 }, crew: ['commander', 'gunner', 'loader', 'driver'],
-      hull: { floorY: 0.42, w: 3.15, lowerW: 1.8, sponsonY: 1.05, front: [['lfp', 110, -50, 0.45], ['ufp', 110, 62, 0.72]], roof: [25, 4.6],
+      hull: { pike: { len: 1.35, tip: 0.1 }, floorY: 0.42, w: 3.15, lowerW: 1.8, sponsonY: 1.05, front: [['lfp', 110, -50, 0.45], ['ufp', 110, 62, 0.72]], roof: [25, 4.6],
          rear: [['urp', 60, 45, 0.45], ['lrp', 60, -40, null]], floorT: 20, side: { t: 90, slope: 35, tLow: 90, tSpon: 30 } },
-      turret: { z: -0.2, ringR: 0.95, h: 0.68, roofT: 30, oct: [2.5, 1.2, 1.3, 0.65, 0.6], f: [220, 40], cheek: [200, 45], s: [175, 45], rr: [100, 45], r: [60, 45], traverse: 22 },
-      mantlet: { w: 0.85, h: 0.45, d: 0.22, t: 220 },
+      turret: { round: [16, 2, 2], z: -0.2, ringR: 0.95, h: 0.68, roofT: 30, oct: [2.5, 1.2, 1.3, 0.65, 0.6], f: [220, 40], cheek: [200, 45], s: [175, 45], rr: [100, 45], r: [60, 45], traverse: 22 },
+      mantlet: { type: 'bell', w: 0.85, h: 0.45, d: 0.22, t: 220 },
       gun: gun(G.d25_122, { reload: 12 }),
       run: R.torsion({ wheels: 6, wheelR: 0.3, trackW: 0.65, len: 5.9, h: 1.05 }),
       layout: { ammo: 'floor', fuel: 'sides' },
@@ -759,8 +789,8 @@ const RAW = [
       view: 380, camo: { still: 0.05, move: 0.03 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.45, w: 3.26, lowerW: 1.9, sponsonY: 1.1, front: [['lfp', 140, -50, 0.5], ['ufp', 140, 58, 0.82]], roof: [30, 5.3],
          rear: [['urp', 100, 30, 0.8], ['lrp', 60, -40, null]], floorT: 20, side: { t: 160, tLow: 160, tSpon: 40 } },
-      turret: { z: -0.3, ringR: 0.98, h: 0.82, roofT: 30, oct: [2.45, 1.05, 1.45, 0.5, 0.55], f: [250, 20], cheek: [200, 30], s: [170, 20], rr: [150, 25], r: [150, 25], traverse: 20 },
-      mantlet: { w: 0.9, h: 0.55, d: 0.25, t: 250 },
+      turret: { round: [14, 2.4, 2.2], z: -0.3, ringR: 0.98, h: 0.82, roofT: 30, oct: [2.45, 1.05, 1.45, 0.5, 0.55], f: [250, 20], cheek: [200, 30], s: [170, 20], rr: [150, 25], r: [150, 25], traverse: 20 },
+      mantlet: { type: 'bell', w: 0.9, h: 0.55, d: 0.25, t: 250 },
       gun: gun(G.m62_122),
       run: R.torsion({ wheels: 7, wheelR: 0.33, trackW: 0.7, len: 6.4, h: 1.1 }),
       layout: { ammo: 'floor', fuel: 'sides' },
@@ -769,10 +799,10 @@ const RAW = [
       id: 'is7', name: 'IS-7', short: 'IS-7', nation: 'SU', cls: 'HT', tier: 10, parent: 'is4',
       hp: 2200, mass: 68, engine: { hp: 1050, fuel: 'diesel' }, vMax: 55, vRev: 15, traverse: 28, ground: [1.0, 1.2, 2.0],
       view: 390, camo: { still: 0.05, move: 0.03 }, crew: ['commander', 'gunner', 'loader', 'driver'],
-      hull: { floorY: 0.45, w: 3.4, lowerW: 2.0, sponsonY: 1.05, front: [['lfp', 150, -50, 0.5], ['ufp', 150, 62, 0.75]], roof: [30, 5.9],
+      hull: { pike: { len: 1.6, tip: 0.15 }, floorY: 0.45, w: 3.4, lowerW: 2.0, sponsonY: 1.05, front: [['lfp', 150, -50, 0.5], ['ufp', 150, 62, 0.75]], roof: [30, 5.9],
          rear: [['urp', 70, 45, 0.5], ['lrp', 60, -40, null]], floorT: 25, side: { t: 150, slope: 50, tLow: 100, tSpon: 60 } },
-      turret: { z: -0.1, ringR: 1.05, h: 0.72, roofT: 40, oct: [2.65, 1.6, 1.45, 0.75, 0.6], f: [240, 45], cheek: [210, 45], s: [185, 42], rr: [94, 30], r: [94, 30], traverse: 22 },
-      mantlet: { w: 0.8, h: 0.45, d: 0.25, t: 240 },
+      turret: { round: [16, 2, 2.2], z: -0.1, ringR: 1.05, h: 0.72, roofT: 40, oct: [2.65, 1.6, 1.45, 0.75, 0.6], f: [240, 45], cheek: [210, 45], s: [185, 42], rr: [94, 30], r: [94, 30], traverse: 22 },
+      mantlet: { type: 'bell', w: 0.8, h: 0.45, d: 0.25, t: 240 },
       gun: gun(G.s70_130),
       run: R.torsion({ wheels: 7, wheelR: 0.37, trackW: 0.72, len: 7.0, h: 1.1 }),
       layout: { ammo: 'floor', fuel: 'sides' },
@@ -795,8 +825,8 @@ const RAW = [
       view: 350, camo: { still: 0.12, move: 0.09 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
       hull: { floorY: 0.4, w: 3.0, lowerW: 1.95, sponsonY: 1.1, front: [['lfp', 45, -53, 0.5], ['ufp', 45, 60, 0.9]], roof: [20, 3.72],
          rear: [['urp', 40, 47, 0.6], ['lrp', 40, -45, null]], floorT: 16, side: { t: 40, slope: 40, tLow: 45, tSpon: 16 } },
-      turret: { z: -0.55, ringR: 0.8, h: 0.72, roofT: 20, oct: [2.25, 0.95, 1.4, 0.35, 0.3], f: [90, 20], cheek: [75, 25], s: [75, 20], rr: [52, 15], r: [52, 10], traverse: 38 },
-      mantlet: { w: 0.75, h: 0.45, d: 0.2, t: 40 },
+      turret: { round: [12, 3, 2.6], z: -0.55, ringR: 0.8, h: 0.72, roofT: 20, oct: [2.25, 0.95, 1.4, 0.35, 0.3], f: [90, 20], cheek: [75, 25], s: [75, 20], rr: [52, 15], r: [52, 10], traverse: 38 },
+      mantlet: { type: 'bell', w: 0.75, h: 0.45, d: 0.2, t: 40 },
       gun: gun(G.zis53_85),
       run: R.christie({ wheels: 5, wheelR: 0.415, trackW: 0.5, len: 5.5, h: 1.0 }),
       layout: { ammo: 'floor', fuel: 'sides' },
@@ -819,8 +849,8 @@ const RAW = [
       view: 330, camo: { still: 0.06, move: 0.04 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.42, w: 3.07, lowerW: 1.75, sponsonY: 1.1, front: [['lfp', 100, -30, 0.5], ['ufp', 120, 60, 0.9]], roof: [30, 4.64],
          rear: [['urp', 60, 49, 0.5], ['lrp', 60, -41, null]], floorT: 20, side: { t: 90, slope: 15, tLow: 90, tSpon: 30 } },
-      turret: { z: -0.35, ringR: 0.92, h: 0.8, roofT: 30, oct: [2.3, 1.0, 1.4, 0.45, 0.55], f: [100, 25], cheek: [100, 30], s: [90, 20], rr: [90, 30], r: [90, 30], traverse: 20 },
-      mantlet: { w: 0.9, h: 0.55, d: 0.25, t: 100 },
+      turret: { round: [14, 2.2, 2.2], z: -0.35, ringR: 0.92, h: 0.8, roofT: 30, oct: [2.3, 1.0, 1.4, 0.45, 0.55], f: [100, 25], cheek: [100, 30], s: [90, 20], rr: [90, 30], r: [90, 30], traverse: 20 },
+      mantlet: { type: 'bell', w: 0.9, h: 0.55, d: 0.25, t: 100 },
       gun: gun(G.d25_122),
       run: R.torsion({ wheels: 6, wheelR: 0.275, trackW: 0.65, len: 5.9, h: 1.05 }),
       layout: { ammo: 'floor', fuel: 'sides' },
@@ -894,7 +924,7 @@ const RAW = [
       view: 340, camo: { still: 0.10, move: 0.07 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
       hull: { floorY: 0.43, w: 2.62, lowerW: 1.8, sponsonY: 1.25, front: [['lfp', 51, -50, 0.3], ['nose', 51, 20, 0.3], ['ufp', 51, 56, 0.95]],
          roof: [19, 4.5], rear: [['urp', 38, 10, 0.8], ['lrp', 38, -30, null]], floorT: 13, side: { t: 38, tLow: 38, tSpon: 13 } },
-      turret: { z: -0.2, ringR: 0.82, h: 0.72, roofT: 25, oct: [1.85, 0.8, 1.15, 0.45, 0.4], f: [76, 30], cheek: [51, 30], s: [51, 5], rr: [51, 5], r: [51, 0], traverse: 38 },
+      turret: { round: [14, 2.2, 2.2], z: -0.2, ringR: 0.82, h: 0.72, roofT: 25, oct: [1.85, 0.8, 1.15, 0.45, 0.4], f: [76, 30], cheek: [51, 30], s: [51, 5], rr: [51, 5], r: [51, 0], traverse: 38 },
       mantlet: { w: 0.7, h: 0.42, d: 0.18, t: 89 },
       gun: gun(G.m3_75),
       run: R.leaf({ wheels: 6, bogies: 3, wheelR: 0.26, trackW: 0.42, rollers: 3, len: 5.3, h: 1.0 }),
@@ -955,8 +985,8 @@ const RAW = [
       view: 380, camo: { still: 0.09, move: 0.06 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
       hull: { floorY: 0.43, w: 3.0, lowerW: 2.05, sponsonY: 1.1, front: [['lfp', 76, -53, 0.55], ['ufp', 102, 46, 0.95]], roof: [22, 5.4],
          rear: [['urp', 51, 10, 0.8], ['lrp', 25, -35, null]], floorT: 25, side: { t: 76, tLow: 51, tSpon: 19 } },
-      turret: { z: -0.3, ringR: 0.9, h: 0.82, roofT: 25, oct: [2.4, 1.05, 1.55, 0.45, 0.4], f: [102, 10], cheek: [76, 20], s: [76, 0], rr: [76, 0], r: [76, 0], traverse: 34 },
-      mantlet: { w: 1.0, h: 0.55, d: 0.2, t: 114 },
+      turret: { round: [14, 3.2, 2.6], z: -0.3, ringR: 0.9, h: 0.82, roofT: 25, oct: [2.4, 1.05, 1.55, 0.45, 0.4], f: [102, 10], cheek: [76, 20], s: [76, 0], rr: [76, 0], r: [76, 0], traverse: 34 },
+      mantlet: { type: 'bell', w: 1.0, h: 0.55, d: 0.2, t: 114 },
       gun: gun(G.m3_90, { name: '90 mm Gun M3A1', reload: 7.0, disp: 0.34, ammo: [{ type: 'AP', name: 'T33 AP-T', pen: 170, dmg: 240, vel: 853 },
          { type: 'APCR', name: 'M304 HVAP', pen: 243, dmg: 240, vel: 1021 }, { type: 'HE', name: 'M71 HE', pen: 45, dmg: 320, vel: 823 }] }),
       run: R.torsion({ wheels: 6, wheelR: 0.33, trackW: 0.61, rollers: 5, len: 5.9, h: 1.05 }),
@@ -968,8 +998,8 @@ const RAW = [
       view: 390, camo: { still: 0.09, move: 0.06 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
       hull: { floorY: 0.43, w: 3.05, lowerW: 2.1, sponsonY: 1.1, front: [['lfp', 76, -53, 0.55], ['ufp', 102, 60, 0.85]], roof: [22, 5.4],
          rear: [['urp', 51, 10, 0.7], ['lrp', 25, -35, null]], floorT: 25, side: { t: 76, tLow: 51, tSpon: 19 } },
-      turret: { z: -0.25, ringR: 0.95, h: 0.8, roofT: 25, oct: [2.5, 1.35, 1.7, 0.85, 0.45], f: [115, 60], cheek: [100, 50], s: [64, 30], rr: [64, 20], r: [64, 0], traverse: 36 },
-      mantlet: { w: 0.85, h: 0.45, d: 0.2, t: 115 },
+      turret: { round: [14, 2.4, 2.4], z: -0.25, ringR: 0.95, h: 0.8, roofT: 25, oct: [2.5, 1.35, 1.7, 0.85, 0.45], f: [115, 60], cheek: [100, 50], s: [64, 30], rr: [64, 20], r: [64, 0], traverse: 36 },
+      mantlet: { type: 'bell', w: 0.85, h: 0.45, d: 0.2, t: 115 },
       gun: gun(G.m36_90),
       run: R.torsion({ wheels: 6, wheelR: 0.33, trackW: 0.58, rollers: 3, len: 6.0, h: 1.05 }),
       layout: { ammo: 'floor', fuel: 'rear' },
@@ -980,8 +1010,8 @@ const RAW = [
       view: 400, camo: { still: 0.08, move: 0.06 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.45, w: 3.15, lowerW: 2.2, sponsonY: 1.05, front: [['lfp', 102, -55, 0.5], ['ufp', 110, 60, 0.75]], roof: [57, 5.3],
          rear: [['urp', 25, 15, 0.6], ['lrp', 25, -40, null]], floorT: 25, side: { t: 76, slope: 15, tLow: 76, tSpon: 25 } },
-      turret: { z: -0.15, ringR: 1.08, h: 0.78, roofT: 38, oct: [2.95, 1.35, 1.45, 0.85, 0.75], f: [178, 45], cheek: [150, 50], s: [76, 35], rr: [76, 35], r: [51, 20], traverse: 40 },
-      mantlet: { w: 0.85, h: 0.5, d: 0.22, t: 178 },
+      turret: { round: [16, 2, 2], z: -0.15, ringR: 1.08, h: 0.78, roofT: 38, oct: [2.95, 1.35, 1.45, 0.85, 0.75], f: [178, 45], cheek: [150, 50], s: [76, 35], rr: [76, 35], r: [51, 20], traverse: 40 },
+      mantlet: { type: 'bell', w: 0.85, h: 0.5, d: 0.22, t: 178 },
       gun: gun(G.m41_90),
       run: R.torsion({ wheels: 6, wheelR: 0.33, trackW: 0.71, rollers: 5, len: 6.2, h: 1.05 }),
       layout: { ammo: 'floor', fuel: 'rear' },
@@ -1028,10 +1058,10 @@ const RAW = [
       view: 350, camo: { still: 0.10, move: 0.07 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
       hull: { floorY: 0.43, w: 2.62, lowerW: 1.8, sponsonY: 1.25, front: [['lfp', 63, -50, 0.3], ['nose', 108, 20, 0.3], ['ufp', 64, 47, 0.95]],
          roof: [19, 4.63], rear: [['urp', 38, 10, 0.8], ['lrp', 38, -30, null]], floorT: 13, side: { t: 38, tLow: 38, tSpon: 13 } },
-      turret: { z: -0.25, ringR: 0.88, h: 0.75, roofT: 25, oct: [2.0, 0.9, 1.3, 0.4, 0.35], f: [76, 30], cheek: [64, 25], s: [64, 5], rr: [64, 5], r: [64, 0], traverse: 38 },
+      turret: { round: [14, 2.6, 2.2], z: -0.25, ringR: 0.88, h: 0.75, roofT: 25, oct: [2.0, 0.9, 1.3, 0.4, 0.35], f: [76, 30], cheek: [64, 25], s: [64, 5], rr: [64, 5], r: [64, 0], traverse: 38 },
       mantlet: { w: 0.85, h: 0.5, d: 0.2, t: 89 },
       gun: gun(G.m1_76),
-      run: R.leaf({ wheels: 12, bogies: 6, wheelR: 0.265, trackW: 0.584, rollers: 3, len: 5.6, h: 1.0 }),
+      run: R.leaf({ wheels: 6, bogies: 3, hvss: true, wheelR: 0.29, trackW: 0.584, rollers: 3, len: 5.6, h: 1.0 }),
       layout: { ammo: 'floor', fuel: 'rear' },
    },
    {
@@ -1040,8 +1070,8 @@ const RAW = [
       view: 370, camo: { still: 0.09, move: 0.06 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
       hull: { floorY: 0.43, w: 3.0, lowerW: 2.05, sponsonY: 1.1, front: [['lfp', 76, -53, 0.55], ['ufp', 102, 46, 0.95]], roof: [22, 5.2],
          rear: [['urp', 51, 10, 0.8], ['lrp', 25, -35, null]], floorT: 25, side: { t: 63, tLow: 51, tSpon: 19 } },
-      turret: { z: -0.35, ringR: 0.88, h: 0.8, roofT: 25, oct: [2.3, 1.0, 1.5, 0.4, 0.35], f: [102, 5], cheek: [76, 15], s: [76, 0], rr: [76, 0], r: [76, 0], traverse: 30 },
-      mantlet: { w: 1.0, h: 0.55, d: 0.2, t: 114 },
+      turret: { round: [14, 3.2, 2.6], z: -0.35, ringR: 0.88, h: 0.8, roofT: 25, oct: [2.3, 1.0, 1.5, 0.4, 0.35], f: [102, 5], cheek: [76, 15], s: [76, 0], rr: [76, 0], r: [76, 0], traverse: 30 },
+      mantlet: { type: 'bell', w: 1.0, h: 0.55, d: 0.2, t: 114 },
       gun: gun(G.m3_90),
       run: R.torsion({ wheels: 6, wheelR: 0.33, trackW: 0.61, rollers: 5, len: 5.9, h: 1.05 }),
       layout: { ammo: 'floor', fuel: 'rear' },
@@ -1179,8 +1209,8 @@ const RAW = [
       view: 380, camo: { still: 0.09, move: 0.06 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.45, w: 3.0, lowerW: 2.05, sponsonY: 1.05, front: [['lfp', 76, -45, 0.45], ['ufp', 76, 57, 0.75]], roof: [29, 5.6],
          rear: [['urp', 38, 10, 0.75], ['lrp', 38, -30, null]], floorT: 17, side: { t: 51, tLow: 51, tSpon: 29 } },
-      turret: { z: -0.35, ringR: 0.95, h: 0.8, roofT: 29, oct: [2.5, 1.1, 1.45, 0.55, 0.35], f: [152, 20], cheek: [127, 30], s: [89, 10], rr: [89, 10], r: [89, 0], traverse: 36 },
-      mantlet: { w: 0.75, h: 0.45, d: 0.18, t: 152 },
+      turret: { round: [14, 2.6, 3.5], z: -0.35, ringR: 0.95, h: 0.8, roofT: 29, oct: [2.5, 1.1, 1.45, 0.55, 0.35], f: [152, 20], cheek: [127, 30], s: [89, 10], rr: [89, 10], r: [89, 0], traverse: 36 },
+      mantlet: { type: 'bell', w: 0.75, h: 0.45, d: 0.18, t: 152 },
       gun: gun(G.pdr17, { reload: 5.0, disp: 0.33 }),
       skirts: { t: 6, h: 0.5, y0: 0.6 },
       run: R.leaf({ wheels: 6, wheelR: 0.35, bogies: 3, rollers: 3, trackW: 0.61, sprocket: 'rear', len: 6.3, h: 1.05 }),
@@ -1192,8 +1222,8 @@ const RAW = [
       view: 390, camo: { still: 0.09, move: 0.06 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.45, w: 3.05, lowerW: 2.1, sponsonY: 1.05, front: [['lfp', 76, -45, 0.45], ['ufp', 114, 57, 0.75]], roof: [29, 5.9],
          rear: [['urp', 38, 10, 0.75], ['lrp', 38, -30, null]], floorT: 17, side: { t: 51, tLow: 51, tSpon: 29 } },
-      turret: { z: -0.35, ringR: 0.98, h: 0.82, roofT: 29, oct: [2.55, 1.15, 1.5, 0.55, 0.35], f: [165, 25], cheek: [140, 30], s: [89, 10], rr: [89, 10], r: [89, 0], traverse: 36 },
-      mantlet: { w: 0.75, h: 0.45, d: 0.18, t: 165 },
+      turret: { round: [14, 2.6, 3.5], z: -0.35, ringR: 0.98, h: 0.82, roofT: 29, oct: [2.55, 1.15, 1.5, 0.55, 0.35], f: [165, 25], cheek: [140, 30], s: [89, 10], rr: [89, 10], r: [89, 0], traverse: 36 },
+      mantlet: { type: 'bell', w: 0.75, h: 0.45, d: 0.18, t: 165 },
       gun: gun(G.pdr20, { reload: 6.6 }),
       skirts: { t: 6, h: 0.5, y0: 0.6 },
       run: R.leaf({ wheels: 6, wheelR: 0.35, bogies: 3, rollers: 3, trackW: 0.61, sprocket: 'rear', len: 6.5, h: 1.05 }),
@@ -1205,8 +1235,8 @@ const RAW = [
       view: 400, camo: { still: 0.09, move: 0.06 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.45, w: 3.05, lowerW: 2.1, sponsonY: 1.05, front: [['lfp', 76, -45, 0.45], ['ufp', 120, 57, 0.75]], roof: [29, 5.9],
          rear: [['urp', 38, 10, 0.75], ['lrp', 38, -30, null]], floorT: 17, side: { t: 51, tLow: 51, tSpon: 29 } },
-      turret: { z: -0.35, ringR: 0.98, h: 0.82, roofT: 29, oct: [2.55, 1.2, 1.5, 0.55, 0.35], f: [195, 30], cheek: [165, 35], s: [89, 10], rr: [89, 10], r: [89, 0], traverse: 38 },
-      mantlet: { w: 0.75, h: 0.45, d: 0.18, t: 195 },
+      turret: { round: [14, 2.6, 3.5], z: -0.35, ringR: 0.98, h: 0.82, roofT: 29, oct: [2.55, 1.2, 1.5, 0.55, 0.35], f: [195, 30], cheek: [165, 35], s: [89, 10], rr: [89, 10], r: [89, 0], traverse: 38 },
+      mantlet: { type: 'bell', w: 0.75, h: 0.45, d: 0.18, t: 195 },
       gun: gun(G.l7_105),
       skirts: { t: 6, h: 0.5, y0: 0.6 },
       run: R.leaf({ wheels: 6, wheelR: 0.35, bogies: 3, rollers: 3, trackW: 0.61, sprocket: 'rear', len: 6.5, h: 1.05 }),
@@ -1326,7 +1356,7 @@ function buildHull(spec) {
    if (spec.sponsonY != null) { addPlate('sideLow', side.tLow ?? side.t ?? 20); addPlate('spon', side.tSpon ?? spec.floorT); }
    return {
       profile: pts, plates, floorY: spec.floorY, roofY, len: zMax - zMin, zMin: zMin - zc, zMax: zMax - zc,
-      w: spec.w, lowerW: spec.lowerW ?? null, sponsonY: spec.sponsonY ?? null, sideSlope: side.slope ?? 0,
+      w: spec.w, lowerW: spec.lowerW ?? null, sponsonY: spec.sponsonY ?? null, sideSlope: side.slope ?? 0, pike: spec.pike ?? null,
    };
 }
 
@@ -1344,7 +1374,7 @@ function profileFrontZ(profile, y) {
 
 function buildTurret(spec, hull) {
    const [w, lenF, lenR, cF, cR] = spec.oct;
-   const { base, faces } = octTurret(w, lenF, lenR, cF, cR, spec.f, spec.cheek, spec.s, spec.rr, spec.r);
+   const { base, faces } = spec.round ? roundTurret(w, lenF, lenR, spec.round, spec) : octTurret(w, lenF, lenR, cF, cR, spec.f, spec.cheek, spec.s, spec.rr, spec.r);
    const n = base.length;
    // Offset each edge inwards by h*tan(slope) and intersect neighbours -> top polygon.
    // Base is CCW in (x, z) seen from above with z pointing "down" on screen, i.e. CW in a
@@ -1383,7 +1413,7 @@ function buildTurret(spec, hull) {
    return {
       cupola,
       x: 0, z: spec.z, y: hull.roofY, ringR: spec.ringR, h: spec.h, base, top, faces, roofT: spec.roofT, plates,
-      openTop: !!spec.openTop, traverse: spec.traverse, lenF, lenR, w,
+      openTop: !!spec.openTop, skirt: !!spec.skirt, traverse: spec.traverse, lenF, lenR, w,
    };
 }
 

@@ -54,6 +54,59 @@ function finishPart(name, frame, side, faces, center) {
    return { name, frame, side, faces, planes, center, r };
 }
 
+/** Cut a convex part by the plane n·p = d (keeps n·p <= d). The cut faces shrink, the cap is a new
+ *  plate whose id/thickness capPlate(capLoop, faces) picks. Returns the part unchanged if the plane
+ *  misses it. Used for plan-view tapers (hull.pike: the IS-3 / IS-7 pike nose). */
+export function clipLoop(loop, n, d) {
+   const out = [], cut = [], f = (p) => n[0] * p[0] + n[1] * p[1] + n[2] * p[2] - d;
+   for (let i = 0; i < loop.length; i++) {
+      const a = loop[i], b = loop[(i + 1) % loop.length], fa = f(a), fb = f(b);
+      if (fa <= 1e-9) out.push(a);
+      if ((fa <= 1e-9) !== (fb <= 1e-9)) { const t = fa / (fa - fb), q = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; out.push(q); cut.push(q); }
+   }
+   return { out, cut };
+}
+export function capLoop(pts, n) {   // order points on a plane around their centroid
+   const uniq = [];
+   for (const p of pts) if (!uniq.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) < 1e-5)) uniq.push(p);
+   if (uniq.length < 3) return null;
+   const c = centroid(uniq), u = norm(Math.abs(n[1]) < 0.9 ? cross(n, [0, 1, 0]) : cross(n, [1, 0, 0])), v = cross(n, u);
+   return uniq.map((p) => { const w = sub(p, c); return [Math.atan2(w[0] * v[0] + w[1] * v[1] + w[2] * v[2], w[0] * u[0] + w[1] * u[1] + w[2] * u[2]), p]; }).sort((a, b) => a[0] - b[0]).map((e) => e[1]);
+}
+function cutPart(part, n, d, capPlate) {
+   const faces = [], cuts = [];
+   let hit = false;
+   for (const f of part.faces) {
+      const { out, cut } = clipLoop(f.loop, n, d);
+      if (out.length !== f.loop.length || cut.length) hit = true;
+      cuts.push(...cut);
+      if (out.length >= 3) faces.push({ ...f, loop: out.map((p) => p.map((v) => +v.toFixed(4))) });
+   }
+   if (!hit) return part;
+   const cap = capLoop(cuts, n);
+   if (cap) { const { plate, t } = capPlate(cap, part.faces); faces.push(makeFace(cap, part.center, plate, t)); }
+   return finishPart(part.name, part.frame, part.side, faces, part.center);
+}
+/** The pike planes of hull.pike = { len, tip }: the nose narrows in plan view from the full upper hull
+ *  width len metres behind the front to ±tip at the very front. [[n, d], [n, d]] (right, left). */
+export function pikePlanes(H) {
+   if (!H.pike) return [];
+   const { len, tip } = H.pike, W = H.w / 2, z0 = H.zMin;
+   return [1, -1].map((s) => { const nn = norm([s * len, 0, -(W - tip)]); return [nn, nn[0] * s * tip + nn[2] * z0]; });
+}
+// the front plate a pike cap belongs to: the frontal face of the cut piece spanning the cap's height
+function pikePlate(cap, faces) {
+   const cy = cap.reduce((s, p) => s + p[1], 0) / cap.length;
+   let best = null, bs = Infinity;
+   for (const f of faces) {
+      if (f.internal || f.normal[2] > -0.15) continue;
+      const ys = f.loop.map((p) => p[1]), lo = Math.min(...ys), hi = Math.max(...ys);
+      const score = cy < lo ? lo - cy : cy > hi ? cy - hi : 0;
+      if (score < bs) { bs = score; best = f; }
+   }
+   return best ? { plate: best.plate, t: best.t } : { plate: 'ufp', t: 20 };
+}
+
 /** Clip a convex (z,y) polygon by y >= lo and y <= hi. Points: [{z,y,plate}] (plate on edge i->i+1). */
 function clipProfile(pts, lo, hi) {
    let poly = pts.map((p) => ({ ...p }));
@@ -183,6 +236,7 @@ export function buildArmor(cfg) {
       parts.push(prismPiece('hull', piece, below ? () => H.lowerW / 2 : upperHW, plates,
          { side: below ? 'sideLow' : 'side', lo: atSpon ? 'spon' : null, innerHalfW: atSpon ? H.lowerW / 2 : 0 }));
    }
+   for (const [n, d] of pikePlanes(H)) for (let i = 0; i < parts.length; i++) parts[i] = cutPart(parts[i], n, d, pikePlate);
    // turret
    const T = cfg.turret;
    if (T) {
