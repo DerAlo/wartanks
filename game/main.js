@@ -53,7 +53,7 @@ export function startBattle(opts = {}) {
    G.fx = fx; G.hud = hud; G.audio = audio;
    tcam.reset(world.player?.yaw ?? 0);
    R.warm?.();
-   input.enabled = true; menu?.hide?.();
+   input.enabled = true; menu?.hide?.(); input.lock();   // capture the mouse right away, no extra click
    G.acc = 0;
 }
 export function stopBattle() {
@@ -78,7 +78,7 @@ function finishBattle() {
 function setPaused(on) {
    if (!G.world || !menu) return;
    G.paused = on; G.pauseT = performance.now();
-   input.enabled = !on; if (on) { input.unlock(); input.keys.clear(); input.lmb = input.rmb = false; }
+   input.enabled = !on; if (on) { input.unlock(); input.keys.clear(); input.lmb = input.rmb = false; } else input.lock();
    menu.pause(on);
 }
 function leaveBattle() { G.net?.leave(); stopBattle(); menu?.show('garage'); }

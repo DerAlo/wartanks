@@ -81,7 +81,8 @@ try {
    console.log('client view', JSON.stringify({ ...cli, net: { down: cli.net.down, up: cli.net.up } }));
    const sec = 24;
    console.log(`bandwidth: host up ${(host.net.up / sec / 1024).toFixed(1)} kB/s, client down ${(cli.net.down / sec / 1024).toFixed(1)} kB/s (incl. countdown)`);
-   await A.screenshot({ path: `tests/out/mp-${NET}-a.png` }); await B.screenshot({ path: `tests/out/mp-${NET}-b.png` });
+   // screenshots are best-effort: two software-rendered (swiftshader) pages can stall a capture past 30 s
+   for (const [pg, n] of [[A, 'a'], [B, 'b']]) await pg.screenshot({ path: `tests/out/mp-${NET}-${n}.png`, timeout: 8000 }).catch(() => console.log('(screenshot ' + n + ' skipped: renderer too slow)'));
    assert.ok(host.bShots > 0, 'client shots reached the host');
    assert.ok(Math.hypot(host.bPos[0] - cli.me[0], host.bPos[1] - cli.me[1]) < 8, 'client tank position matches the host');
    assert.ok(Math.hypot(host.aPos[0] - cli.aPos[0], host.aPos[1] - cli.aPos[1]) < 8, 'host tank position matches on the client');

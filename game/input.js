@@ -21,7 +21,9 @@ export class Input {
       });
       canvas.addEventListener('mousedown', (e) => {
          if (!this.enabled) return;
-         if (document.pointerLockElement !== canvas && !this.noLock) canvas.requestPointerLock?.()?.catch?.(() => {});
+         // not captured yet (battle started without a click, e.g. a host's MP start): this click only
+         // grabs the mouse and is swallowed, so it can't fire or toggle the RMB turret lock by accident
+         if (document.pointerLockElement !== canvas && !this.noLock) { this.lock(); return; }
          if (e.button === 0) { this.lmb = true; this.lmbPressed = true; }
          if (e.button === 2) this.rmb = true;
       });
@@ -36,5 +38,8 @@ export class Input {
    down(code) { return this.keys.has(code); }
    hit(code) { return this.pressed.has(code); }
    endFrame() { this.pressed.clear(); this.dx = this.dy = this.wheel = 0; this.lmbPressed = false; }
+   /** Grab the mouse. Works without a fresh click while the browser's user-activation window from
+    *  the menu click is still open; otherwise it fails quietly and the next canvas click grabs it. */
+   lock() { if (this.enabled && !this.noLock && document.pointerLockElement !== this.canvas) { try { this.canvas.requestPointerLock?.()?.catch?.(() => {}); } catch {} } }
    unlock() { if (document.pointerLockElement) document.exitPointerLock(); }
 }
