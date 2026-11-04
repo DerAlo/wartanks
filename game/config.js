@@ -763,6 +763,15 @@ const SITE_RAW = [
 export const SITE_LIST = [];
 for (const raw of SITE_RAW) { const cfg = finalize(raw); TANKS[cfg.id] = cfg; SITE_LIST.push(cfg.id); }
 
+// ---- cheat-only tanks (the logo cheat, profile.cheat): in TANKS but not in TANK_LIST, so they never
+// appear in the tech tree, the shop, matchmaking, training targets or bot rosters. The garage, the
+// campaign briefing and the MP lobby offer them once the profile has the cheat.
+const CHEAT_RAW = [];
+export const CHEAT_TANKS = [];
+for (const raw of CHEAT_RAW) { const cfg = finalize(raw); cfg.cheat = true; TANKS[cfg.id] = cfg; CHEAT_TANKS.push(cfg.id); }
+/** Tanks a player may drive (garage / net games): the tech tree plus the cheat-only ones; never sites. */
+export const isDrivable = (id) => typeof id === 'string' && (TANK_LIST.includes(id) || CHEAT_TANKS.includes(id));
+
 export const tanksByNation = (nation) => TANK_LIST.filter((id) => TANKS[id].nation === nation);
 export const tanksInTier = (lo, hi) => TANK_LIST.filter((id) => TANKS[id].tier >= lo && TANKS[id].tier <= hi);
 

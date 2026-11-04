@@ -4,6 +4,7 @@
 // Reads config.js / maps.js / armor.js / tanks3d.js; uses progress.js when it exists (optional).
 import * as THREE from '../vendor/three/three.module.min.js';
 import { treeGeo } from './terrain3d.js';
+import { exportSave, importSave, saveFileName } from './savegame.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (v, d = 0) => (v == null || Number.isNaN(v)) ? '–' : Number(v).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -64,6 +65,11 @@ const CSS = `
 .pz-top { position: absolute; left: 0; right: 0; top: 0; height: 50px; display: flex; align-items: center; gap: 14px; padding: 0 16px;
    background: linear-gradient(var(--olive-dk), rgba(46,50,31,.85)); border-bottom: 2px solid var(--signal); pointer-events: auto; color: var(--khaki); }
 .pz-top .pz-logo { font-size: 26px; text-shadow: none; color: var(--paper); }
+#menu .pz-logo { pointer-events: auto; user-select: none; cursor: default; }
+.pz-save { display: flex; gap: 8px; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--khaki-3); font-size: 12px; color: var(--ink-2); }
+.pz-save span { flex: 1; max-width: 360px; }
+.pz-savemsg { margin-top: 8px; font-size: 12px; font-weight: 600; color: #9c2a22; }
+.pz-nat.cheat .pz-k { color: #9c2a22; border-color: #9c2a22; }
 .pz-top .sp { flex: 1; }
 .pz-top .cur { font-size: 14px; letter-spacing: .06em; } .pz-top .cur b { color: var(--paper); }
 .pz-list { position: absolute; left: 12px; top: 62px; bottom: 12px; width: 270px; overflow-y: auto; padding: 8px 0; }
@@ -320,6 +326,9 @@ export class Menu {
    <span>Mausempfindlichkeit</span><span><input type="range" id="pz-sens" min="25" max="300"> <b id="pz-sensv"></b></span>
    <span>Maus Y invertieren</span><span><input type="checkbox" id="pz-inv"></span></div>
    <div class="pz-k" id="pz-qnote" style="margin-top:10px;display:none">Grafikqualität wird beim nächsten Laden der Seite aktiv.</div>
+   <div id="pz-savebox"><div class="pz-save"><span>Speicherstand: eine Datei mit dem ganzen Fortschritt (Garage, Besatzungen, Feldzug, Einstellungen) – zum Sichern oder Mitnehmen auf ein anderes Gerät.</span>
+      <button data-a="saveExport">Speicherstand exportieren</button><button data-a="saveImport">Speicherstand importieren</button></div>
+      <div class="pz-savemsg" id="pz-savemsg" style="display:none"></div></div>
    <div class="bt"><button id="pz-reload" style="display:none" data-a="reload">Jetzt neu laden</button><button class="pri" data-a="closeSettings">Fertig</button></div></div></div>
 <div class="pz-modal" id="pz-pause"><div class="pz-card"><h2 class="pz-st">Pause</h2><div class="col">
    <button class="pri" data-a="resume">Fortsetzen</button><button data-a="settings">Einstellungen</button><button data-a="leave">Gefecht verlassen</button></div></div></div>
@@ -341,6 +350,7 @@ export class Menu {
          const s = e.target.closest('[data-set]'); if (s) { this.sel[s.dataset.set] = s.dataset.v; save(SET_KEY, this.sel); this.renderSetup(); }
          const p = e.target.closest('[data-prog]'); if (p) { this.progAct(p.dataset.prog, this.sel.cls); this.renderList(); this.renderStats(); this.renderSetup(); }
       });
+      this.root.querySelectorAll('.pz-logo').forEach((el) => el.addEventListener('click', () => this.logoTap()));
       this.root.addEventListener('change', (e) => { if (e.target.id === 'pz-map') { this.sel.map = e.target.value; save(SET_KEY, this.sel); this.renderSetup(); } });
       // turntable drag + hover on the canvas (the menu shell is pointer-events:none)
       const cv = this.R.renderer.domElement;
@@ -384,6 +394,8 @@ export class Menu {
          case 'trainCrew': this.crewAct('trainCrew', 'all'); break;
          case 'convert': this.crewAct('convertXP', el.dataset.v === 'all' ? 'all' : +el.dataset.v); break;
          case 'reload': location.reload(); break;
+         case 'saveExport': this.exportSave(); break;
+         case 'saveImport': this.importSave(); break;
          case 'armor': this.setArmorView(!this.armorView); break;
          case 'nominal': case 'eff': this.effMode = a === 'eff'; this.$('#pz-avm').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.a === a)); this.renderLegend(); break;
          case 'go': this.go(); break;
@@ -422,7 +434,52 @@ export class Menu {
       this.$('#pz-vol').value = vol; this.$('#pz-volv').textContent = vol + ' %'; this.$('#pz-mute').checked = !!au?.muted;
       this.$('#pz-sens').value = Math.round(this.inp.sens * 100); this.$('#pz-sensv').textContent = fmt(this.inp.sens, 2) + '×'; this.$('#pz-inv').checked = !!this.inp.invert;
       this.$('#pz-qnote').style.display = this.$('#pz-reload').style.display = cur !== q.id ? '' : 'none';
+      this.$('#pz-savebox').style.display = this.paused ? 'none' : '';     // no import in the middle of a battle
+      this.saveMsg('');
       this.$('#pz-settings').classList.add('on');
+   }
+
+   // ---------- save file (savegame.js): download / load the whole career as one JSON file ----------
+   saveMsg(text) { const m = this.$('#pz-savemsg'); if (m) { m.textContent = text || ''; m.style.display = text ? '' : 'none'; } }
+   exportSave() {
+      if (this.P && this._prof) this.P.saveProfile(this._prof);
+      save(SET_KEY, this.sel); save(INPUT_KEY, this.inp);
+      const url = URL.createObjectURL(new Blob([exportSave()], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = saveFileName(); document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      this.toast('Speicherstand exportiert');
+   }
+   // replaces the stored career, then the page reloads so every module reads it fresh
+   importSave() {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = '.json,application/json';
+      inp.addEventListener('change', () => {
+         const file = inp.files?.[0];
+         if (!file) return;
+         file.text().then((t) => {
+            const r = importSave(t);
+            if (r.ok) { location.reload(); return; }
+            this.saveMsg(r.error);
+         }).catch(() => this.saveMsg('Die Datei konnte nicht gelesen werden.'));
+      });
+      inp.click();
+   }
+   // cheat (as in warships): ten clicks in a row on the logo, each within 1.5 s of the last = a fully played career
+   async logoTap() {
+      const now = performance.now();
+      this._taps = now - (this._tapT || -1e9) < 1500 ? (this._taps || 0) + 1 : 1;
+      this._tapT = now;
+      if (this._taps < 10 || !this.P?.maxOutProfile) return;
+      this._taps = 0;
+      await this.loadCampaign();
+      this.P.maxOutProfile(this.prof(), this.CM?.OP_LIST || []);
+      this.ctx.getAudio?.()?.ui?.('buy');
+      this.renderList(); this.renderStats(); this.renderSetup();
+      if (this.screen === 'camp' && this.CM) this.renderOps();
+      if (this.screen === 'brief' && this.CM) this.renderBrief();
+      const extra = (this.C.CHEAT_TANKS || []).map((id) => this.C.TANKS[id]?.name).filter(Boolean);
+      this.toast(`Alles freigeschaltet: alle Panzer, volle Besatzungen und alle Operationen mit drei Sternen${extra.length ? ' – dazu ' + extra.join(', ') : ''}.`);
    }
 
    go() {
@@ -446,16 +503,26 @@ export class Menu {
          const ids = (C.TANK_LIST || []).filter((id) => T[id].nation === n).sort((a, b) => T[a].tier - T[b].tier || a.localeCompare(b));
          if (!ids.length) continue;
          h += `<div class="pz-nat"><span class="pz-k">${esc(C.NATIONS?.[n]?.name || n)}</span></div>`;
+         h += this.listRows(ids);
+      }
+      const cheat = this.cheatTanks();
+      if (cheat.length) h += `<div class="pz-nat cheat"><span class="pz-k">Sonderfahrzeuge</span></div>` + this.listRows(cheat);
+      this.$('#pz-list').innerHTML = h;
+      const cr = this.credits(), fx = this.freeXp();
+      this.$('#pz-cur').innerHTML = this.P ? `<b>${fmt(cr)}</b> Kreditpunkte${fx != null ? ` · <b>${fmt(fx)}</b> freie EP` : ''}` : '';
+   }
+   /** Cheat-only tanks (config.CHEAT_TANKS) the profile may drive: only after the logo cheat. */
+   cheatTanks() { return this.P && this.prof().cheat ? (this.C.CHEAT_TANKS || []).filter((id) => this.C.TANKS?.[id]) : []; }
+   listRows(ids) {
+      const C = this.C, T = C.TANKS || {}, R = C.TIER_ROMAN || [];
+      let h = '';
          for (const id of ids) {
             const c = T[id], own = this.owned(id), res = this.researched(id);
             const s = this.P ? (own ? '' : res ? 'kaufbar' : 'gesperrt') : '';
             h += `<div class="pz-row ${id === this.sel.cls ? 'sel' : ''} ${own ? '' : 'lock'}" data-tank="${id}" title="${esc(C.CLASSES?.[c.cls]?.name || c.cls)}">
                ${clsIcon(c.cls)}<span class="t">${R[c.tier] || c.tier}</span><span>${esc(c.name)}</span><span class="s">${s}</span></div>`;
          }
-      }
-      this.$('#pz-list').innerHTML = h;
-      const cr = this.credits(), fx = this.freeXp();
-      this.$('#pz-cur').innerHTML = this.P ? `<b>${fmt(cr)}</b> Kreditpunkte${fx != null ? ` · <b>${fmt(fx)}</b> freie EP` : ''}` : '';
+      return h;
    }
 
    armourSummary(c) {
@@ -758,7 +825,7 @@ export class Menu {
    openBrief(id) {
       const o = this.CM?.OPS[id]; if (!o) return;
       const keep = this.camp?.op === id ? this.camp : null;
-      this.camp = { op: id, cls: keep?.cls && o.tanks.includes(keep.cls) ? keep.cls : o.tanks[0], diff: keep?.diff || this.sel.diff || 'normal' };
+      this.camp = { op: id, cls: keep?.cls && this.opTanks(o).includes(keep.cls) ? keep.cls : o.tanks[0], diff: keep?.diff || this.sel.diff || 'normal' };
       this.viewCls = this.camp.cls; this.show('brief'); this.renderBrief();
    }
    renderBrief() {
@@ -772,7 +839,7 @@ export class Menu {
          <h4>Lage</h4>${(o.brief || []).map((p) => `<p>${esc(p)}</p>`).join('')}
          <h4>Auftrag</h4><ul>${(o.goals || []).map((g) => `<li>${esc(g)}</li>`).join('')}</ul>
          ${o.tip ? `<div class="tip"><b>Hinweis:</b> ${esc(o.tip)}</div>` : ''}`;
-      const tk = o.tanks.map((id) => {
+      const tk = this.opTanks(o).map((id) => {
          const c = T[id]; if (!c) return '';
          const a = c.gun?.ammo?.[0] || {}, ar = this.armourSummary(c);
          return `<div class="pz-tk ${id === this.camp.cls ? 'sel' : ''}" data-a="campTank" data-v="${id}">${clsIcon(c.cls)}<span class="n">${esc(c.name)}</span><span class="t">${C.TIER_ROMAN?.[c.tier] || c.tier}</span>
@@ -784,6 +851,8 @@ export class Menu {
          <button class="pri go" data-a="campGo">Einsatz beginnen</button>
          <button data-a="camp">Zurück zum Feldzug</button>`;
    }
+   /** The operation's tanks, plus the cheat-only ones after the logo cheat (as warships' CHEAT_SHIPS). */
+   opTanks(o) { const x = this.cheatTanks().filter((id) => !o.tanks.includes(id)); return x.length ? [...o.tanks, ...x] : o.tanks; }
    startOp(op, cls, diff) {
       this.viewCls = null;
       this.ctx.startBattle({ mode: 'campaign', op, playerCls: cls, difficulty: diff, playerPerks: this.perks(cls) });

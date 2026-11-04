@@ -19,7 +19,9 @@
 // the tank's crew, whose crew XP buys skill points for perks (config.PERKS).
 //   recordCampaign(p, opId, result) / campaignUnlocked(p, opId, order)   campaign ('Feldzug') records:
 //   p.campaign[opId] = { done, stars, bestTime, tries }
-import { TANKS, TANK_LIST, NATION_ORDER, PERKS, MAX_PERKS, cleanPerks } from './config.js';
+//   maxOutProfile(p, opIds) -> p                     the logo cheat: a fully played career (p.cheat = true)
+//   garageTanks(p) -> [ids]                           TANK_LIST plus the cheat-only tanks (config.CHEAT_TANKS) once p.cheat
+import { TANKS, TANK_LIST, CHEAT_TANKS, NATION_ORDER, PERKS, PERK_LIST, MAX_PERKS, cleanPerks } from './config.js';
 
 const KEY = 'wartanks.profile.v1';
 export const RESEARCH_XP = { 4: 0, 5: 2500, 6: 6000, 7: 12000, 8: 22000 };
@@ -39,10 +41,13 @@ export function techTree() {
 const prevOf = (id) => { const ch = techTree()[TANKS[id].nation]; const i = ch.indexOf(id); return i > 0 ? ch[i - 1] : null; };
 const nextOf = (id) => { const ch = techTree()[TANKS[id].nation]; const i = ch.indexOf(id); return i >= 0 && i < ch.length - 1 ? ch[i + 1] : null; };
 const newCrew = () => ({ xp: 0, perks: [] });
+// every tank a profile keeps a record for: the tech tree plus the cheat-only tanks (never researched or bought)
+const PROFILE_TANKS = [...TANK_LIST, ...(CHEAT_TANKS || [])];
+export const garageTanks = (p) => (p?.cheat ? PROFILE_TANKS : TANK_LIST).filter((id) => TANKS[id]);
 
 export function newProfile() {
    const p = { v: 1, credits: 150000, freeXP: 0, tanks: {}, selected: null, battles: 0, wins: 0, campaign: {} };
-   for (const id of TANK_LIST) p.tanks[id] = { xp: 0, owned: false, researched: false, battles: 0, wins: 0, dmg: 0, kills: 0, crew: newCrew() };
+   for (const id of PROFILE_TANKS) p.tanks[id] = { xp: 0, owned: false, researched: false, battles: 0, wins: 0, dmg: 0, kills: 0, crew: newCrew() };
    for (const ch of Object.values(techTree())) if (ch.length) { p.tanks[ch[0]].owned = p.tanks[ch[0]].researched = true; p.selected ??= ch[0]; }
    return p;
 }
@@ -50,14 +55,16 @@ function sanitize(p) {
    const base = newProfile();
    if (!p || typeof p !== 'object' || p.v !== 1) return base;
    const out = { ...base, ...p, tanks: { ...base.tanks } };
-   for (const id of TANK_LIST) if (p.tanks?.[id]) {
+   for (const id of PROFILE_TANKS) if (p.tanks?.[id]) {
       const t = out.tanks[id] = { ...base.tanks[id], ...p.tanks[id] };
       t.xp = Math.max(0, +t.xp || 0);
       const c = p.tanks[id].crew;                          // old profiles have no crew: an empty one
       t.crew = { xp: Math.max(0, +c?.xp || 0), perks: cleanPerks(c?.perks) };
       while (t.crew.perks.length > crewLevel(t.crew.xp).points) t.crew.perks.pop();
    }
-   if (!TANKS[out.selected] || !out.tanks[out.selected].owned) out.selected = base.selected;
+   out.cheat = !!p.cheat;
+   for (const id of CHEAT_TANKS || []) if (!out.cheat) { out.tanks[id].owned = out.tanks[id].researched = false; }
+   if (!TANKS[out.selected] || !out.tanks[out.selected]?.owned) out.selected = base.selected;
    out.credits = Math.max(0, +out.credits || 0); out.freeXP = Math.max(0, +out.freeXP || 0);
    out.campaign = {};                                   // old profiles have none
    if (p.campaign && typeof p.campaign === 'object') for (const [id, r] of Object.entries(p.campaign)) if (r && typeof r === 'object')
@@ -211,6 +218,28 @@ export function campaignUnlocked(p, opId, order = []) {
    const i = order.indexOf(opId);
    if (i <= 0) return true;
    return !!p.campaign?.[order[i - 1]]?.done;
+}
+
+// ---------- the logo cheat (as in warships): a fully played career ----------
+/** Every tank researched and bought (the cheat-only ones too), lots of credits and XP, every crew
+ *  with all skills, every campaign operation won with three stars (opIds = campaign OP_LIST). */
+export function maxOutProfile(p, opIds = []) {
+   p.cheat = true;
+   p.credits = Math.max(p.credits || 0, 50_000_000); p.freeXP = Math.max(p.freeXP || 0, 1_000_000);
+   let crewXP = 0; for (let i = 0; i < MAX_PERKS; i++) crewXP += crewPointXP(i);
+   for (const id of PROFILE_TANKS) {
+      const t = p.tanks[id] ??= { xp: 0, owned: false, researched: false, battles: 0, wins: 0, dmg: 0, kills: 0, crew: newCrew() };
+      t.owned = t.researched = true;
+      t.xp = Math.max(t.xp || 0, 100_000);
+      t.crew = { xp: Math.max(t.crew?.xp || 0, crewXP), perks: [...PERK_LIST] };
+   }
+   p.campaign ??= {};
+   for (const id of opIds) {
+      const r = p.campaign[id] ??= { done: false, stars: 0, bestTime: null, tries: 0 };
+      r.done = true; r.stars = 3; r.tries = Math.max(1, r.tries | 0);
+   }
+   saveProfile(p);
+   return p;
 }
 
 const b64e = (s) => (typeof btoa === 'function' ? btoa(unescape(encodeURIComponent(s))) : Buffer.from(s, 'utf8').toString('base64'));

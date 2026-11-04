@@ -38,7 +38,7 @@ import { coopSlots } from './coop.js';
 import { pvpMissions, pvpSlots, TEAM_MAX } from './pvp.js';
 import { MISSIONS } from '../missions.js';
 import { MAPS, MAP_LIST, RANDOM_MAPS } from '../maps.js';
-import { TANKS, TANK_LIST, cleanPerks } from '../config.js';
+import { TANKS, TANK_LIST, CHEAT_TANKS, isDrivable, cleanPerks } from '../config.js';
 
 export { NET_VERSION };
 export const NAME_KEY = 'wartanks.net.name';
@@ -78,8 +78,9 @@ export const modeSlots = (mode, missionId) => mode === 'pvp' ? pvpSlots(missionI
 export const MIN_PLAYERS = { coop: 1, pvp: 2 };
 export const allMaps = () => MAP_LIST.map(id => MAPS[id]);
 // every tank may drive in a net game; the local player picks from the tanks owned in the garage profile
-export const validTank = (id) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(TANKS, id);
-export const ownTanks = (profile) => TANK_LIST.filter(id => profile?.tanks?.[id]?.owned);
+// (the cheat-only tanks, config.CHEAT_TANKS, too: a cheating captain may bring one; emplacements never)
+export const validTank = (id) => isDrivable(id) && Object.prototype.hasOwnProperty.call(TANKS, id);
+export const ownTanks = (profile) => [...TANK_LIST, ...(profile?.cheat ? CHEAT_TANKS : [])].filter(id => profile?.tanks?.[id]?.owned);
 // preferred (the last pick), else the garage's current tank, else the first own one
 export function pickTank(profile, preferred) {
    const own = ownTanks(profile);

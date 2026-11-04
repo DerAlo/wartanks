@@ -34,8 +34,10 @@ function pickOf(cls, lo, hi, rng, avoid) {
 /** Tier ±1 around the player, same class mix on both sides (mirrored slot by slot). */
 export function matchmake(playerCls, teamSize, rng) {
    const pc = TANKS[playerCls] || TANKS[TANK_LIST[0]];
-   const lo = pc.tier - 1, hi = pc.tier + 1;
-   const team1 = [pc.id], team2 = [pickOf(pc.cls, pc.tier, pc.tier, rng, pc.id)];
+   // a cheat-only tank (config.CHEAT_TANKS, above the tree's top tier) meets the top tiers
+   const pt = Math.min(pc.tier, Math.max(...TANK_LIST.map((id) => TANKS[id].tier)));
+   const lo = pt - 1, hi = pt + 1;
+   const team1 = [pc.id], team2 = [pickOf(pc.cls, pt, pt, rng, pc.id)];
    for (let i = 1; i < teamSize; i++) {
       const cls = CLASS_PATTERN[(i - 1) % CLASS_PATTERN.length];
       const a = pickOf(cls, lo, hi, rng);

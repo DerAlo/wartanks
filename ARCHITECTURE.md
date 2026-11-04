@@ -17,7 +17,7 @@ transport layer copied from warships). UI language **German**. `node server.js` 
 | Data | `config.js` (tanks, guns, ammo, armour geometry, tiers), `maps.js` (map themes) | sim |
 | Simulation | `utils.js` (seeded RNG, math), `terrain.js` (heightfield + objects, pure sim), `armor.js` (hull/turret polyhedra, ray tests, effective thickness), `ballistics.js` (shell flight, penetration, damage, modules, crew), `tank.js` (Tank class: drivetrain, physics, turret/gun, aim, reload, modules), `spotting.js`, `ai.js` (bots), `state.js` (World), `missions.js` (modes), `progress.js` (garage, XP, credits, unlocks) | sim |
 | Graphics | `render.js` (scene, renderer, lights, shadows, fog chunks, atmosphere API), `post.js` (HDR target + MSAA, bloom pyramid, ACES, grading), `terrain3d.js` (ground mesh from `terrain.js`, splat shading, grass, trees, houses, rocks), `tanks3d.js` (procedural tank models built from the SAME armour geometry in `config.js` + details), `fx.js` (muzzle flash, dust, tracers, impacts, ricochet sparks, explosions, fire, smoke, track marks, wrecks), `sky.js`, `gfxquality.js` | client |
-| Controls / UI / audio | `main.js` (boot, loop), `input.js`, `camera.js` (third-person orbit + sniper zoom ladder), `hud.js` (reticle, pen indicator, damage panel, minimap, kill feed, damage log), `menu.js` (main menu, garage, armour viewer, tech tree, results), `audio.js` (+ `audiosynth.js`), `index.html` (page, design tokens) | client |
+| Controls / UI / audio | `main.js` (boot, loop), `savegame.js` (save file), `input.js`, `camera.js` (third-person orbit + sniper zoom ladder), `hud.js` (reticle, pen indicator, damage panel, minimap, kill feed, damage log), `menu.js` (main menu, garage, armour viewer, tech tree, results), `audio.js` (+ `audiosynth.js`), `index.html` (page, design tokens) | client |
 | Multiplayer | `net/*` | net |
 
 Graphics/controls only **read** sim state and call the documented methods below. Consumers
@@ -333,6 +333,25 @@ yaw, every third one drives (`role 'targetMoving'`), destroyed targets respawn a
 Tech tree per nation (Deutschland, Sowjetunion, USA, Großbritannien), tiers I/II…VIII,
 XP per tank to research the next, credits to buy, start tanks unlocked. Ammo loadout
 (premium APCR/HEAT costs credits). Save export/import like warships.
+
+**Save file** (`savegame.js`, as warships `game3d/savegame.js`): `exportSave(storage?) -> JSON text
+{ app: 'panzer', v: 1, saved, data: { key: stored string } }` with every `wartanks.*` localStorage key
+(profile, `menu.v1`, `input.v1`, `audio.v1`, `net.name`) except the device-local graphics preset
+`wartanks.gfx.v1`; `readSave(text) -> { ok, data | error (German) }`, `importSave(text, storage?)`
+(replaces our keys, drops ours missing from the file), `saveFileName()` =
+`panzer-speicherstand-YYYY-MM-DD.json`. UI: Einstellungen → "Speicherstand exportieren / importieren"
+(hidden while paused in a battle); a successful import reloads the page.
+
+**Logo cheat** (as warships `_logoTap`): ten clicks on any "PANZER" logo, each within 1.5 s of the
+last, call `maxOutProfile(p, OP_LIST)`: `p.cheat = true`, every tank (tree + `config.CHEAT_TANKS`)
+researched and bought with 100k tank XP, every crew with all perks, 50 M credits, 1 M free XP, every
+operation won with three stars. `sanitize` keeps `p.cheat` and takes cheat tanks away from a profile
+without it. `garageTanks(p)` = `TANK_LIST` + `CHEAT_TANKS` once cheated. Cheat-only tanks live in
+`TANKS` but not in `TANK_LIST` (no tech tree, shop, matchmaking, training targets or bots); the garage
+lists them under "Sonderfahrzeuge", the campaign briefing adds them to every operation's tanks
+(`menu.opTanks`), the MP lobby offers them (`lobby.ownTanks`), and the host accepts them
+(`lobby.validTank` = `config.isDrivable`: tree + cheat tanks, never emplacements). `matchmake` clamps
+the player's tier to the tree's top tier.
 
 As implemented: `loadProfile()`, `saveProfile(p)`, `resetProfile()`, `newProfile()`,
 `techTree() -> { DE:[ids by tier], ... }`, `tankState(p, id) -> { owned, researched, xp, prev,
