@@ -57,7 +57,9 @@ test('training ground: infinite ammo, targets of every type, respawn', () => {
    assert.equal(w.phase, 'playing');
    assert.equal(w.timeLeft, null);
    assert.ok(w.infiniteAmmo);
-   assert.equal(w.tanks.length, 1 + TANK_LIST.length);
+   const n = w.tanks.length - 1;   // sampled: one per nation+class near the player's tier
+   assert.ok(n >= 8 && n <= 16, `${n} targets`);
+   assert.ok(w.tanks.slice(1).every((t) => Math.abs(t.cfg.tier - 5) <= 2), 'targets near tier V');
    const tgt = w.tanks[1];
    const n0 = w.player.ammoCount.AP;
    w.player.reload = 0; w.player.fire(w);

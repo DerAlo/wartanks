@@ -105,19 +105,29 @@ export const MISSIONS = {
          const sp = T.spawns.team1[2];
          const cls = TANKS[opts.playerCls] ? opts.playerCls : 'pz4h';
          world.addTank(cls, 1, { x: sp.x, z: sp.z, yaw: Math.PI * 0, isPlayer: true, name: opts.playerName || 'Spieler' });
-         // targets: a fan north of the player at 100..400 m, every type, varied angles; every 3rd moves
+         // targets: a fan north of the player at 100..400 m, varied angles; every 3rd moves. With 70+ tanks
+         // "every type" is too many: one per nation+class near the player's tier (±1, widened until >= 8), max 16
          world.targets = [];
-         const n = TANK_LIST.length;
+         const pt = TANKS[cls].tier, pick = [];
+         for (let d = 1; pick.length < 8 && d <= 9; d++) {
+            const best = {};
+            for (const id of TANK_LIST) {
+               const c = TANKS[id], k = c.nation + c.cls, dt = Math.abs(c.tier - pt);
+               if (dt <= d && (!best[k] || dt < Math.abs(TANKS[best[k]].tier - pt))) best[k] = id;
+            }
+            pick.length = 0; pick.push(...Object.values(best).slice(0, 16));
+         }
+         const n = pick.length;
          for (let i = 0; i < n; i++) {
             const dist = 100 + (i % 4) * 90 + rng() * 20;
             const a = (i / (n - 1) - 0.5) * 1.6;
             const x = sp.x - Math.sin(a) * dist, z = sp.z - Math.cos(a) * dist;
             const yaw = [0, Math.PI / 2, Math.PI / 4, -Math.PI / 6, Math.PI][i % 5] + a;
-            const t = world.addTank(TANK_LIST[i], 2, { x, z, yaw, name: 'Ziel ' + (i + 1) });
+            const t = world.addTank(pick[i], 2, { x, z, yaw, name: 'Ziel ' + (i + 1) });
             t.role = i % 3 === 2 ? 'targetMoving' : 'target';
             t.home = { x, z, yaw };
             for (const k in t.consumables) t.consumables[k].count = 0;
-            world.targets.push({ cls: TANK_LIST[i], home: t.home, role: t.role, tank: t, respawn: 0 });
+            world.targets.push({ cls: pick[i], home: t.home, role: t.role, tank: t, respawn: 0 });
          }
       },
       // destroyed targets come back after 8 s
