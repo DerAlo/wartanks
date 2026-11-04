@@ -77,6 +77,8 @@ export const AMMO = {
 export const BALLISTICS = {
    PEN_RANDOM: 0.25,        // ±25 % (triangular) on penetration
    DMG_RANDOM: 0.25,        // ±25 % on damage
+   DISP_MUL: 0.85,          // global accuracy: all guns 15 % tighter (playtest: 'manchmal echt zäh')
+   AIM_MUL: 0.85,           // global aim time scale (faster convergence)
    DMG_MUL: 1.3,            // global damage scale: hits must hurt (playtest: 'treffer machen wenig schaden')
    TRACK_K: 1.0,            // share of the shell's damage a track hit deals to the track (ricochet: half)
    FALL_START: 100, FALL_END: 500,
@@ -127,7 +129,7 @@ export const PLATE_NAMES = {
    side: 'Seite', sideLow: 'Untere Seite', spon: 'Kettenabdeckung',
    tf: 'Turmfront', tcl: 'Turmwange links', tcr: 'Turmwange rechts', tsl: 'Turmseite links', tsr: 'Turmseite rechts',
    trl: 'Turmheck links', trr: 'Turmheck rechts', tr: 'Turmheck', troof: 'Turmdach', tbase: 'Turmboden',
-   mantlet: 'Blende', track: 'Kette', skirt: 'Schürze', gun: 'Kanone',
+   mantlet: 'Blende', track: 'Kette', skirt: 'Schürze', gun: 'Kanone', cup: 'Kommandantenkuppel',
 };
 
 // Module catalogue (German names, base HP at tier V; scaled by tier in finalize()).
@@ -547,7 +549,17 @@ function buildTurret(spec, hull) {
    for (const f of faces) plates[f.id] = { name: PLATE_NAMES[f.id], t: f.t };
    plates.troof = { name: PLATE_NAMES.troof, t: spec.roofT };
    plates.tbase = { name: PLATE_NAMES.tbase, t: Math.max(10, Math.round(spec.roofT)) };
+   // commander's cupola (same spot tanks3d draws it): a thin-walled ring of vision blocks on the roof,
+   // the classic weak spot that almost any gun gets through (WoT style). spec.cupT overrides.
+   let cupola = null;
+   if (!spec.openTop) {
+      const zs = top.map((p) => p[1]), zB = Math.max(...zs), zF = Math.min(...zs), xMax = Math.max(...top.map((p) => p[0]));
+      const t = spec.cupT ?? Math.round(Math.min(50, Math.max(25, spec.roofT * 1.5 + 10)));
+      cupola = { x: -Math.min(0.42, xMax * 0.55), y: spec.h + 0.16, z: zF + (zB - zF) * 0.68, s: 0.6, h: 0.32, t };
+      plates.cup = { name: PLATE_NAMES.cup, t };
+   }
    return {
+      cupola,
       x: 0, z: spec.z, y: hull.roofY, ringR: spec.ringR, h: spec.h, base, top, faces, roofT: spec.roofT, plates,
       openTop: !!spec.openTop, traverse: spec.traverse, lenF, lenR, w,
    };
@@ -563,6 +575,7 @@ function finalize(raw) {
    cfg.camo = { ...raw.camo, fire: cd.fireCamo };
    const g = cfg.gun = { dispMove: cd.dispMove, dispHull: cd.dispHull, dispTurret: cd.dispTurret, dispShot: cd.dispShot, ...raw.gun };
    g.mount = cfg.turret ? 'turret' : 'hull';
+   g.disp = +(g.disp * (BALLISTICS.DISP_MUL ?? 1)).toFixed(3); g.aim = +(g.aim * (BALLISTICS.AIM_MUL ?? 1)).toFixed(2);   // global accuracy knobs
    g.arc = g.arc || null;
    g.ammoByType = {};
    for (const a of g.ammo) {

@@ -186,7 +186,7 @@ export class HUD {
       // spaced armour (track / skirt / mantlet) only eats into the pen: add the real plate behind it
       if (SPACED_PART[hit.part] && hits && !ric) {
          if (ammo.type === 'HEAT' && hit.part !== 'mantlet') heatDead = true;
-         const i0 = hits.indexOf(hit), next = i0 >= 0 ? hits.slice(i0 + 1).find((h) => h.t > 0 && (h.part === 'hull' || h.part === 'turret')) : null;
+         const i0 = hits.indexOf(hit), next = i0 >= 0 ? hits.slice(i0 + 1).find((h) => h.t > 0 && (h.part === 'hull' || h.part === 'turret' || h.part === 'cupola')) : null;
          if (next) {
             let a2 = next.angleDeg ?? 0, n2 = rule.norm ?? 0;
             if (cal > BALLISTICS.OVERMATCH_NORM * next.t) n2 *= 1.4 * cal / next.t;
@@ -216,6 +216,7 @@ export class HUD {
       if (p.alive !== false) this.drawReticle(g, w, p);
       this.drawHitsIn(g, p);
       this.drawDamagePanel(g, p);
+      this.drawSpotLamp(g, p, dt);
       this.drawLog(g);
       this.drawTop(g, w);
       if (C) this.drawRadio(g, w, C);
@@ -353,6 +354,24 @@ export class HUD {
       g.fillStyle = state === 'destroyed' || state === 'dead' ? 'rgba(238,75,54,.25)' : state === 'damaged' || state === 'wounded' ? 'rgba(241,200,60,.18)' : 'rgba(255,255,255,.05)';
       g.fillRect(x, y, w, 18); g.strokeStyle = c; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w - 1, 17);
       this.text(g, label, x + w / 2, y + 9.5, c, 10.5, 'center', FCOND, '600');
+   }
+
+   // "you have been spotted" lamp (WoT's sixth sense): lights while the enemy team sees us,
+   // pulses and beeps when it comes on
+   drawSpotLamp(g, p, dt) {
+      const on = p.alive !== false && !!p.spotted && this.world.phase === 'playing';
+      if (on && !this.spotOn) { this.spotT = 0; this.G?.audio?.ui?.('spotted'); }
+      this.spotOn = on; if (!on) return;
+      this.spotT = (this.spotT ?? 0) + dt;
+      const x = 14 + 165, y = this.H - 150 - 14 - 44, pulse = this.spotT < 2 ? 0.5 + 0.5 * Math.cos(this.spotT * 9) : 1;
+      g.save();
+      g.shadowColor = 'rgba(255,120,30,0.9)'; g.shadowBlur = 18 * pulse;
+      g.fillStyle = `rgba(255,${130 + 50 * pulse | 0},40,${0.75 + 0.25 * pulse})`;
+      g.beginPath(); g.arc(x, y, 17, 0, Math.PI * 2); g.fill();
+      g.shadowBlur = 0; g.strokeStyle = 'rgba(40,20,0,0.8)'; g.lineWidth = 2; g.stroke();
+      g.fillStyle = '#2a1200'; g.font = `900 24px ${FST}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('!', x, y + 1);
+      g.restore();
+      this.text(g, 'AUFGEKLÄRT', x + 26, y + 5, '#ffb050', 15, 'left', FST, '700');
    }
 
    drawDamagePanel(g, p) {

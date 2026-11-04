@@ -201,6 +201,9 @@ export function buildArmor(cfg) {
       // turret plate names/thickness from the turret's own plate table
       for (const f of part.faces) if (T.plates[f.plate]) f.name = T.plates[f.plate].name;
       parts.push(part);
+      // commander's cupola: weak spot on the roof (its floor sits on the roof plate -> internal)
+      const C = T.cupola;
+      if (C) parts.push(boxPart('cupola', 'turret', null, [C.x, C.y, C.z], [C.s, C.h, C.s], 'cup', C.t, 'bottom'));
    }
    // mantlet (back face sits inside the turret front / casemate)
    const M = cfg.mantlet;

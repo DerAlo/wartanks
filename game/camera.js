@@ -37,9 +37,9 @@ export class TankCamera {
       const z = this.zoom, k = sens / Math.max(1, z * 0.8);
       this.yaw -= dx * k; this.pitch = clamp(this.pitch - dy * k, -1.2, this.scoped ? 0.45 : 0.6);
    }
-   setFreeLook(on) {
+   setFreeLook(on, keepView = false) {
       if (on && !this.freeLook) { this.aimYaw = this.yaw; this.aimPitch = this.pitch; }
-      if (!on && this.freeLook) { this.yaw = this.aimYaw; this.pitch = this.aimPitch; }
+      if (!on && this.freeLook && !keepView) { this.yaw = this.aimYaw; this.pitch = this.aimPitch; }
       this.freeLook = on;
    }
    // aim direction (world): frozen while free-looking

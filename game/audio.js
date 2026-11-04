@@ -56,6 +56,7 @@ export class Audio {
       if (name === 'scope') S.click(c, this.sfx, c.currentTime, 0.25);
       else if (name === 'click') S.click(c, this.sfx, c.currentTime, 0.5);
       else if (name === 'blip') S.blip(c, this.sfx, c.currentTime, 1);
+      else if (name === 'spotted') { S.blip(c, this.sfx, c.currentTime, 1.3, 0.55); S.blip(c, this.sfx, c.currentTime + 0.22, 1.3, 0.55); }
    }
    // distance attenuation + stereo pan for a one-shot at world position p
    spatial(p, cam, yaw) {

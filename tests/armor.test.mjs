@@ -154,6 +154,21 @@ test('a direct HE hit on thick armour still does a little damage', () => {
    assert.ok(res.dmg > 0 && res.dmg < he.dmg / 2, 'tiger side HE ' + res.dmg);
 });
 
+test('the commander cupola is a weak spot: a medium gun gets through it on a Tiger and a Tiger II', () => {
+   const ap = round(TANKS.t34_76, 'AP');
+   for (const id of ['tiger1', 'tiger2', 'kv1', 'pz4h']) {
+      const cfg = TANKS[id], T = cfg.turret, C = T.cupola, A = buildArmor(cfg), ps = pose();
+      assert.ok(C, id + ' has a cupola');
+      const p = [T.x + C.x, T.y + C.y, T.z + C.z];
+      const r = rayAt(ps, p, fromFront);
+      const hits = rayArmor(A, ps, r.o, r.d);
+      assert.equal(hits[0].part, 'cupola', id + ' first plate ' + hits[0].part);
+      const res = resolveImpact({ armor: A, pose: ps }, r.o, r.d, { type: 'AP', cal: ap.cal, dmg: ap.dmg, pen: penAt(ap, 300) }, makeRng(2));
+      assert.equal(res.kind, 'pen', id + ' cupola ' + res.kind + ' eff ' + res.effT);
+      assert.ok(res.dmg > 0);
+   }
+});
+
 test('HEAT loses pen through spaced armour (skirts)', () => {
    const cfg = TANKS.panther, A = buildArmor(cfg), ps = pose();
    const heat = { type: 'HEAT', cal: 75, dmg: 110, pen: 100 };

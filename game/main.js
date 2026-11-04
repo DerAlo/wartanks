@@ -36,7 +36,7 @@ function themeOf(mapId) {
 
 
 export function startBattle(opts = {}) {
-   stopBattle(); G.lock = null; G.rmbT = null;
+   stopBattle(); G.lock = null; G.rmbT = null; G.turretLock = false;
    for (const k in opts) if (opts[k] === undefined) delete opts[k];
    if (!stateM.World) { console.error('[main] state.js missing: no battle possible'); menu?.show('garage'); return; }
    const world = G.world = opts.world || new stateM.World({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
@@ -70,7 +70,7 @@ function finishBattle() {
       result: w.result ? { ...w.result } : null, stats: w.stats ? { ...w.stats } : null };
    menu?.applyResult?.(snap);
    G.lastResult = snap;
-   stopBattle(); G.lock = null; G.rmbT = null;
+   stopBattle(); G.lock = null; G.rmbT = null; G.turretLock = false;
    if (G.net) G.net.finish(snap);                   // net game: the lobby shows the result and the room
    else if (menu) menu.showResults(snap);
 }
@@ -157,14 +157,24 @@ function rightMouse(world, p) {
    const now = performance.now() / 1000;
    if (input.rmb && G.rmbT == null) G.rmbT = now;
    const held = G.rmbT != null ? now - G.rmbT : 0;
-   tcam.setFreeLook(input.rmb && held >= RMB_HOLD);
    if (!input.rmb && G.rmbT != null) {
       if (held < RMB_HOLD && p?.alive) {
          if (G.lock) { setLock(p, null); hud?.msg?.('Zielautomatik aus', undefined, 0.8); }
-         else { const t = pickLock(world, p); if (t) { setLock(p, t); hud?.msg?.('Zielautomatik: ' + (t.name || t.cfg?.short || 'Ziel'), undefined, 1); audio?.ui?.('scope'); } }
+         else if (G.turretLock) { G.turretLock = false; hud?.msg?.('Turm frei', undefined, 0.8); }
+         else {
+            const t = pickLock(world, p);
+            if (t) { setLock(p, t); hud?.msg?.('Zielautomatik: ' + (t.name || t.cfg?.short || 'Ziel'), undefined, 1); }
+            else { G.turretLock = true; hud?.msg?.('Turm gesperrt – Rechtsklick gibt frei', undefined, 1.2); }
+            audio?.ui?.('scope');
+         }
       }
       G.rmbT = null;
    }
+   if (G.turretLock && !p?.alive) G.turretLock = false;
+   // hold = free look while held; click without a target = turret lock until the next click
+   // (released lock: the view stays, the turret swings to it)
+   tcam.setFreeLook((input.rmb && held >= RMB_HOLD) || !!G.turretLock, !!G.turretLockWas && !G.turretLock);
+   G.turretLockWas = !!G.turretLock;
    if (G.lock && (!p?.alive || !lockValid(world, p, G.lock))) { setLock(p, null); hud?.msg?.('Ziel verloren', '#ff6a4d', 1); }
    if (G.lock) {   // keep the camera (and so the crosshair) on the target's centre
       const t = G.lock, c = R.camera.position;

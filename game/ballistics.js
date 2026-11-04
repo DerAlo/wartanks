@@ -56,6 +56,13 @@ function setPlate(r, h, effT) {
 const trackId = (h) => (h.side === 'L' ? 'trackL' : 'trackR');
 
 /** Post-penetration damage to module/crew boxes along the shell path. */
+// a shell through the cupola usually gets the commander, who sits right under it
+function cupolaCrit(target, h, dmg, rng, crits) {
+   if (h.part !== 'cupola' || rng() > 0.6) return;
+   const c = target.cfg?.crew?.find((m) => m.roles?.includes('commander'));
+   if (c && !crits.some((x) => x.kind === 'crew' && x.id === c.id)) crits.push({ kind: 'crew', id: c.id, dmg: Math.round(rollDmg(dmg, rng)) });
+}
+
 function postPen(target, origin, dir, t0, len, dmg, rng, crits) {
    if (len <= 0) return;
    const hits = rayModules(target.armor, target.pose, origin, dir, t0, t0 + len);
@@ -94,6 +101,7 @@ export function resolveImpact(target, origin, dir, shell, rng) {
          if (pen > effT && !SPACED[h.part] && h.part !== 'gun') {
             r.kind = 'pen'; r.dmg = Math.round(rollDmg(shell.dmg, rng));
             postPen(target, origin, dir, h.dist, 1.0, shell.dmg * 0.8, rng, r.crits);
+            cupolaCrit(target, h, shell.dmg, rng, r.crits);
             return r;
          }
          // splash against the plate that shields the inside (behind spaced armour: next real plate)
@@ -140,6 +148,7 @@ export function resolveImpact(target, origin, dir, shell, rng) {
          r.kind = 'pen';
          r.dmg = Math.round(rollDmg(shell.dmg, rng));
          postPen(target, origin, dir, h.dist, AMMO[type].postPen * Math.min(1.3, 0.6 + cal / 200), shell.dmg, rng, r.crits);
+         cupolaCrit(target, h, shell.dmg, rng, r.crits);
          return r;
       }
       r.kind = 'noPen';
@@ -174,7 +183,7 @@ export function heSplash(target, point, shell, rng) {
    const hits = rayArmor(A, P, point, _dir);
    let h = null, spacedT = 0;
    for (const x of hits) {
-      if (x.part === 'hull' || x.part === 'turret') { if (x.t > 0) { h = x; break; } continue; }
+      if (x.part === 'hull' || x.part === 'turret' || x.part === 'cupola') { if (x.t > 0) { h = x; break; } continue; }
       if (x.part === 'track' || x.part === 'skirt') spacedT += x.t;
    }
    if (!h) { r.kind = 'miss'; return r; }
