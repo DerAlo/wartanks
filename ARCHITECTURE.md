@@ -371,6 +371,15 @@ nation. Works without localStorage (memory fallback).
   along the plate normal, stored in the hull-body or turret frame (so they traverse with the
   turret), up to 24 per tank (oldest dropped), wrecks included; all tanks share two
   InstancedMeshes = 2 draw calls. `G.tanks3d` is exposed for tests.
+* Tracks (`tanks3d.js buildTrack`): a solid belt (running surface, inner face, link-profile side
+  faces) around sprocket, idler, end road wheels and return rollers; road wheels (rubber tyre,
+  painted disc) sit on its inner face and its outer bottom run is at y = 0. One link per texture
+  tile, integer links per loop; each side scrolls with its own belt speed (v ∓ yaw rate × half
+  track gauge), so pivoting shows the sides running opposite. `modules.trackL/R.state ===
+  'destroyed'` (replicated in the codec) swaps that side to a torn belt: the wrap at the hit end
+  (from the `track` event, front by default) is gone and the torn run lies on the ground; repair
+  restores it. `fx.js` throws sparks, dust and links when a track state turns destroyed. The model
+  is lifted by up to 20 cm where the sim lets the hull sag into a crest (`pos.y` below the ground).
 * Effects: muzzle blast + smoke + dust ring on the ground, shell tracer, impact sparks on armour,
   dirt splash on ground, ricochet sparks with a deflected tracer, penetration flash, fire &
   black smoke, ammo rack explosion, track dust while driving, track marks decals, tree falling,

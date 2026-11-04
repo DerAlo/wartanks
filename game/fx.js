@@ -203,7 +203,7 @@ export class FX {
       if (w.effects) for (const e of w.effects) { if (e.__fx) continue; e.__fx = true; this.onHit(e.kind ?? e.type, e); }
       // tanks
       for (const t of w.tanks || []) {
-         let s = this.ts.get(t.id); if (!s) this.ts.set(t.id, s = { lastFire: t.lastFire, lx: t.pos.x, lz: t.pos.z, acc: 0, smk: 0, alive: t.alive });
+         let s = this.ts.get(t.id); if (!s) this.ts.set(t.id, s = { lastFire: t.lastFire, lx: t.pos.x, lz: t.pos.z, acc: 0, smk: 0, alive: t.alive, trk: [t.modules?.trackL?.state, t.modules?.trackR?.state] });
          const visible = t.alive === false || t.spotted !== false || t.team === w.player?.team;
          if (t.lastFire != null && t.lastFire !== s.lastFire) {
             s.lastFire = t.lastFire; this.gunTip(t, tip, dir);
@@ -215,7 +215,19 @@ export class FX {
          s.alive = t.alive;
          if (!visible) continue;
          const yaw = t.yaw || 0, fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-         const L = (t.cfg?.dims?.l ?? 6) / 2, W = (t.cfg?.run?.x ?? 1.4), spd = Math.abs(t.speed || 0);
+         const L = (t.cfg?.dims?.len ?? 6) / 2, W = (t.cfg?.run?.x ?? 1.4), spd = Math.abs(t.speed || 0);
+         // track shot off (module state, so replicas see it too): sparks, a dust puff and flung links
+         for (let i = 0; i < 2; i++) {
+            const st = t.modules?.[i ? 'trackR' : 'trackL']?.state;
+            if (st === 'destroyed' && s.trk[i] !== 'destroyed' && t.alive !== false) {
+               const sd = i ? 1 : -1, x = t.pos.x + rx * W * sd - fx * L * 0.6, z = t.pos.z + rz * W * sd - fz * L * 0.6, y = t.pos.y + 0.4;
+               this.sparks(x, y, z, rx * sd, 0.4, rz * sd, 16, 0.9);
+               const c = this.dustCol(t.pos.x, t.pos.z);
+               for (let k = 0; k < 10 * this.k; k++) this.smoke.spawn(x + rnd(0.6), y - 0.2, z + rnd(0.6), rnd(2) + rx * sd * 1.5, 0.6 + Math.random() * 1.6, rnd(2) + rz * sd * 1.5, 1.4 + Math.random(), 0.8, 3, c[0], c[1], c[2], 0.6, c[0] * 1.1, c[1] * 1.1, c[2] * 1.1, -0.05, 1.4);
+               for (let k = 0; k < 3; k++) this.debris(x, y, z, rx * sd * (2 + Math.random() * 3) + rnd(1.5), 3 + Math.random() * 4, rz * sd * (2 + Math.random() * 3) + rnd(1.5));
+            }
+            s.trk[i] = st;
+         }
          if (t.alive !== false) {
             // exhaust: rear deck, more with throttle
             s.acc += dt * (2 + Math.abs(t.input?.throttle || 0) * 10) * this.k;

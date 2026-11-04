@@ -39,10 +39,23 @@ function camoTexture(n) {
    return t;
 }
 function treadTexture() {
+   // one track link per tile (u along the belt). Canvas rows 0-31 = the belt's side face (row 0 = outer
+   // edge with the grouser teeth, v 1..0.5), rows 32-63 = running surface across the width (v 0.5..0).
    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64; const g = cv.getContext('2d');
-   g.fillStyle = '#2c2a26'; g.fillRect(0, 0, 64, 64);
-   for (let i = 0; i < 4; i++) { g.fillStyle = '#4a4740'; g.fillRect(0, i * 16 + 2, 64, 9); g.fillStyle = '#5e5a50'; g.fillRect(4, i * 16 + 4, 56, 3); g.fillStyle = '#1a1917'; g.fillRect(30, i * 16, 4, 16); }
-   const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+   const R = (c, x, y, w, h) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+   R('#46423b', 0, 0, 64, 32);                       // side: link body
+   R('#141312', 0, 0, 64, 9); R('#57524a', 6, 0, 40, 9); R('#6c665b', 6, 0, 40, 2);   // grouser teeth on the outer edge
+   R('#2a2825', 0, 9, 64, 2);
+   R('#121110', 0, 0, 5, 32);                        // joint gap between links
+   g.fillStyle = '#625d53'; g.beginPath(); g.arc(34, 20, 5, 0, 7); g.fill(); g.fillStyle = '#26241f'; g.beginPath(); g.arc(34, 20, 2, 0, 7); g.fill();
+   R('#38352f', 0, 32, 64, 32);                      // running surface
+   R('#121110', 0, 32, 5, 32);
+   R('#5d584e', 9, 32, 22, 32); R('#77715f', 9, 32, 22, 3); R('#2c2a26', 9, 61, 22, 3);   // grouser bar across the width
+   R('#4b473f', 38, 44, 16, 8);                      // guide horn
+   const img = g.getImageData(0, 0, 64, 64);         // grit
+   for (let i = 0; i < img.data.length; i += 4) { const k = 1 + (hash(i, 7) - 0.5) * 0.18; img.data[i] *= k; img.data[i + 1] *= k; img.data[i + 2] *= k; }
+   g.putImageData(img, 0, 0);
+   const t = new THREE.CanvasTexture(cv); t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
    return t;
 }
 function insigniaTexture() {   // atlas 4×1: de cross, su star, us star, uk roundel
@@ -94,7 +107,8 @@ float streak = wxN(vec2((vObjP.x + vObjP.z)*6.0, vObjP.y*0.7));
 diffuseColor.rgb *= 1.0 - 0.16*smoothstep(0.55, 0.9, streak)*(1.0 - upF);
 diffuseColor.rgb = mix(diffuseColor.rgb, uMud*1.15, upF*0.3*wn*(1.0 - uSnow));
 float mud = 1.0 - smoothstep(0.2, 0.7 + wn*0.6, vWy);
-diffuseColor.rgb = mix(diffuseColor.rgb, uMud, clamp(mud, 0.0, 0.92));
+float vLum = dot(vColor, vec3(0.333));
+diffuseColor.rgb = mix(diffuseColor.rgb, uMud * mix(0.4, 1.0, smoothstep(0.1, 0.6, vLum)), clamp(mud, 0.0, 0.85));
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.92), uSnow*upF*smoothstep(0.4, 0.62, wn)*step(0.3, vWy));
 // chipped paint: bare steel in small flakes, more on the lower hull and walked-on top faces, never under mud
 float chipN = wxN(vObjP.xz*13.0 + vObjP.y*9.0)*0.62 + wxN(vObjP.zy*29.0 - vObjP.x*17.0)*0.38;
@@ -225,9 +239,13 @@ function wheelZs(T) {
    else for (let i = 0; i < n; i++) out.push(a + (b - a) * (n === 1 ? 0.5 : i / (n - 1)));
    return out;
 }
+// belt thickness (link + grouser). Wheel centres sit at r + th so the belt's outer bottom run is at y = 0.
+const beltT = (T) => Math.min(0.1, Math.max(0.065, T.w * 0.14));
+const rollerY = (T) => T.top - beltT(T) - 0.09;
 function sprocketIdler(T) {
-   return { sz: T.sprF ? T.z0 + T.sprR : T.z1 - T.sprR, sy: T.top - T.sprR - 0.03,
-      iz: T.sprF ? T.z1 - T.idlR : T.z0 + T.idlR, iy: T.allround ? T.top - T.idlR - 0.03 : Math.max(T.idlR + 0.1, T.top - T.idlR - 0.15) };
+   const th = beltT(T);
+   return { sz: T.sprF ? T.z0 + T.sprR : T.z1 - T.sprR, sy: T.top - T.sprR - th,
+      iz: T.sprF ? T.z1 - T.idlR : T.z0 + T.idlR, iy: T.allround ? T.top - T.idlR - th : Math.max(T.idlR + th + 0.08, T.top - T.idlR - th - 0.12) };
 }
 function buildHull(S) {
    const A = new Acc(), H = S.hull, T = S.track, P = H.profile;
@@ -245,20 +263,22 @@ function buildHull(S) {
       A.cyl(toolX + s * 0.12, ty + 0.06, tz + 0.7, 0.035, 0.035, 1.9, DARK, 'z', 6);
    }
    if (S.skirts) for (const s of [-1, 1]) { const sk = S.skirts, y0 = sk.y0 ?? 0.6, hh = sk.h ?? 0.6; for (let k = 0; k < 6; k++) A.box(s * (T.x + T.w / 2 + 0.06), y0 + hh / 2, T.z0 + tl * (k + 0.5) / 6, 0.025, hh, tl / 6 - 0.04, PAINT, 0, 0, s * 0.03); }
-   const zs = wheelZs(T), r = T.r, { sz, sy, iz, iy } = sprocketIdler(T);
+   const zs = wheelZs(T), r = T.r, { sz, sy, iz, iy } = sprocketIdler(T), wy0 = r + beltT(T);
+   const TYRE = [0.13, 0.13, 0.12];
    for (const s of [-1, 1]) {
       const x = s * T.x;
       zs.forEach((z, i) => {
          const off = T.inter === 3 ? ((i % 3) - 1) * T.w * 0.28 : T.inter === 2 ? (i % 2 ? 0.5 : -0.5) * T.w * 0.36 : 0;
          const ww = T.inter ? T.w * 0.3 : T.w * 0.62;
-         A.cyl(x + off * s, r + 0.02, z, r, r, ww, DARK, 'x', 14);
-         A.cyl(x + off * s + s * ww * 0.5, r + 0.02, z, r * 0.4, r * 0.4, 0.04, STEEL, 'x', 8);
+         A.cyl(x + off * s, wy0, z, r, r, ww, TYRE, 'x', 16);                                  // rubber tyre
+         A.cyl(x + off * s + s * ww * 0.08, wy0, z, r * 0.8, r * 0.8, ww * 0.9, PAINT, 'x', 14);  // painted disc
+         A.cyl(x + off * s + s * ww * 0.5, wy0, z, r * 0.36, r * 0.3, 0.06, STEEL, 'x', 8);      // hub cap
       });
-      if (T.bogies) for (let k = 0; k < T.bogies; k++) { const per = zs.length / T.bogies, z = (zs[k * per] + zs[k * per + per - 1]) / 2; A.box(x - s * T.w * 0.35, r + 0.25, z, 0.2, 0.45, r * 2.2, STEEL); }
+      if (T.bogies) for (let k = 0; k < T.bogies; k++) { const per = zs.length / T.bogies, z = (zs[k * per] + zs[k * per + per - 1]) / 2; A.box(x - s * T.w * 0.35, wy0 + 0.23, z, 0.2, 0.45, r * 2.2, STEEL); }
       A.cyl(x, sy, sz, T.sprR, T.sprR, T.w * 0.75, STEEL, 'x', 12);
       for (let k = 0; k < 8; k++) A.box(x, sy + Math.cos(k * 0.785) * T.sprR, sz + Math.sin(k * 0.785) * T.sprR, T.w * 0.5, 0.07, 0.07, STEEL, k * 0.785);
       A.cyl(x, iy, iz, T.idlR, T.idlR, T.w * 0.6, DARK, 'x', 12);
-      for (let k = 0; k < T.rollers; k++) A.cyl(x, T.top - 0.12, T.z0 + (k + 1) * tl / (T.rollers + 1), 0.09, 0.09, T.w * 0.4, STEEL, 'x', 8);
+      for (let k = 0; k < T.rollers; k++) A.cyl(x, rollerY(T), T.z0 + (k + 1) * tl / (T.rollers + 1), 0.09, 0.09, T.w * 0.4, STEEL, 'x', 8);
    }
    const hz = front + (back - front) * 0.18, hy = roofYAt(P, hz);
    for (const s of [-1, 1]) A.cyl(s * H.w * 0.2, hy + 0.035, hz, 0.28, 0.28, 0.07, PAINT, 'y', 10);
@@ -301,22 +321,95 @@ function buildGun(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
    if (G.brake) { A.cyl(0, 0, -G.len + 0.15, r * 2, r * 2, 0.3, DARK, 'z', 10); A.box(0, 0, -G.len + 0.15, r * 4.4, r * 2.6, 0.13, DARK); }
    return A.build();
 }
-function buildTrack(S) {
-   const T = S.track, zs = wheelZs(T), pts = [], { sz, sy, iz, iy } = sprocketIdler(T);
-   const circ = (z, y, rr) => { for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2; pts.push([z + Math.cos(a) * rr, y + Math.sin(a) * rr]); } };
-   circ(sz, sy, T.sprR + 0.05); circ(iz, iy, T.idlR + 0.05);
-   for (const z of [zs[0], zs[zs.length - 1]]) circ(z, T.r + 0.02, T.r + 0.05);
-   if (T.rollers || T.allround) circ((T.z0 + T.z1) / 2, T.top - 0.12, 0.14);
-   const loop = hull2D(pts), hw = T.w / 2, pos = [], uv = [], idx = [];
-   let u = 0;
-   for (let i = 0; i <= loop.length; i++) {
-      const p = loop[i % loop.length]; if (i) { const q = loop[i - 1]; u += Math.hypot(p[0] - q[0], p[1] - q[1]); }
-      for (const x of [-hw, hw]) { pos.push(x, p[1], p[0]); uv.push(u / 0.6, x > 0 ? 1 : 0); }
+// Track belt: the inner contact loop (z, y) wraps sprocket, idler, the end road wheels and the return
+// rollers; the belt is that loop offset outward by its thickness, closed into a solid band (running
+// surface, inner face, two side faces) so it reads as a track from the side, with the bottom run's
+// outer face exactly at y = 0. u = arc length / link pitch (integer links per loop, so the scrolling
+// texture has no seam). `broken` = 'F' | 'R': the belt is torn at that end, the wrap there is gone
+// and the torn run lies flat on the ground beyond the last road wheel (detracked).
+function beltLoop(T) {
+   const zs = wheelZs(T), th = beltT(T), pts = [], { sz, sy, iz, iy } = sprocketIdler(T);
+   const circ = (z, y, rr) => { for (let k = 0; k < 28; k++) { const a = k / 28 * Math.PI * 2; pts.push([z + Math.cos(a) * rr, y + Math.sin(a) * rr]); } };
+   circ(sz, sy, T.sprR); circ(iz, iy, T.idlR);
+   for (const z of [zs[0], zs[zs.length - 1]]) circ(z, T.r + th, T.r);
+   if (T.rollers) { const tl = T.z1 - T.z0; for (const k of [0, T.rollers - 1]) circ(T.z0 + (k + 1) * tl / (T.rollers + 1), rollerY(T), 0.09); }
+   return hull2D(pts);   // CCW in (z, y): bottom run runs +z (to the rear), top run -z
+}
+function beltPitch(loop) {
+   let L = 0; for (let i = 0; i < loop.length; i++) { const a = loop[i], b = loop[(i + 1) % loop.length]; L += Math.hypot(b[0] - a[0], b[1] - a[1]); }
+   return L / Math.max(8, Math.round(L / 0.17));
+}
+function brokenPath(T, loop, end) {
+   const zs = wheelZs(T), th = beltT(T), front = end === 'F';
+   const zc = front ? zs[0] - 0.02 : zs[zs.length - 1] + 0.02, keep = (p) => front ? p[0] >= zc : p[0] <= zc;
+   // rotate so the loop starts with a kept point that follows a dropped one, then clip at z = zc
+   const n = loop.length; let s0 = 0; for (let i = 0; i < n; i++) if (keep(loop[i]) && !keep(loop[(i + n - 1) % n])) { s0 = i; break; }
+   const out = [];
+   { const a = loop[(s0 + n - 1) % n], b = loop[s0], t = (zc - a[0]) / (b[0] - a[0]); out.push([zc, a[1] + (b[1] - a[1]) * t, 0]); }
+   for (let k = 0; k < n; k++) {
+      const a = loop[(s0 + k) % n], b = loop[(s0 + k + 1) % n];
+      if (!keep(a)) break;
+      out.push([a[0], a[1], 0]);
+      if (!keep(b)) { const t = (zc - a[0]) / (b[0] - a[0]); out.push([zc, a[1] + (b[1] - a[1]) * t, 0]); }
    }
-   for (let i = 0; i < loop.length; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+   // the low end gets the torn run lying on the ground (drifting a little outward), the high end droops
+   const lowFirst = out[0][1] < out[out.length - 1][1], dz = front ? -1 : 1;
+   const run = [], len = 1.6 + T.w * 1.2;
+   for (const f of [0.3, 0.6, 1]) run.push([zc + dz * len * f, th, 0.12 * f * f]);
+   const top = lowFirst ? out[out.length - 1] : out[0], droop = [[top[0] + dz * 0.12, top[1] - 0.22, 0.02], [top[0] + dz * 0.16, top[1] - 0.5, 0.05]];
+   return lowFirst ? [...run.reverse(), ...out, ...droop] : [...droop.reverse(), ...out, ...run];
+}
+function buildTrack(S, broken) {
+   const T = S.track, th = beltT(T), loop = beltLoop(T), pitch = beltPitch(loop), hw = T.w / 2;
+   const closed = !broken, P = closed ? loop.map((p) => [p[0], p[1], 0]) : brokenPath(T, loop, broken), n = P.length;
+   // outward normals (CCW: edge (dz, dy) -> (dy, -dz)), mitred offsets
+   const en = []; for (let i = 0; i < (closed ? n : n - 1); i++) { const a = P[i], b = P[(i + 1) % n], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; en.push([(b[1] - a[1]) / l, -(b[0] - a[0]) / l]); }
+   const O = [], N = [], U = [];
+   let u = 0;
+   for (let i = 0; i < n; i++) {
+      if (i) u += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
+      const e0 = en[closed ? (i + n - 1) % n : Math.max(0, i - 1)], e1 = en[closed ? i : Math.min(en.length - 1, i)];
+      let nz = e0[0] + e1[0], ny = e0[1] + e1[1]; const l = Math.hypot(nz, ny) || 1; nz /= l; ny /= l;
+      const k = th / Math.max(0.5, nz * e1[0] + ny * e1[1]);
+      O.push([P[i][0] + nz * k, P[i][1] + ny * k]); N.push([nz, ny]); U.push(u / pitch);
+   }
+   if (closed) { O.push(O[0]); N.push(N[0]); P.push(P[0]); U.push(u / pitch + Math.hypot(P[0][0] - P[n - 1][0], P[0][1] - P[n - 1][1]) / pitch); }
+   const m = P.length, pos = [], nrm = [], uv = [], idx = [];
+   const vert = (x, y, z, nx, ny, nz, s, t) => { pos.push(x, y, z); nrm.push(nx, ny, nz); uv.push(s, t); return pos.length / 3 - 1; };
+   // quad a-b-c-d with the triangle winding facing the given normal
+   const quad = (a, b, c, d, nx, ny, nz) => {
+      const p = (i) => [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]], A = p(a), B = p(b), C = p(c);
+      const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2], vx = C[0] - A[0], vy = C[1] - A[1], vz = C[2] - A[2];
+      const f = (uy * vz - uz * vy) * nx + (uz * vx - ux * vz) * ny + (ux * vy - uy * vx) * nz;
+      if (f >= 0) idx.push(a, b, c, a, c, d); else idx.push(a, c, b, a, d, c);
+   };
+   for (let i = 0; i < m - 1; i++) {
+      const j = i + 1, xi = P[i][2], xj = P[j][2];
+      const fn = [0, (N[i][1] + N[j][1]) / 2, (N[i][0] + N[j][0]) / 2];
+      // running surface (outer), inner face
+      let a = vert(xi - hw, O[i][1], O[i][0], 0, N[i][1], N[i][0], U[i], 0.02), b = vert(xi + hw, O[i][1], O[i][0], 0, N[i][1], N[i][0], U[i], 0.48);
+      let c = vert(xj + hw, O[j][1], O[j][0], 0, N[j][1], N[j][0], U[j], 0.48), d = vert(xj - hw, O[j][1], O[j][0], 0, N[j][1], N[j][0], U[j], 0.02);
+      quad(a, b, c, d, fn[0], fn[1], fn[2]);
+      a = vert(xi - hw, P[i][1], P[i][0], 0, -N[i][1], -N[i][0], U[i], 0.02); b = vert(xi + hw, P[i][1], P[i][0], 0, -N[i][1], -N[i][0], U[i], 0.48);
+      c = vert(xj + hw, P[j][1], P[j][0], 0, -N[j][1], -N[j][0], U[j], 0.48); d = vert(xj - hw, P[j][1], P[j][0], 0, -N[j][1], -N[j][0], U[j], 0.02);
+      quad(a, b, c, d, 0, -fn[1], -fn[2]);
+      for (const sx of [-1, 1]) {   // side faces with the link profile
+         a = vert(xi + sx * hw, P[i][1], P[i][0], sx, 0, 0, U[i], 0.52); b = vert(xi + sx * hw, O[i][1], O[i][0], sx, 0, 0, U[i], 0.99);
+         c = vert(xj + sx * hw, O[j][1], O[j][0], sx, 0, 0, U[j], 0.99); d = vert(xj + sx * hw, P[j][1], P[j][0], sx, 0, 0, U[j], 0.52);
+         quad(a, b, c, d, sx, 0, 0);
+      }
+   }
+   if (!closed) for (const i of [0, m - 1]) {   // torn ends
+      const s = i ? 1 : -1, tz = i ? P[i][0] - P[i - 1][0] : P[0][0] - P[1][0], ty = i ? P[i][1] - P[i - 1][1] : P[0][1] - P[1][1], x = P[i][2];
+      const a = vert(x - hw, P[i][1], P[i][0], 0, ty, tz, U[i], 0.3), b = vert(x + hw, P[i][1], P[i][0], 0, ty, tz, U[i], 0.3);
+      const c = vert(x + hw, O[i][1], O[i][0], 0, ty, tz, U[i], 0.45), d = vert(x - hw, O[i][1], O[i][0], 0, ty, tz, U[i], 0.45);
+      quad(a, b, c, d, 0, ty * s * s, tz);
+   }
    const g = new THREE.BufferGeometry();
-   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-   g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
+   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+   g.setIndex(idx); g.computeBoundingSphere();
+   g.userData.pitch = pitch;
    return g;
 }
 function buildDecals(S, onTurret) {
@@ -606,7 +699,7 @@ export function buildTankModel(cfg, key = cfg?.id || 'x') {
    const tracks = [];
    for (const s of [-1, 1]) {
       const tex = sh.tread.clone(); tex.needsUpdate = true;
-      const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.72, metalness: 0.45, side: THREE.DoubleSide });
+      const m = new THREE.MeshStandardMaterial({ map: tex, color: 0xd8cfc0, bumpMap: tex, bumpScale: 2.5, roughness: 0.7, metalness: 0.35 });
       const tr = new THREE.Mesh(g.track, m); tr.position.x = s * S.track.x; body.add(tr); tracks.push(tr);
    }
    // turret group (casemates: an empty group in the hull so the gun still traverses)
@@ -623,7 +716,12 @@ export function buildTankModel(cfg, key = cfg?.id || 'x') {
    else turret.position.set(gp.x, gp.y, gp.z);        // casemate: the gun traverses about its own pivot (armor.gunWorld)
    const gun = new THREE.Mesh(g.gun, mat0); gunPivot.add(gun);
    root.traverse((o) => { if (o.isMesh) { o.castShadow = o.material !== sh.decal; o.receiveShadow = true; } });
-   return { root, body, hull, turret, tmesh, gunPivot, gun, tracks, S, mat0, treadL: 0, treadR: 0, recoil: 0 };
+   return { root, body, hull, turret, tmesh, gunPivot, gun, tracks, S, g, mat0, treadL: 0, treadR: 0, recoil: 0, broken: [null, null], lift: 0 };
+}
+// belt geometry for one side: intact, or torn at the front / rear end (cached per tank type)
+function trackGeo(g, end) {
+   if (!end) return g.track;
+   const k = 'track' + end; return g[k] ??= buildTrack(g.S, end);
 }
 
 export class Tanks3D {
@@ -650,6 +748,8 @@ export class Tanks3D {
          if (!ev || (ev.seq ?? 0) <= this.lastSeq) continue; maxSeq = Math.max(maxSeq, ev.seq ?? 0);
          const type = ev.type ?? ev.kind;
          if (type === 'ammoRack') { const m = this.models.get(ev.dstId); if (m && !m.blow) m.blow = { vy: 9 + Math.random() * 4, vx: (Math.random() - 0.5) * 4, vz: (Math.random() - 0.5) * 4, spin: (Math.random() - 0.5) * 6, t: 0 }; }
+         else if (type === 'track') { const m = this.models.get(ev.dstId), t = m && (w.tankById?.(ev.dstId) ?? w.tanks.find((q) => q.id === ev.dstId));
+            if (t && ev.pos) { const lz = -(ev.pos.x - t.pos.x) * Math.sin(t.yaw) - (ev.pos.z - t.pos.z) * Math.cos(t.yaw); (m.tearEnd ??= [null, null])[ev.side === 'R' ? 1 : 0] = lz > 0 ? 'F' : 'R'; } }
          else if (isHitEvent(type)) this.hitQ.push(ev);
       }
       this.lastSeq = maxSeq;
@@ -657,15 +757,28 @@ export class Tanks3D {
          const m = this._model(t), r = m.root, b = m.body;
          r.visible = t.visible !== false && (t.spotted !== false || t.team === w.player?.team || !t.alive);
          if (!r.visible) continue;
-         r.position.set(t.pos.x, t.pos.y, t.pos.z); r.rotation.y = t.yaw;
+         // the sim lets the hull sag up to 15 cm into a crest (pos.y = max(mean of the ends, centre - 0.15));
+         // the model rides on the ground there instead, so the belt never sinks into the terrain
+         const T = w.terrain, gh = T?.groundHeightAt ? T.groundHeightAt(t.pos.x, t.pos.z) : T?.heightAt?.(t.pos.x, t.pos.z);
+         if (gh != null && t.alive !== false && !m.site) m.lift += (Math.min(0.2, Math.max(0, gh - t.pos.y)) - m.lift) * Math.min(1, dt * 12);
+         r.position.set(t.pos.x, t.pos.y + m.lift, t.pos.z); r.rotation.y = t.yaw;
          b.rotation.set(t.pitch || 0, 0, t.roll || 0, 'YXZ');
          if (!m.blow) { m.turret.rotation.y = t.turretYaw || 0; m.gunPivot.rotation.x = t.gunPitch || 0; }
          // treads: left/right belt speed from forward speed and yaw rate
          let dy = t.yaw - m.lastYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); m.lastYaw = t.yaw;
          const yr = dt > 0 ? dy / dt : 0, hw = m.S.W / 2 - m.S.track.w / 2, v = t.speed || 0;
-         if (t.alive !== false) {
-            m.treadL += (v + yr * hw) * dt; m.treadR += (v - yr * hw) * dt;
-            if (m.tracks.length) { m.tracks[0].material.map.offset.x = m.treadL / 0.6; m.tracks[1].material.map.offset.x = m.treadR / 0.6; }
+         if (m.tracks.length) {
+            // detracked side: belt torn open at the end nearest the hit, the torn run lies on the ground
+            for (let i = 0; i < 2; i++) {
+               const st = t.modules?.[i ? 'trackR' : 'trackL']?.state, end = st === 'destroyed' ? (m.broken[i] || m.tearEnd?.[i] || 'F') : null;
+               if (end !== m.broken[i]) { m.broken[i] = end; m.tracks[i].geometry = trackGeo(m.g, end); if (!end && m.tearEnd) m.tearEnd[i] = null; }
+            }
+            if (t.alive !== false) {
+               const pitch = m.g.track.userData.pitch || 0.17;
+               if (!m.broken[0]) m.treadL += (v - yr * hw) * dt;
+               if (!m.broken[1]) m.treadR += (v + yr * hw) * dt;
+               m.tracks[0].material.map.offset.x = -m.treadL / pitch; m.tracks[1].material.map.offset.x = -m.treadR / pitch;
+            }
          }
          // recoil
          if (t.lastFire !== m.lastFire) { m.lastFire = t.lastFire; if (t.lastFire != null) m.recoil = 1; }
