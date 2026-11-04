@@ -49,6 +49,14 @@ THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
    gl_FragColor.rgb = mix( gl_FragColor.rgb, fogC, fogFactor );
 #endif`;
 
+// Image-based lighting (mid/high): the sky dome (+ a ground disc) is prefiltered into a PMREM and set
+// as scene.environment, so paint, metal and water reflect the sky with fresnel. Its diffuse part is
+// scaled down (ENV_DIFFUSE): the hemisphere light stays the main fill, so the Lambert far ring and
+// the low tier (no env) keep matching the near terrain, and the env mostly adds reflections.
+THREE.ShaderChunk.envmap_physical_pars_fragment = THREE.ShaderChunk.envmap_physical_pars_fragment
+   .replace('return PI * envMapColor.rgb * envMapIntensity;', 'return PI * envMapColor.rgb * envMapIntensity * 0.35;');
+const HEMI_WITH_ENV = 0.8;   // hemi share when the env adds its (scaled) sky irradiance
+
 const GRADE = { saturation: 1.06, contrast: 1.02, vignette: 0.16, bloom: 0.14, bloomThreshold: 1.5, tint: null, shadowTint: [0.96, 1.0, 1.06] };
 
 export class Renderer {
@@ -82,6 +90,7 @@ export class Renderer {
       this.post = new Post(r, { samples: q.antialias ? (q.msaa ?? 4) : 0, bloomLevels: q.bloomLevels ?? 5 });
       this.post.setQuality({ bloom: q.bloom ?? q.id !== 'low' });
       this.grade = { ...GRADE }; this.sunLight = new THREE.Color();
+      this.envOn = q.env ?? q.id !== 'low'; this._envDirty = true;
       this.resize();
       addEventListener('resize', () => this.resize());
    }
@@ -98,7 +107,9 @@ export class Renderer {
       if (th.sunDir) this.sunDir.set(th.sunDir[0], th.sunDir[1], th.sunDir[2]).normalize();
       this.sun.color.set(th.sunColor ?? 0xfff1d6); this.sun.intensity = th.sunIntensity ?? 2.6;
       this.hemi.color.set(th.skyLight ?? 0xc9dcf0); this.hemi.groundColor.set(th.groundLight ?? 0x5a5236);
-      this.hemi.intensity = th.hemiIntensity ?? 0.95;
+      this.hemi.intensity = (th.hemiIntensity ?? 0.95) * (this.envOn ? HEMI_WITH_ENV : 1);
+      this._groundEnv = new THREE.Color(th.groundLight ?? 0x5a5236).lerp(new THREE.Color(th.fog ?? 0xb9c2b8), 0.25).multiplyScalar(th.envGround ?? 0.32);
+      this._envDirty = true;
       this.renderer.toneMappingExposure = th.exposure ?? 1.05;
       this.grade = { ...GRADE, ...(th.grade || {}) };
       this.sunLight.copy(this.sun.color).multiplyScalar(this.sun.intensity);   // sky.js in-scatter
@@ -138,8 +149,29 @@ export class Renderer {
       };
       poll();
    }
+   /** Prefilter the sky into scene.environment. Sky uniforms are shared, so this follows
+    *  Sky.setTheme (which marks it dirty); rebuilt on the next frame after any theme/fog change. */
+   _buildEnv() {
+      this._envDirty = false; if (this.sky) this.sky.envDirty = false;
+      if (!this.envOn || !this.sky) { this.scene.environment = null; return; }
+      if (!this._envScene) {
+         const sc = this._envScene = new THREE.Scene();
+         const dome = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), this.sky.mesh.material); dome.renderOrder = -10; sc.add(dome);
+         // the ground below the horizon: what paint and water reflect when looking down
+         this._envGroundMat = new THREE.MeshBasicMaterial({ color: 0x333333, fog: false, side: THREE.DoubleSide });
+         const g = new THREE.Mesh(new THREE.CircleGeometry(3000, 32), this._envGroundMat);
+         g.rotation.x = -Math.PI / 2; g.position.y = -6; sc.add(g);
+         this._pmrem = new THREE.PMREMGenerator(this.renderer);
+      }
+      this._envGroundMat.color.copy(this._groundEnv || new THREE.Color(0x333333));
+      const old = this._envRT;
+      this._envRT = this._pmrem.fromScene(this._envScene, 0.02, 0.5, 2000);
+      this.scene.environment = this._envRT.texture;
+      old?.dispose();
+   }
    render() {
       if (this.warming) return;
+      if (this._envDirty || this.sky?.envDirty) this._buildEnv();
       this.renderer.info.reset();
       this.grade.exposure = this.renderer.toneMappingExposure; this.grade.time = performance.now() / 1000;
       this.post.render(this.scene, this.camera, this.grade);

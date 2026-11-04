@@ -181,9 +181,9 @@ export class Terrain3D {
       this.chunks = [];
       this.pal = { ...PALETTES[pid], ...(theme.colors ? Object.fromEntries(Object.entries(theme.colors).map(([k, v]) => [k, C(v)])) : {}) };
       this.detail = detailTexture();
-      this.groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.detail, bumpMap: this.detail, bumpScale: 2.2, roughness: 0.97, metalness: 0 });
+      this.groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.detail, bumpMap: this.detail, bumpScale: 2.2, roughness: 0.97, metalness: 0, envMapIntensity: 0.5 });
       patchGround(this.groundMat, { dry: this.winter ? 0.25 : pid === 'steppe' ? 0.8 : 0.6, rock: this.pal.rock.clone().multiplyScalar(this.winter ? 1.15 : 1) });
-      this.vegMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+      this.vegMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, envMapIntensity: 0.6 });
       patchWind(this.vegMat, [0.03, 2.5], 'pz-veg', this.winter ? 0.75 : 0);   // smooth: faceted crowns read as flat planes in the x8/x16 scope
       this.buildGround();
       this.buildWater();
@@ -281,7 +281,26 @@ export class Terrain3D {
    buildWater() {
       if (this.t.water == null) return;
       const g = new THREE.PlaneGeometry(4400, 4400); g.rotateX(-Math.PI / 2);
-      this.waterMat = new THREE.MeshStandardMaterial({ color: 0x3d5a58, roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.82 });
+      // glossy water: analytic ripple normals (5 scrolling sine trains, faded with distance so they
+      // do not alias) give the sun a glittering glint and break up the sky reflection (scene.environment
+      // on mid/high); alpha follows fresnel: see-through looking down, a mirror at grazing angles.
+      const m = this.waterMat = new THREE.MeshStandardMaterial({ color: 0x2f5560, roughness: 0.07, metalness: 0, transparent: true, opacity: 0.8 });
+      m.onBeforeCompile = (sh) => {
+         sh.uniforms.uWind = WIND.uWind;
+         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
+            .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+         sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos; uniform float uWind;')
+            .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+{ vec2 p = vWPos.xz; float t = uWind; vec2 g = vec2(0.0);
+  #define WV(d, f, a, s) { vec2 dd = normalize(d); float ph = dot(p, dd) * f; g += dd * (a * f * cos(ph + t * s) * (1.0 - smoothstep(0.35, 1.3, fwidth(ph)))); }
+  WV(vec2(0.8, 0.6), 0.55, 0.07, 1.1) WV(vec2(-0.5, 0.86), 1.3, 0.035, 1.7) WV(vec2(0.2, -0.98), 2.9, 0.016, 2.5)
+  WV(vec2(-0.93, -0.35), 5.3, 0.009, 3.3) WV(vec2(0.6, -0.8), 9.1, 0.0055, 4.2)
+  float fade = 1.0 - 0.85 * smoothstep(30.0, 380.0, length(vViewPosition));
+  normal = normalize((viewMatrix * vec4(normalize(vec3(-g.x * fade, 1.0, -g.y * fade)), 0.0)).xyz); }`)
+            .replace('#include <opaque_fragment>', `#include <opaque_fragment>
+gl_FragColor.a = mix(0.72, 0.97, pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 3.0));`);
+      };
+      m.customProgramCacheKey = () => 'pz-water';
       const w = new THREE.Mesh(g, this.waterMat); w.position.y = this.t.water; w.receiveShadow = true; this.group.add(w);
    }
 

@@ -95,9 +95,26 @@ diffuseColor.rgb *= 1.0 - 0.16*smoothstep(0.55, 0.9, streak)*(1.0 - upF);
 diffuseColor.rgb = mix(diffuseColor.rgb, uMud*1.15, upF*0.3*wn*(1.0 - uSnow));
 float mud = 1.0 - smoothstep(0.2, 0.7 + wn*0.6, vWy);
 diffuseColor.rgb = mix(diffuseColor.rgb, uMud, clamp(mud, 0.0, 0.92));
-diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.92), uSnow*upF*smoothstep(0.4, 0.62, wn)*step(0.3, vWy));`)
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.92), uSnow*upF*smoothstep(0.4, 0.62, wn)*step(0.3, vWy));
+// chipped paint: bare steel in small flakes, more on the lower hull and walked-on top faces, never under mud
+float chipN = wxN(vObjP.xz*13.0 + vObjP.y*9.0)*0.62 + wxN(vObjP.zy*29.0 - vObjP.x*17.0)*0.38;
+float chip = smoothstep(0.83 - 0.07*upF, 0.85 - 0.07*upF, chipN) * (1.0 - clamp(mud*1.4, 0.0, 1.0)) * (1.0 - wash) * (1.0 - uSnow*upF);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.35, 0.33), chip);
+float paintN = wxN(vObjP.xy*2.2 + vObjP.z*1.3);`)
          .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-roughnessFactor = min(1.0, roughnessFactor + 0.2*(1.0 - smoothstep(0.2, 0.9, vWy)));`);
+roughnessFactor = roughnessFactor + (paintN - 0.5)*0.22 + upF*0.12*wn + wash*0.2;
+roughnessFactor = mix(roughnessFactor, 0.34, chip);
+roughnessFactor = clamp(roughnessFactor + 0.42*clamp(mud, 0.0, 1.0), 0.18, 1.0);`)
+         .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+metalnessFactor = mix(metalnessFactor * (1.0 - clamp(mud, 0.0, 1.0)), 0.9, chip);`)
+         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+// cast / rolled steel: faint bump from object-space noise so the flat panels break up the highlights
+{ float bf = 0.02 * (1.0 - smoothstep(18.0, 70.0, length(vViewPosition)));
+  float bh = wxN(vObjP.xy*6.0 + vObjP.z*4.0)*0.6 + wxN(vObjP.zy*15.0 - vObjP.x*7.0)*0.4;
+  vec3 sx = dFdx(-vViewPosition), sy = dFdy(-vViewPosition);
+  vec3 r1 = cross(sy, normal), r2 = cross(normal, sx); float det = dot(sx, r1);
+  vec3 grad = sign(det) * (dFdx(bh)*r1 + dFdy(bh)*r2);
+  if (bf > 0.0) normal = normalize(abs(det)*normal - grad*bf); }`);
    };
    m.customProgramCacheKey = () => 'pz-tank-wx';
    return m;
@@ -107,7 +124,7 @@ let SHARED = null;
 function shared() {
    if (SHARED) return SHARED;
    const camo = {}, tread = treadTexture();
-   for (const n in CAMO) camo[n] = weathered(new THREE.MeshStandardMaterial({ map: camoTexture(n), vertexColors: true, roughness: 0.78, metalness: 0.15, flatShading: true }));
+   for (const n in CAMO) camo[n] = weathered(new THREE.MeshStandardMaterial({ map: camoTexture(n), vertexColors: true, roughness: 0.38, metalness: 0.16, flatShading: true }));
    SHARED = {
       camo, tread,
       wreck: new THREE.MeshStandardMaterial({ color: 0x2b2724, vertexColors: true, roughness: 1, metalness: 0.05, flatShading: true }),
@@ -589,7 +606,7 @@ export function buildTankModel(cfg, key = cfg?.id || 'x') {
    const tracks = [];
    for (const s of [-1, 1]) {
       const tex = sh.tread.clone(); tex.needsUpdate = true;
-      const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, metalness: 0.25, side: THREE.DoubleSide });
+      const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.72, metalness: 0.45, side: THREE.DoubleSide });
       const tr = new THREE.Mesh(g.track, m); tr.position.x = s * S.track.x; body.add(tr); tracks.push(tr);
    }
    // turret group (casemates: an empty group in the hull so the gun still traverses)

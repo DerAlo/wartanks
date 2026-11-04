@@ -14,14 +14,14 @@ void main(){
   float mu = max(dot(d, sunDir), 0.0);
   // the fog colour as render.js' fog_fragment computes it for a fully fogged object in this direction
   vec3 fogC = fogCol + sunLight * (0.035 * pow(mu, 5.0) + 0.05 * pow(mu, 24.0));
-  vec3 c = mix(hor, top, pow(clamp(y * 1.1, 0.0, 1.0), 0.62));
+  vec3 c = mix(hor, top, pow(clamp(y * 1.5, 0.0, 1.0), 0.5));
   c += sunCol * (pow(mu, 14.0) * 0.22 + pow(mu, 3.0) * 0.07);
   float cov = 0.0;
   if (cloud > 0.0 && d.y > 0.0) {
     vec2 uv = d.xz / (y + 0.09) * 1.15 + vec2(time * 0.0035, time * 0.0012);
     float base = fbm(uv * 0.55), det = fbm(uv * 2.4 + 5.0);
     float shape = base * 0.78 + det * 0.32;
-    cov = smoothstep(0.56 - cloud * 0.24, 0.9 - cloud * 0.1, shape);
+    cov = smoothstep(0.6 - cloud * 0.2, 0.86 - cloud * 0.08, shape);   // fair-weather: blue gaps
     // light from the sun side: density sampled a step towards the sun -> brighter rims, grey bellies
     float toward = fbm((uv + normalize(sunDir.xz + 1e-4) * 0.22) * 0.55) * 0.78 + det * 0.32;
     float lit = clamp(0.62 + (shape - toward) * 3.2, 0.0, 1.0);
@@ -32,7 +32,7 @@ void main(){
   }
   c += sunCol * pow(mu, 1800.0) * 40.0 * (1.0 - cov);              // HDR disc: bloom makes the glow
   // horizon haze: blends exactly into the fog colour at and below the horizon
-  c = mix(c, fogC, exp(-y * 9.0));
+  c = mix(c, fogC, exp(-y * 13.0));
   gl_FragColor = vec4(c, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -56,6 +56,7 @@ export class Sky {
       this.u.sunLight.value.set(th.sunColor ?? 0xfff1d6).multiplyScalar(th.sunIntensity ?? 2.6);
       this.u.sunCol.value.set(th.skySun ?? th.sunColor ?? 0xfff0d0);   // skySun: glow only (fogTheme dims it)
       if (sunDir) this.u.sunDir.value.copy(sunDir);
+      this.envDirty = true;   // render.js re-prefilters scene.environment from this sky
    }
    update(camera, t) { this.mesh.position.copy(camera.position); this.u.time.value = t; }
 }
