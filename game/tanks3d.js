@@ -112,15 +112,15 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uMud * mix(0.4, 1.0, smoothstep(0.1, 0.
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.92), uSnow*upF*smoothstep(0.4, 0.62, wn)*step(0.3, vWy));
 // chipped paint: bare steel in small flakes, more on the lower hull and walked-on top faces, never under mud
 float chipN = wxN(vObjP.xz*13.0 + vObjP.y*9.0)*0.62 + wxN(vObjP.zy*29.0 - vObjP.x*17.0)*0.38;
-float chip = smoothstep(0.83 - 0.07*upF, 0.85 - 0.07*upF, chipN) * (1.0 - clamp(mud*1.4, 0.0, 1.0)) * (1.0 - wash) * (1.0 - uSnow*upF);
+float chip = smoothstep(0.85 - 0.02*upF, 0.87 - 0.02*upF, chipN) * (1.0 - clamp(mud*1.4, 0.0, 1.0)) * (1.0 - wash) * (1.0 - uSnow*upF);
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.35, 0.33), chip);
 float paintN = wxN(vObjP.xy*2.2 + vObjP.z*1.3);`)
          .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = roughnessFactor + (paintN - 0.5)*0.22 + upF*0.12*wn + wash*0.2;
-roughnessFactor = mix(roughnessFactor, 0.34, chip);
+roughnessFactor = mix(roughnessFactor, 0.55, chip);
 roughnessFactor = clamp(roughnessFactor + 0.42*clamp(mud, 0.0, 1.0), 0.18, 1.0);`)
          .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
-metalnessFactor = mix(metalnessFactor * (1.0 - clamp(mud, 0.0, 1.0)), 0.9, chip);`)
+metalnessFactor = mix(metalnessFactor * (1.0 - clamp(mud, 0.0, 1.0)), 0.55, chip);`)
          .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 // cast / rolled steel: faint bump from object-space noise so the flat panels break up the highlights
 { float bf = 0.02 * (1.0 - smoothstep(18.0, 70.0, length(vViewPosition)));
@@ -233,6 +233,19 @@ function hullPiece(A, poly, halfW, y0, slope, col) {
    for (let i = 1; i < poly.length - 1; i++) { A.tri(L[0], L[i], L[i + 1], col, ctr); A.tri(R[0], R[i], R[i + 1], col, ctr); }
 }
 function roofYAt(profile, z) { let best = -1; for (let i = 0; i < profile.length; i++) { const a = profile[i], b = profile[(i + 1) % profile.length]; if ((a[0] - z) * (b[0] - z) <= 0 && a[0] !== b[0]) { const y = a[1] + (b[1] - a[1]) * (z - a[0]) / (b[0] - a[0]); if (y > best) best = y; } } return best; }
+// rearmost z of the side profile at height y
+function rearZAt(P, y) { let best = -Infinity; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; if ((a[1] - y) * (b[1] - y) <= 0 && a[1] !== b[1]) best = Math.max(best, a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1])); } return Number.isFinite(best) ? best : Math.max(...P.map((p) => p[0])); }
+// half-width of the hull's side wall at height y (mirrors hullPiece's slope)
+function roofHalfW(H, y) { const y0 = H.sponsonY != null && H.lowerW ? H.sponsonY : H.floorY; return Math.max(0.2, H.w / 2 - Math.max(0, y - y0) * Math.tan(H.slope || 0)); }
+// a flat roof stretch of length len near z (tries shifting along the hull); null if there is none
+function flatRoof(P, H, z, len) {
+   for (const off of [0, -0.4, 0.4, -0.8, 0.8, -1.2, 1.2]) {
+      const zc = z + off, a = zc - len / 2, b = zc + len / 2; if (a < H.zMin + 0.15 || b > H.zMax - 0.15) continue;
+      const ys = [a, (a + zc) / 2, zc, (zc + b) / 2, b].map((q) => roofYAt(P, q));
+      if (Math.max(...ys) - Math.min(...ys) < 0.05) return { y: Math.max(...ys), z: zc };
+   }
+   return null;
+}
 function wheelZs(T) {
    const end = Math.max(T.sprR, T.idlR) * 1.05 + T.r * 0.9, a = T.z0 + end, b = T.z1 - end, n = T.wheels, out = [];
    if (T.bogies) { const per = n / T.bogies; for (let k = 0; k < T.bogies; k++) { const c = a + (b - a) * (T.bogies === 1 ? 0.5 : k / (T.bogies - 1)); for (let j = 0; j < per; j++) out.push(c + (j - (per - 1) / 2) * T.r * 2.05); } }
@@ -258,9 +271,19 @@ function buildHull(S) {
    for (const s of [-1, 1]) {
       const fy = T.top + 0.04;
       if (!covered && !T.allround) A.box(s * T.x, fy, tz, T.w + 0.1, 0.04, tl + 0.1, PAINT);
-      const toolX = covered ? s * (H.w / 2 - 0.25) : s * T.x, ty = covered ? roofYAt(P, tz) : fy;
-      A.box(toolX, ty + 0.06, tz - 0.7, 0.14, 0.05, 1.25, WOOD);
-      A.cyl(toolX + s * 0.12, ty + 0.06, tz + 0.7, 0.035, 0.035, 1.9, DARK, 'z', 6);
+      if (!covered && !T.allround) {   // on the track fender
+         A.box(s * T.x, fy + 0.06, tz - 0.7, 0.14, 0.05, 1.25, WOOD);
+         A.cyl(s * T.x + s * 0.12, fy + 0.06, tz + 0.7, 0.035, 0.035, 1.9, DARK, 'z', 6);
+         continue;
+      }
+      // on the hull roof: only on a flat stretch, and inside the roof edge (sloped side walls make the
+      // roof narrower than H.w, so H.w/2 put the tools in the air beside casemates like the Jagdpanther)
+      for (const [dz, len, plank] of [[-0.7, 1.25, true], [0.7, 1.9, false]]) {
+         const at = flatRoof(P, H, tz + dz, len); if (!at) continue;
+         const x = s * (roofHalfW(H, at.y) - (plank ? 0.16 : 0.1));
+         if (plank) A.box(x, at.y + 0.025, at.z, 0.14, 0.05, len, WOOD);
+         else A.cyl(x, at.y + 0.035, at.z, 0.035, 0.035, len, DARK, 'z', 6);
+      }
    }
    if (S.skirts) for (const s of [-1, 1]) { const sk = S.skirts, y0 = sk.y0 ?? 0.6, hh = sk.h ?? 0.6; for (let k = 0; k < 6; k++) A.box(s * (T.x + T.w / 2 + 0.06), y0 + hh / 2, T.z0 + tl * (k + 0.5) / 6, 0.025, hh, tl / 6 - 0.04, PAINT, 0, 0, s * 0.03); }
    const zs = wheelZs(T), r = T.r, { sz, sy, iz, iy } = sprocketIdler(T), wy0 = r + beltT(T);
@@ -284,7 +307,8 @@ function buildHull(S) {
    for (const s of [-1, 1]) A.cyl(s * H.w * 0.2, hy + 0.035, hz, 0.28, 0.28, 0.07, PAINT, 'y', 10);
    A.cyl(-H.w * 0.33, roofYAt(P, front + 0.3) + 0.12, front + 0.3, 0.09, 0.11, 0.18, DARK, 'z', 8);
    const ry = roofYAt(P, back - 0.2);
-   for (const s of [-1, 1]) A.cyl(s * H.w * 0.27, ry - 0.25, back + 0.07, 0.09, 0.09, 0.55, BLACK, 'y', 8);
+   // exhausts hug the rear plate at their height (a sloped rear put them in the air behind the hull)
+   for (const s of [-1, 1]) { const ey = ry - 0.25, ex = Math.min(s * H.w * 0.27 * s, roofHalfW(H, ey) - 0.12) * s; A.cyl(ex, ey, rearZAt(P, ey) + 0.08, 0.09, 0.09, 0.55, BLACK, 'y', 8); }
    A.box(0, roofYAt(P, back - 0.9) + 0.02, back - 0.9, H.w * 0.55, 0.05, 0.9, DARK);
    if (S.nation === 'su' || S.nation === 'us') for (let k = 0; k < 3; k++) { const z = front + 0.55; A.box(0.36 * (k - 1), roofYAt(P, z) - 0.25, z, 0.3, 0.06, 0.2, DARK, -0.9); }
    if (S.mantlet && S.mantlet.mount === 'hull') { const m = S.mantlet; A.box(m.x, m.y, m.z, m.w, m.h, m.d, PAINT); }
