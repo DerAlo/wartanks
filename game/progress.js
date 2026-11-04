@@ -2,13 +2,13 @@
 // 'wartanks.profile.v1'; works without localStorage, e.g. in node).
 //
 //   loadProfile() / saveProfile(p) / resetProfile()
-//   techTree() -> { DE:[id...], SU:[...], US:[...], UK:[...] }   chain per nation by tier
+//   techTree() -> { DE:[id...], SU:[...], US:[...], UK:[...] }   per nation by tier; prevOf(id) / nextsOf(id) = research tree (config `parent`)
 //   tankState(p, id) -> { owned, researched, xp, canResearch, canBuy, researchXP, price, prev }
 //   research(p, id) / buy(p, id) -> { ok, reason }
 //   calcRewards(world) -> { xp, credits, freeXP, breakdown }     (player, from world.stats + result)
 //   applyRewards(p, tankId, rewards)
 //   exportProfile(p) -> string, importProfile(str) -> profile (throws on garbage)
-//   isElite(p, id)                                   every successor in the line researched (or none)
+//   isElite(p, id)                                   every tank researched from it (nextsOf) researched (or none)
 //   convertXP(p, id, n) -> { ok, reason }             elite tank XP -> free XP, CONVERT_CREDITS Kr per EP
 //   crewState(p, id) -> { xp, points, used, free, perks, need, into, elite }
 //   learnPerk(p, id, perk) / resetPerks(p, id) / trainCrew(p, id, n) (tank XP -> crew XP 1:1)
@@ -24,8 +24,8 @@
 import { TANKS, TANK_LIST, CHEAT_TANKS, NATION_ORDER, PERKS, PERK_LIST, MAX_PERKS, cleanPerks } from './config.js';
 
 const KEY = 'wartanks.profile.v1';
-export const RESEARCH_XP = { 4: 0, 5: 2500, 6: 6000, 7: 12000, 8: 22000 };
-export const PRICE = { 4: 30000, 5: 90000, 6: 200000, 7: 450000, 8: 900000 };
+export const RESEARCH_XP = { 1: 0, 2: 300, 3: 800, 4: 1600, 5: 2500, 6: 6000, 7: 12000, 8: 22000, 9: 36000, 10: 55000 };
+export const PRICE = { 1: 0, 2: 3500, 3: 12000, 4: 30000, 5: 90000, 6: 200000, 7: 450000, 8: 900000, 9: 1500000, 10: 2500000 };
 export const CONVERT_CREDITS = 25;       // Kr per converted EP (a tier V–VI battle earns ~15–25k Kr, ~800–1200 EP)
 export const ELITE_CREW_K = 1.5;         // crew XP bonus on an elite tank
 /** Crew XP for skill point n (0-based): 1000, 1450, 2100, … (WoT: 210k for the first; here a few battles). */
@@ -38,8 +38,17 @@ export function techTree() {
    for (const n of NATION_ORDER) tree[n] = TANK_LIST.filter((id) => TANKS[id].nation === n).sort((a, b) => TANKS[a].tier - TANKS[b].tier || a.localeCompare(b));
    return tree;
 }
-const prevOf = (id) => { const ch = techTree()[TANKS[id].nation]; const i = ch.indexOf(id); return i > 0 ? ch[i - 1] : null; };
-const nextOf = (id) => { const ch = techTree()[TANKS[id].nation]; const i = ch.indexOf(id); return i >= 0 && i < ch.length - 1 ? ch[i + 1] : null; };
+// Research tree: a tank with `parent` in config.js is researched from that tank (null = the nation's root);
+// a nation without parents (US, UK) is one line in tier order.
+const lineOf = (id) => techTree()[TANKS[id].nation];
+export const prevOf = (id) => {
+   const T = TANKS[id];
+   if (T && 'parent' in T) return T.parent && TANKS[T.parent] ? T.parent : null;
+   const ch = lineOf(id), i = ch.indexOf(id); return i > 0 ? ch[i - 1] : null;
+};
+/** Tanks researched from `id` (its branches), lowest tier first. */
+export const nextsOf = (id) => lineOf(id).filter((x) => x !== id && prevOf(x) === id);
+const nextOf = (id) => nextsOf(id)[0] ?? null;
 const newCrew = () => ({ xp: 0, perks: [] });
 // every tank a profile keeps a record for: the tech tree plus the cheat-only tanks (never researched or bought)
 const PROFILE_TANKS = [...TANK_LIST, ...(CHEAT_TANKS || [])];
@@ -86,7 +95,7 @@ export function tankState(p, id) {
    const T = TANKS[id], st = p.tanks[id], prev = prevOf(id);
    const need = RESEARCH_XP[T.tier] ?? 0, price = PRICE[T.tier] ?? 0;
    const avail = (prev ? p.tanks[prev].xp : 0) + p.freeXP;
-   return { owned: st.owned, researched: st.researched, xp: st.xp, prev, next: nextOf(id), elite: isElite(p, id), researchXP: need, price,
+   return { owned: st.owned, researched: st.researched, xp: st.xp, prev, next: nextOf(id), nexts: nextsOf(id), elite: isElite(p, id), researchXP: need, price,
       canResearch: !st.researched && (!prev || p.tanks[prev].researched) && avail >= need,
       canBuy: st.researched && !st.owned && p.credits >= price };
 }
@@ -115,8 +124,7 @@ export function buy(p, id) {
 /** Elite: every successor in the tank's line is researched (the last tank of a line: once researched). */
 export function isElite(p, id) {
    const st = p.tanks[id]; if (!st?.researched) return false;
-   const n = nextOf(id);
-   return !n || !!p.tanks[n].researched;
+   return nextsOf(id).every((n) => !!p.tanks[n]?.researched);
 }
 /** Tank XP of an elite tank -> free XP, 1:1, CONVERT_CREDITS Kr per EP. n = 'all' or a number. */
 export function convertXP(p, id, n = 'all') {

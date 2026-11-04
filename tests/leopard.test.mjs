@@ -23,9 +23,10 @@ test('leo2a6 is a cheat tank: in TANKS, not in the tree; drivable and accepted b
    assert.ok(!ownTanks(p).includes('leo2a6'));
    P.maxOutProfile(p, []);
    assert.ok(ownTanks(p).includes('leo2a6'));
-   // the top of the tree is far below it
+   // the top of the tree (tier X) stays below it: same tier at most, but more HP, pen and power
    const top = Math.max(...TANK_LIST.map((id) => TANKS[id].tier));
-   assert.ok(L.tier > top);
+   assert.ok(L.tier >= top);
+   assert.ok(L.hp > Math.max(...TANK_LIST.map((id) => TANKS[id].hp)));
    assert.ok(L.engine.hp / L.mass > Math.max(...TANK_LIST.map((id) => TANKS[id].engine.hp / TANKS[id].mass)));
    const apcr = L.gun.ammoByType.APCR;
    assert.ok(apcr.pen500 >= 600 && apcr.vel > 1500);

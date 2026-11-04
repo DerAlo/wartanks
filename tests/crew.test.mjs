@@ -87,6 +87,7 @@ test('old profiles (no crew) load and export/import keeps the crew', () => {
    assert.equal(p.tanks.pz4h.crew.xp, 0); assert.deepEqual(p.tanks.pz4h.crew.perks, []);
    assert.equal(p.tanks.pz4h.xp, 0);
    assert.deepEqual(p.tanks.luchs.crew.perks, ['tarnung'], 'cleaned and cut to the earned points');
+   p.tanks.luchs.owned = true;                       // no longer a start tank since the tree begins at tier I
    p.tanks.luchs.crew.xp = 3000; P.learnPerk(p, 'luchs', 'adlerauge');
    const q = P.importProfile(P.exportProfile(p));
    assert.deepEqual(q.tanks.luchs.crew, { xp: 3000, perks: ['tarnung', 'adlerauge'] });

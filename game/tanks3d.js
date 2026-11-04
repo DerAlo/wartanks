@@ -16,6 +16,9 @@ const CAMO = {
    su: { base: '#4a5034', spots: ['#41472e', '#555b3c'], style: 'plain' },
    us: { base: '#585a39', spots: ['#4e5133', '#62643f'], style: 'plain' },
    uk: { base: '#6b6847', spots: ['#4d4a34', '#7a7452'], style: 'blotch' },
+   // early-war German Panzergrau (RAL 7021, until 1943; cfg.paint 'grau'), Soviet 1930s 4BO green (cfg.paint 'su30')
+   grau: { base: '#4e5253', spots: ['#45494a', '#585c5c'], style: 'plain' },
+   su30: { base: '#56603a', spots: ['#4c5533', '#5f6a41'], style: 'plain' },
    // Bundeswehr NATO three-tone (cfg.paint 'nato'): bronze green base, leather brown and tar black blotches
    nato: { base: '#3f4630', spots: ['#5a4632', '#1f1f1b'], style: 'nato' },
 };
@@ -386,6 +389,10 @@ function buildGun(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
    A.cyl(0, 0, start - len / 2, r * 1.4, r, len, DARK, 'z', 12);
    A.cyl(0, 0, start - len * 0.35, r * 1.6, r * 1.6, 0.22, DARK, 'z', 10);
    if (G.brake) { A.cyl(0, 0, -G.len + 0.15, r * 2, r * 2, 0.3, DARK, 'z', 10); A.box(0, 0, -G.len + 0.15, r * 4.4, r * 2.6, 0.13, DARK); }
+   if (S.look === 'maus') {   // coaxial 7.5 cm KwK 44 L/36.5 beside the 12.8 cm, in the same mantlet
+      const cl = 2.75, cr = 0.055, cx = -(m ? m.w * 0.3 : 0.35);
+      A.cyl(cx, 0.02, start - cl / 2, cr * 1.3, cr, cl, DARK, 'z', 10);
+   }
    return A.build();
 }
 // Track belt: the inner contact loop (z, y) wraps sprocket, idler, the end road wheels and the return

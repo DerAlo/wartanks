@@ -123,6 +123,7 @@ test('progression: start tanks, research, buy, rewards, export/import', () => {
    w.stats.dmg = 1200; w.stats.kills = 2; w.end(1, 'Alle Gegner zerstört');
    assert.equal(w.result.outcome, 'win');
    assert.ok(w.result.xp > 500 && w.result.credits > 10000, JSON.stringify(w.result));
+   p.tanks.pz4h.owned = true;
    P.applyRewards(p, 'pz4h', w.result);
    assert.ok(P.loadProfile().tanks.pz4h.xp >= w.result.xp);
    const cr = p.credits; P.applyRewards(p, 'comet', w.result);       // not owned: test drive, nothing credited

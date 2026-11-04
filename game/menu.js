@@ -563,11 +563,11 @@ export class Menu {
          const prevXP = s.prev ? this.ts(s.prev)?.xp ?? 0 : 0, CR = this.P.CONVERT_CREDITS ?? 25;
          const canConv = s.elite && s.xp > 0 && this.credits() >= CR;
          prog = `<div class="pz-xp"><h4 class="pz-st" style="margin:0;font-size:12px;color:var(--olive)">Erfahrung${s.elite ? ' <span class="pz-elite" title="Alle Nachfolger erforscht">ELITE</span>' : ''}<span style="flex:1"></span><button class="pz-q" data-a="help" title="Wie funktionieren EP, freie EP und Besatzung?">?</button></h4>
-            <div class="row"><span title="Verdient mit diesem Panzer. Erforscht ${nextN ? esc(nextN.name) : 'den nächsten Panzer seiner Linie'}."><b>${fmt(s.xp)}</b> Panzer-EP</span><span>·</span><span title="Für jeden Panzer nutzbar"><b>${fmt(this.freeXp())}</b> freie EP</span></div>
+            <div class="row"><span title="Verdient mit diesem Panzer. Erforscht ${nextN ? (s.nexts || [s.next]).map((id) => esc(this.C.TANKS[id].name)).join(' / ') : 'den nächsten Panzer seiner Linie'}."><b>${fmt(s.xp)}</b> Panzer-EP</span><span>·</span><span title="Für jeden Panzer nutzbar"><b>${fmt(this.freeXp())}</b> freie EP</span></div>
             ${!s.researched ? `<div class="row"><button data-prog="research" ${s.canResearch ? '' : 'disabled'}>Erforschen · ${fmt(s.researchXP)} EP</button>
                ${prevN ? `<span class="pz-k" title="Zuerst werden die EP des Vorgängers verbraucht, der Rest aus freien EP">${fmt(prevXP)} EP von ${esc(prevN.short || prevN.name)} + ${fmt(this.freeXp())} frei</span>` : ''}</div>` : ''}
             ${s.researched && !s.owned ? `<div class="row"><button class="pri" data-prog="buy" ${s.canBuy ? '' : 'disabled'}>Kaufen · ${fmt(s.price)} Kr</button></div>` : ''}
-            ${s.owned && nextN && !s.elite ? `<div class="row pz-k">Nächster in der Linie: ${esc(nextN.name)} (${fmt(s.xp)} / ${fmt(this.ts(s.next)?.researchXP)} EP)</div>` : ''}
+            ${s.owned && nextN && !s.elite ? `<div class="row pz-k">Erforscht als Nächstes: ${(s.nexts || [s.next]).filter((id) => !this.researched(id)).map((id) => `${esc(this.C.TANKS[id].name)} (${fmt(s.xp)} / ${fmt(this.ts(id)?.researchXP)} EP)`).join(' · ')}</div>` : ''}
             ${s.elite && s.owned ? `<div class="row" title="Elite: Panzer-EP 1 : 1 in freie EP umwandeln, je EP ${fmt(CR)} Kreditpunkte"><span>In freie EP:</span>
                <button data-a="convert" data-v="1000" ${canConv ? '' : 'disabled'}>${fmt(Math.min(1000, s.xp))} EP · ${fmt(Math.min(1000, s.xp) * CR)} Kr</button>
                <button data-a="convert" data-v="all" ${canConv ? '' : 'disabled'}>Alle · ${fmt(Math.min(s.xp, Math.floor(this.credits() / CR)) * CR)} Kr</button></div>` : ''}

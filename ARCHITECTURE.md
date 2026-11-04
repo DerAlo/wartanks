@@ -1,6 +1,6 @@
 # PANZER (wartanks) — architecture & module contract
 
-Browser tank battle game, WW2-era armour (Tier I–VIII style), loosely modelled on World of Tanks
+Browser tank battle game, WW2-era to early-Cold-War armour (Tier I–X), loosely modelled on World of Tanks
 (gameplay reference only; all vehicles, models, maps, sounds and UI are our own). Focus:
 **armour thickness and angle, ammunition and gun, ballistics, driving skill** (hull-down, angling,
 side-scraping, terrain use).
@@ -330,7 +330,7 @@ yaw, every third one drives (`role 'targetMoving'`), destroyed targets respawn a
 
 ## Progression (`progress.js`, localStorage `wartanks.profile.v1`)
 
-Tech tree per nation (Deutschland, Sowjetunion, USA, Großbritannien), tiers I/II…VIII,
+Tech tree per nation (Deutschland, Sowjetunion, USA, Großbritannien), tiers I…X,
 XP per tank to research the next, credits to buy, start tanks unlocked. Ammo loadout
 (premium APCR/HEAT costs credits). Save export/import like warships.
 
@@ -368,9 +368,21 @@ As implemented: `loadProfile()`, `saveProfile(p)`, `resetProfile()`, `newProfile
 `techTree() -> { DE:[ids by tier], ... }`, `tankState(p, id) -> { owned, researched, xp, prev,
 researchXP, price, canResearch, canBuy }`, `research(p, id)` / `buy(p, id) -> { ok, reason }`,
 `calcRewards(world)`, `applyRewards(p, tankId, result)`, `exportProfile(p) -> 'WT1:'+base64`,
-`importProfile(str)` (throws on garbage). Research XP by tier 5/6/7/8: 2500/6000/12000/22000;
-prices tier 4–8: 30k/90k/200k/450k/900k; start: 150k credits and the first tank of each
-nation. Works without localStorage (memory fallback).
+`importProfile(str)` (throws on garbage). Research XP by tier I–X: 0/300/800/1600/2500/6000/12000/
+22000/36000/55000; prices: 0/3.5k/12k/30k/90k/200k/450k/900k/1.5M/2.5M; start: 150k credits and the
+tier I root of each nation (old profiles keep everything and get the roots on top). Works without
+localStorage (memory fallback).
+
+**Research tree** (branching): a tank's `parent` in config.js names the tank whose XP researches it
+(`null` = the nation's root, tier I); `prevOf(id)`, `nextsOf(id)` (all branches), `tankState().nexts`.
+Nations without `parent` fields (US, UK for now) fall back to one line in tier order. Parents are
+always one tier lower (tests/tree.test.mjs). Elite = every tank in `nextsOf` researched.
+DE: Leichttraktor (I LT) → Pz II C (II LT) → Pz III E (III MT) → { Luchs (IV LT, leaf),
+Pz III J (IV MT) → { Pz IV H (V MT) → VK 36.01 H (VI HT) → { Panther (VII MT), Tiger I (VII HT) →
+Tiger II (VIII) → E 75 (IX) → { Maus, E 100 (X HT) } }, StuG III G (V TD) → Pz IV/70 (VI TD) →
+Jagdpanther (VII TD) → Ferdinand (VIII TD) → Jagdtiger (IX TD) } }.
+Look/paint: `look 'maus'` adds the coaxial 7.5 cm barrel; `paint 'grau'` = early-war Panzergrau
+(tiers I–III), `paint 'su30'` = 1930s Soviet 4BO green.
 
 **XP model, crew and perks** (WoT, simplified). Each nation is one line (`techTree()` order);
 tank XP researches only the next tank of its own line (the predecessor's XP is used first, the rest
