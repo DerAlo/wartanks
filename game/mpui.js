@@ -440,13 +440,17 @@ class MpUI {
             const join = lobbyState && meTeam !== t && n < TEAM_MAX && (host || !r.teamsLocked) ? `<button data-join-team="${t}">Wechseln</button>` : '';
             return `<div class="mp-h mp-team t${t}" data-team-head="${t}"><span>Team ${t}${meTeam === t ? ' · dein Team' : ''}</span><span class="n">${n}/${TEAM_MAX} ${join}</span></div>` + list.map(row).join('');
          }).join('') + (free ? `<div class="mp-slot">${free} freie${free === 1 ? 'r' : ''} Platz${free === 1 ? '' : 'e'} – Team frei wählbar</div>` : '')
-            + `<div class="mp-slot">Freie Plätze beider Teams übernehmen Bots.${r.teamsLocked ? ' Der Host hat die Teams gesperrt.' : ''}</div>`;
+            + `<div class="mp-slot">${r.bots !== false ? 'Freie Plätze beider Teams übernehmen Bots.' : 'Ohne Bots: nur die Spieler kämpfen gegeneinander.'}${r.teamsLocked ? ' Der Host hat die Teams gesperrt.' : ''}</div>`;
          this.root.querySelectorAll('[data-join-team]').forEach(b => b.addEventListener('click', () => { this._click(); lb.chooseTeam(Number(b.dataset.joinTeam)); }));
          this.root.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', () => { this._click(); lb.setTeam(b.dataset.move, Number(b.dataset.team)); }));
       } else {
          $('#mp-players').innerHTML = r.players.map(row).join('') + Array.from({ length: free }, () => '<div class="mp-slot">freier Platz</div>').join('')
             + '<div class="mp-slot">Die übrigen Panzer beider Seiten steuern Bots.</div>';
       }
+      // tier spread: allowed on purpose (a Luchs against a Tiger can be fun), but say so
+      const tiers = r.players.map(p => TANKS[p.tank]?.tier).filter(Boolean);
+      if (tiers.length > 1 && Math.max(...tiers) - Math.min(...tiers) > 2) $('#mp-players').insertAdjacentHTML('beforeend',
+         `<div class="mp-slot" style="color:var(--signal)">Großer Stufenunterschied (${TIER_ROMAN[Math.min(...tiers)]}–${TIER_ROMAN[Math.max(...tiers)]}) – geht, ist aber unfair. Bots richten sich nach der mittleren Stufe.</div>`);
       this.root.querySelectorAll('[data-kick]').forEach(b => b.addEventListener('click', () => { this._click(); lb.kick(b.dataset.kick); }));
 
       const m = getMission(r.mission);
@@ -458,6 +462,7 @@ class MpUI {
             <b>Karte</b><span>${edit ? `<select id="mp-r-map">${mapOptions(r.mapId)}</select>` : `<span data-map="${esc(r.mapId)}">${esc(mapName(r.mapId))}</span>`}</span>
             <b>Schwierigkeit</b><span>${pvp ? 'Bots: Normal (beide Teams gleich stark)' : edit ? `<select id="mp-r-diff">${DIFFICULTIES.map(d => `<option value="${d}" ${d === r.difficulty ? 'selected' : ''}>${DIFF_LABEL[d]}</option>`).join('')}</select>` : esc(DIFF_LABEL[r.difficulty] || r.difficulty)}</span>
             <b>Spieler</b><span>${edit ? `<select id="mp-r-max">${maxOptions(r.mode, r.mission, r.max, r.players.length)}</select>` : `max. ${r.max}`}${host ? '' : '<span class="mp-note" style="margin-left:10px">Nur der Host ändert die Einstellungen.</span>'}</span>
+            ${pvp ? `<b>Bots</b><span>${edit ? `<select id="mp-r-bots"><option value="1" ${r.bots !== false ? 'selected' : ''}>freie Plätze auffüllen</option><option value="0" ${r.bots === false ? 'selected' : ''}>keine Bots – nur Spieler</option></select>` : r.bots !== false ? 'freie Plätze auffüllen' : 'keine Bots – nur Spieler'}</span>` : ''}
             ${pvp ? `<b>Teams</b><span>${edit ? `<button id="mp-balance">Ausgleichen</button> <button id="mp-lock">${r.teamsLocked ? 'Entsperren' : 'Sperren'}</button>` : r.teamsLocked ? 'gesperrt (nur der Host verschiebt)' : 'frei wählbar'}</span>` : ''}
          </div>
          ${m?.desc ? `<div class="mp-desc">${esc(m.desc)}</div>` : ''}`;
@@ -465,6 +470,7 @@ class MpUI {
          $('#mp-r-mission').addEventListener('change', (e) => lb.configure({ mission: e.target.value }));
          $('#mp-r-map').addEventListener('change', (e) => lb.configure({ mapId: e.target.value }));
          $('#mp-r-diff')?.addEventListener('change', (e) => lb.configure({ difficulty: e.target.value }));
+         $('#mp-r-bots')?.addEventListener('change', (e) => lb.configure({ bots: e.target.value === '1' }));
          $('#mp-r-max').addEventListener('change', (e) => lb.configure({ max: Number(e.target.value) }));
          $('#mp-balance')?.addEventListener('click', () => { this._click(); lb.balanceTeams(); });
          $('#mp-lock')?.addEventListener('click', () => { this._click(); lb.lockTeams(!r.teamsLocked); });

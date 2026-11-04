@@ -306,7 +306,7 @@ export class Lobby {
          id, name: cleanName(opts.name, 32) || `Spiel von ${this.name}`, mode, mission, mapId: validMap(opts.mapId) ? opts.mapId : RANDOM_MAP,
          difficulty: mode === 'pvp' ? 'normal' : DIFFICULTIES.includes(opts.difficulty) ? opts.difficulty : 'normal',
          max: Math.min(modeSlots(mode, mission), Math.max(MIN_PLAYERS[mode], Math.floor(opts.max) || modeSlots(mode, mission))),
-         locked: !!password, teamsLocked: false, state: 'lobby', hostId: this.selfId,
+         locked: !!password, teamsLocked: false, bots: true, state: 'lobby', hostId: this.selfId,
          players: [{ id: this.selfId, name: this.name, tank, perks: ownPerks(this.getProfile(), tank), ready: false, team: mode === 'pvp' ? 1 : 0 }],
       };
       this.chat = [];
@@ -350,6 +350,7 @@ export class Lobby {
       }
       if (o.mapId && o.mapId !== r.mapId && validMap(o.mapId)) { r.mapId = o.mapId; for (const p of r.players) p.ready = false; }
       if (o.difficulty && DIFFICULTIES.includes(o.difficulty) && r.mode !== 'pvp') r.difficulty = o.difficulty;
+      if (typeof o.bots === 'boolean' && r.mode === 'pvp') r.bots = o.bots;   // PvP: fill free places with bots, or humans only
       if (o.max) r.max = Math.max(r.players.length, MIN_PLAYERS[r.mode] || 1, Math.min(slots(r.mission), Math.floor(o.max) || r.max));
       this._sync();
    }
@@ -421,7 +422,7 @@ export class Lobby {
       const seed = crypto.getRandomValues(new Uint32Array(1))[0];
       // 'random': the host rolls the map once, everybody plays the same one
       const mapId = r.mapId === RANDOM_MAP ? RANDOM_MAPS[seed % RANDOM_MAPS.length] : r.mapId;   // sent explicitly: clients never re-derive it
-      const msg = { t: 'start', mode: r.mode, mission: r.mission, mapId, difficulty: r.difficulty, seed,
+      const msg = { t: 'start', mode: r.mode, mission: r.mission, mapId, difficulty: r.difficulty, seed, bots: r.mode !== 'pvp' || r.bots !== false,
          players: r.players.map(p => ({ id: p.id, name: p.name, tank: p.tank, perks: cleanPerks(p.perks), ...(r.mode === 'pvp' ? { team: p.team } : null) })) };
       r.state = 'running';
       for (const p of r.players) p.ready = false;
@@ -646,7 +647,7 @@ export class Lobby {
          const base = cur || pend; if (!base) return;
          this.room = {
             id: base.id, hostId: base.hostId, name: cleanName(m.room.name, 32), mode: String(m.room.mode), mission: String(m.room.mission), mapId: String(m.room.mapId ?? RANDOM_MAP).slice(0, 40), difficulty: String(m.room.difficulty),
-            max: Number(m.room.max) || 1, locked: !!m.room.locked, teamsLocked: !!m.room.teamsLocked, state: m.room.state === 'running' ? 'running' : 'lobby',
+            max: Number(m.room.max) || 1, locked: !!m.room.locked, teamsLocked: !!m.room.teamsLocked, bots: m.room.bots !== false, state: m.room.state === 'running' ? 'running' : 'lobby',
             players: m.players.slice(0, 16).map(p => ({ id: String(p.id), name: cleanName(p.name) || '?', tank: validTank(p.tank) ? p.tank : null, perks: cleanPerks(p.perks), ready: !!p.ready,
                via: p.via === 'direct' || p.via === 'relay' ? p.via : '', team: TEAMS.includes(p.team) ? p.team : 0, lost: !!p.lost })),
          };
@@ -679,7 +680,7 @@ export class Lobby {
    _forgetSeat() { const s = loadSeat(); if (s && this.room && s.room === this.room.id) saveSeat(null); }
    _state() {
       const r = this.room;
-      return { t: 'state', room: { name: r.name, mode: r.mode, mission: r.mission, mapId: r.mapId, difficulty: r.difficulty, max: r.max, locked: r.locked, teamsLocked: !!r.teamsLocked, state: r.state },
+      return { t: 'state', room: { name: r.name, mode: r.mode, mission: r.mission, mapId: r.mapId, difficulty: r.difficulty, max: r.max, locked: r.locked, teamsLocked: !!r.teamsLocked, bots: r.bots !== false, state: r.state },
          players: r.players.map(p => ({ id: p.id, name: p.name, tank: p.tank, perks: cleanPerks(p.perks), ready: p.ready, via: this.via(p.id), team: p.team || 0, ...(p.lost ? { lost: 1 } : null) })) };
    }
    // how a player is connected to the host: 'direct' | 'relay' | '' (the host itself, or unknown).
@@ -741,7 +742,7 @@ export class Lobby {
       let done = false;
       const transport = sessionTransport(this.rt, players.map(p => p.id), () => this.leaveRoom());
       const session = {
-         transport, mode: String(m.mode), mission: String(m.mission), mapId: getMap(m.mapId) ? String(m.mapId) : RANDOM_MAPS[(m.seed >>> 0) % RANDOM_MAPS.length], difficulty: String(m.difficulty), seed: m.seed >>> 0, players,
+         transport, mode: String(m.mode), mission: String(m.mission), mapId: getMap(m.mapId) ? String(m.mapId) : RANDOM_MAPS[(m.seed >>> 0) % RANDOM_MAPS.length], difficulty: String(m.difficulty), seed: m.seed >>> 0, bots: m.bots !== false, players,
          onEnd: (result) => {
             if (done) return;
             done = true; transport._close();

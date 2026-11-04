@@ -26,7 +26,13 @@ export function makeRoster(session) {
    const hostTeam = P[0]?.team ?? 1;
    const slots = P.map((p) => ({ name: String(p.name || 'Spieler').slice(0, 24), tank: validTank(p.tank), perks: cleanPerks(p.perks), team: session.mode === 'pvp' ? (p.team ?? 1) : undefined, wteam: session.mode === 'pvp' && (p.team ?? 1) !== hostTeam ? 2 : 1 }));
    const n1 = slots.filter((s) => s.wteam === 1).length, n2 = slots.length - n1;
-   const roster = matchmake(slots[0]?.tank || 'pz4h', Math.max(size, n1, n2), rng);
+   // bots are matched to the humans' middle tier (not just the host's tank), so a mixed lobby gets fair company
+   const tiers = slots.map((s) => TANKS[s.tank].tier).sort((a, b) => a - b);
+   const mid = tiers[(tiers.length - 1) >> 1];
+   const seed = slots.find((s) => TANKS[s.tank].tier === mid)?.tank || slots[0]?.tank || 'pz4h';
+   const roster = matchmake(seed, Math.max(size, n1, n2), rng);
+   // PvP "humans only": no bot fills the free places -- each side is just its captains
+   if (session.mode === 'pvp' && session.bots === false) { roster.team1.length = n1; roster.team2.length = n2; }
    const k = { 1: 0, 2: 0 };
    for (const s of slots) { s.idx = k[s.wteam]++; roster['team' + s.wteam][s.idx] = s.tank; }
    return { roster, slots };
