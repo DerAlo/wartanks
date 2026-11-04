@@ -36,7 +36,7 @@ function themeOf(mapId) {
 
 
 export function startBattle(opts = {}) {
-   stopBattle(); G.lock = null; G.rmbT = null; G.turretLock = false;
+   stopBattle(); G.lock = null; G.rmbT = null; G.turretLock = false; G.spec = null;
    for (const k in opts) if (opts[k] === undefined) delete opts[k];
    if (!stateM.World) { console.error('[main] state.js missing: no battle possible'); menu?.show('garage'); return; }
    const world = G.world = opts.world || new stateM.World({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
@@ -71,7 +71,7 @@ function finishBattle() {
       result: w.result ? { ...w.result } : null, stats: w.stats ? { ...w.stats } : null };
    menu?.applyResult?.(snap);
    G.lastResult = snap;
-   stopBattle(); G.lock = null; G.rmbT = null; G.turretLock = false;
+   stopBattle(); G.lock = null; G.rmbT = null; G.turretLock = false; G.spec = null;
    if (G.net) G.net.finish(snap);                   // net game: the lobby shows the result and the room
    else if (menu) menu.showResults(snap);
 }
@@ -216,7 +216,16 @@ function controls(world, p, dt) {
    if (input.hit('ShiftLeft') || input.hit('ShiftRight')) { tcam.toggleScope(); audio?.ui?.('scope'); }
    rightMouse(world, p);
    if (!G.lock) tcam.look(input.dx, input.invert ? -input.dy : input.dy, input.sens);
-   if (!p?.alive) return;
+   if (!p?.alive) {   // destroyed: left click cycles the camera through living allies (spectator)
+      if (p && tcam.scoped) tcam.toggleScope();
+      if (G.spec && !G.spec.alive) G.spec = null;
+      if (p && input.lmbPressed) {
+         const al = world.tanks.filter((t) => t !== p && t.alive && t.team === p.team && !t.cfg?.site);
+         if (al.length) { const i = al.indexOf(G.spec); G.spec = al[(i + 1) % al.length]; audio?.ui?.('scope'); }
+      }
+      return;
+   }
+   G.spec = null;
    const k = (c) => input.down(c);
    const inp = p.input ??= {};
    inp.throttle = (k('KeyW') || k('ArrowUp') ? 1 : 0) - (k('KeyS') || k('ArrowDown') ? 1 : 0);
@@ -260,8 +269,9 @@ function frame(now) {
       if (n >= 6) G.acc = 0;
       lerpPoses(world, G.acc / SIM_DT);   // draw tanks between the last two sim steps (no stepping judder)
       if (p) {
-         pivot.set(p.pos.x, p.pos.y + (p.height ?? p.cfg?.height ?? 2.4) + 0.4, p.pos.z);
-         if (tanks3d?.sightPos) tanks3d.sightPos(p, sight); else sight.set(p.pos.x, p.pos.y + (p.height ?? p.cfg?.height ?? 2.4), p.pos.z);
+         const v = (!p.alive && G.spec?.alive) ? G.spec : p;   // spectator: follow the chosen ally
+         pivot.set(v.pos.x, v.pos.y + (v.height ?? v.cfg?.height ?? 2.4) + 0.4, v.pos.z);
+         if (tanks3d?.sightPos) tanks3d.sightPos(v, sight); else sight.set(v.pos.x, v.pos.y + (v.height ?? v.cfg?.height ?? 2.4), v.pos.z);
          if (G.camOverride) { const o = G.camOverride; R.camera.position.set(o[0], o[1], o[2]); R.camera.lookAt(o[3], o[4], o[5]); }
          else tcam.update(dt, pivot, sight, (x, z) => world.terrain.heightAt(x, z));
          aimRay(world, p);
@@ -270,7 +280,7 @@ function frame(now) {
       tanks3d?.update(dt, R.camera);
       fx?.update(dt, R.camera);
       audio?.update?.(dt, world, R.camera, tcam);
-      if (p) R.followShadow(p.pos.x, p.pos.z, p.pos.y);
+      if (p) { const v = (!p.alive && G.spec?.alive) ? G.spec : p; R.followShadow(v.pos.x, v.pos.z, v.pos.y); }
       document.getElementById('scope').classList.toggle('on', tcam.scoped);
       if (tanks3d?.setHidden) tanks3d.setHidden(p, tcam.scoped);
    } else menu?.update?.(dt);

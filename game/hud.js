@@ -4,7 +4,7 @@
 // timer / bases, countdown and the Tab score table. Reads sim state only (optional chaining
 // everywhere) and consumes world.events by `seq`. hud.msg(text, colour) is public (audio/callouts).
 import * as THREE from '../vendor/three/three.module.min.js';
-import { AMMO, BALLISTICS, MODULES, CREW_NAMES, CONSUMABLES, PLATE_NAMES } from './config.js';
+import { AMMO, BALLISTICS, MODULES, CREW_NAMES, CONSUMABLES, PLATE_NAMES, TIER_ROMAN } from './config.js';
 import { solveElevation } from './ballistics.js';
 import { MapFeatures } from './mapfeatures.js';
 
@@ -22,6 +22,19 @@ const MOD_SHORT = { engine: 'MOT', fuel: 'KRS', ammo: 'MUN', gun: 'KAN', turretR
 const CREW_SHORT = { commander: 'KDT', gunner: 'RS', driver: 'FA', radio: 'FU', loader: 'LS', loader2: 'LS2' };
 const SPACED_PART = { track: true, skirt: true, mantlet: true };
 const D2R = Math.PI / 180;
+// "VI Tiger" — tier + vehicle short name (emplacements: their name only)
+const tankType = (t) => t?.cfg?.site ? (t.cfg.name || '') : `${TIER_ROMAN[t?.cfg?.tier] || ''} ${t?.cfg?.short || t?.cfg?.name || t?.cls || ''}`.trim();
+// WoT-style class glyph: diamond with 1/2/3 bars (LT/MT/HT), inverted triangle (TD)
+function clsGlyph(g, cls, x, y, col, s = 5) {
+   if (!cls) return;
+   g.save(); g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 1.3; g.beginPath();
+   if (cls === 'TD') { g.moveTo(x - s, y - s * 0.7); g.lineTo(x + s, y - s * 0.7); g.lineTo(x, y + s * 0.9); g.closePath(); g.stroke(); }
+   else {
+      g.moveTo(x, y - s); g.lineTo(x + s, y); g.lineTo(x, y + s); g.lineTo(x - s, y); g.closePath(); g.stroke();
+      const n = cls === 'LT' ? 1 : cls === 'MT' ? 2 : 3; for (let i = 0; i < n; i++) { const yy = y + (i - (n - 1) / 2) * s * 0.55, w = s * (1 - Math.abs(yy - y) / s) * 0.8; g.fillRect(x - w, yy - 0.6, w * 2, 1.2); }
+   }
+   g.restore();
+}
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
 const mmss = (s) => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 const tankName = (t) => t?.name || (t?.cfg?.site ? t.cfg.name : t?.cfg?.short) || t?.cfg?.name || t?.cls || '?';   // emplacements by their full name
@@ -226,7 +239,12 @@ export class HUD {
       this.drawMsgs(g);
       if (w.phase === 'countdown') this.big(g, Math.ceil(w.countdown ?? 0) || 'LOS!', 'Gefecht beginnt in');
       else if (w.phase && w.phase !== 'playing') this.big(g, w.phase === 'won' ? (C ? 'AUFTRAG ERFÜLLT' : 'SIEG') : w.phase === 'lost' ? (C ? 'GESCHEITERT' : 'NIEDERLAGE') : 'UNENTSCHIEDEN', w.result?.reason || '');
-      else if (p.alive === false) this.big(g, 'ZERSTÖRT', 'Ihr Panzer wurde vernichtet');
+      else if (p.alive === false) {
+         this.deadT = (this.deadT ?? 0) + dt;
+         if (this.deadT < 3) this.big(g, 'ZERSTÖRT', 'Ihr Panzer wurde vernichtet');
+         const sp = this.G?.spec;
+         this.text(g, sp ? `Zuschauer: ${tankType(sp)}${sp.name ? ' · ' + sp.name : ''}  —  Linksklick: nächster Verbündeter` : 'Linksklick: einem Verbündeten zuschauen', this.W / 2, this.H - 120, COL.hud, 14, 'center', FCOND, '600');
+      } else this.deadT = 0;
       if (this.score) this.drawScore(g, w, p);
    }
 
@@ -324,7 +342,7 @@ export class HUD {
    drawMarkers(g, w, p) {
       const s = this._m ??= {}, cam = this.R.camera.position;
       for (const t of w.tanks || []) {
-         if (t === p || !t.alive) continue;
+         if (t === p || t === this.G?.spec || !t.alive) continue;
          const enemy = t.team !== p.team;
          if (enemy && t.spotted === false) continue;
          const d = Math.hypot(t.pos.x - cam.x, t.pos.z - cam.z); if (d > 445) continue;
@@ -332,7 +350,10 @@ export class HUD {
          const col = enemy ? COL.enemy : COL.ally, bw = 46;
          g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(s.x - bw / 2 - 1, s.y - 1, bw + 2, 6);
          g.fillStyle = col; g.fillRect(s.x - bw / 2, s.y, bw * clamp(t.hp / (t.maxHP || 1), 0, 1), 4);
-         this.text(g, tankName(t), s.x, s.y - 9, col, 12, 'center', FCOND);
+         const ty = tankType(t); g.font = `600 12px ${FCOND}`; const tw = g.measureText(ty).width;
+         if (!t.cfg?.site) clsGlyph(g, t.cfg?.cls, s.x - tw / 2 - 8, s.y - 9, col, 4.5);
+         this.text(g, ty, s.x + (t.cfg?.site ? 0 : 3), s.y - 9, col, 12, 'center', FCOND, '600');
+         if (t.name && d < 260) this.text(g, t.name, s.x, s.y - 23, COL.dim, 10, 'center', FCOND);
          if (d < 300) this.text(g, String(Math.round(t.hp)), s.x, s.y + 13, COL.hud, 11, 'center', FCOND);
       }
    }
@@ -454,8 +475,14 @@ export class HUD {
       const row = (t, x, y, right, col) => {
          const dead = !t.alive, f = clamp(t.hp / (t.maxHP || 1), 0, 1), bw = 54;
          g.fillStyle = 'rgba(20,23,22,.55)'; g.fillRect(x, y, 170, 17);
-         this.text(g, (t === p ? '▶ ' : '') + tankName(t), right ? x + 166 : x + 4, y + 9, dead ? COL.dead : t === p ? COL.self : col, 12, right ? 'right' : 'left', FCOND, '600');
-         const hx = right ? x + 4 : x + 170 - bw - 4;
+         const hx = right ? x + 4 : x + 170 - bw - 4, tc = dead ? COL.dead : t === p ? COL.self : col;
+         // class glyph, "VI Tiger", then the crew/player name dimmed, clipped before the hp bar
+         const gx = right ? x + 160 : x + 10; if (!t.cfg?.site) clsGlyph(g, t.cfg?.cls, gx, y + 8.5, tc, 4);
+         const tx = right ? x + 150 : x + 19, avail = 170 - bw - 26, ty = (t === p ? '▶ ' : '') + tankType(t);
+         g.save(); g.beginPath(); g.rect(right ? tx - avail : tx, y, avail, 17); g.clip();
+         this.text(g, ty, tx, y + 9, tc, 12, right ? 'right' : 'left', FCOND, '600');
+         if (t.name) { g.font = `600 12px ${FCOND}`; const w0 = g.measureText(ty).width + 5; this.text(g, t.name, right ? tx - w0 : tx + w0, y + 9.5, COL.dim, 10, right ? 'right' : 'left', FCOND); }
+         g.restore();
          g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(hx, y + 6, bw, 5);
          if (!dead) { g.fillStyle = col; g.fillRect(right ? hx + bw * (1 - f) : hx, y + 6, bw * f, 5); }
          if (dead) { g.strokeStyle = COL.dead; g.beginPath(); g.moveTo(x + 4, y + 9); g.lineTo(x + 166, y + 9); g.stroke(); }
@@ -657,7 +684,8 @@ export class HUD {
             const ry = y + 64 + i * 22, st = t === p ? w.stats : t.stats;
             if (t === p) { g.fillStyle = 'rgba(224,122,31,.18)'; g.fillRect(cx - 6, ry - 10, W / 2 - 20, 20); }
             this.text(g, `${tankName(t)}`, cx, ry, t.alive ? (t === p ? COL.self : col) : COL.dead, 13, 'left', FCOND, '600');
-            this.text(g, t.cfg?.tier ? 'Stufe ' + t.cfg.tier : '', cx + 160, ry, COL.dim, 11, 'left', FCOND);
+            if (!t.cfg?.site) clsGlyph(g, t.cfg?.cls, cx + 176, ry, t.alive ? col : COL.dead, 4.5);
+            this.text(g, tankType(t), cx + 186, ry, t.alive ? COL.hud : COL.dead, 12, 'left', FCOND, '600');
             this.text(g, String(Math.round(st?.dmg ?? 0)), cx + W / 2 - 110, ry, COL.hud, 13, 'right', FCOND);
             this.text(g, String(st?.kills ?? 0), cx + W / 2 - 50, ry, COL.hud, 13, 'right', FCOND);
          });
