@@ -633,7 +633,12 @@ export class HUD {
    }
 
    big(g, title, sub) {
-      g.fillStyle = 'rgba(14,16,10,.35)'; g.fillRect(0, this.H * 0.36, this.W, 120);
+      // soft elliptical shade behind the text (a full-width box sat on the horizon and read as a grey haze wall)
+      const cy = this.H * 0.36 + 55, rx = Math.min(this.W * 0.32, 420);
+      g.save(); g.translate(this.W / 2, cy); g.scale(rx / 70, 1);
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, 70);
+      gr.addColorStop(0, 'rgba(14,16,10,.42)'); gr.addColorStop(0.6, 'rgba(14,16,10,.22)'); gr.addColorStop(1, 'rgba(14,16,10,0)');
+      g.fillStyle = gr; g.fillRect(-70, -70, 140, 140); g.restore();
       if (sub) this.text(g, sub, this.W / 2, this.H * 0.36 + 26, COL.dim, 15, 'center', FCOND);
       this.text(g, String(title), this.W / 2, this.H * 0.36 + 72, COL.self, 54, 'center', FST, '700');
    }
