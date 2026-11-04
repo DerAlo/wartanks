@@ -381,7 +381,10 @@ DE: Leichttraktor (I LT) → Pz II C (II LT) → Pz III E (III MT) → { Luchs (
 Pz III J (IV MT) → { Pz IV H (V MT) → VK 36.01 H (VI HT) → { Panther (VII MT), Tiger I (VII HT) →
 Tiger II (VIII) → E 75 (IX) → { Maus, E 100 (X HT) } }, StuG III G (V TD) → Pz IV/70 (VI TD) →
 Jagdpanther (VII TD) → Ferdinand (VIII TD) → Jagdtiger (IX TD) } }.
-Look/paint: `look 'maus'` adds the coaxial 7.5 cm barrel; `paint 'grau'` = early-war Panzergrau
+SU: MS-1 (I LT) → T-26 (II LT) → BT-7 (III LT) → T-28 (IV MT) → { T-34/76 (V MT) → { T-34-85 (VI MT)
+→ T-44 (VII) → T-44-100 (VIII) → T-54 (IX) → T-62A (X MT), SU-100 (VI TD, leaf) }, KV-1 (V HT) →
+KV-85 (VI) → IS-2 (VII) → IS-3 (VIII) → IS-4 (IX) → IS-7 (X HT) }.
+Look/paint: `look 'maus'` adds the coaxial 7.5 cm barrel, `look 't28'` the two front MG turrets; `paint 'grau'` = early-war Panzergrau
 (tiers I–III), `paint 'su30'` = 1930s Soviet 4BO green.
 
 **XP model, crew and perks** (WoT, simplified). Each nation is one line (`techTree()` order);

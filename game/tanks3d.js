@@ -340,6 +340,11 @@ function buildHull(S) {
    for (const s of [-1, 1]) { const ey = ry - 0.25, ex = Math.min(s * H.w * 0.27 * s, roofHalfW(H, ey) - 0.12) * s; A.cyl(ex, ey, rearZAt(P, ey) + 0.08, 0.09, 0.09, 0.55, BLACK, 'y', 8); }
    A.box(0, roofYAt(P, back - 0.9) + 0.02, back - 0.9, H.w * 0.55, 0.05, 0.9, DARK);
    if (S.nation === 'su' || S.nation === 'us') for (let k = 0; k < 3; k++) { const z = front + 0.55; A.box(0.36 * (k - 1), roofYAt(P, z) - 0.25, z, 0.3, 0.06, 0.2, DARK, -0.9); }
+   if (S.look === 't28') for (const s of [-1, 1]) {   // the two small MG turrets flanking the driver on the front hull
+      const z = front + 0.8, y0 = Math.min(roofYAt(P, z - 0.34), roofYAt(P, z + 0.34)) - 0.02;
+      A.cyl(s * H.w * 0.28, y0 + 0.21, z, 0.34, 0.34, 0.42, PAINT, 'y', 12);
+      A.cyl(s * H.w * 0.28, y0 + 0.24, z - 0.55, 0.035, 0.035, 0.5, DARK, 'z', 6);
+   }
    if (S.mantlet && S.mantlet.mount === 'hull') { const m = S.mantlet; A.box(m.x, m.y, m.z, m.w, m.h, m.d, PAINT); }
    return A.build();
 }
