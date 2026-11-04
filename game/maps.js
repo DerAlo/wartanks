@@ -30,8 +30,10 @@
 // override the default base / spawn positions (used by coast maps whose north is sea).
 
 const SUMMER = {
-   fog: 0xbcc8cf, fogNear: 280, fogFar: 1200, sunDir: [0.55, 0.62, 0.35], sunColor: 0xffecd2, sunIntensity: 3.0,
-   skyLight: 0xc4daf2, groundLight: 0x6a6a52, hemiIntensity: 1.05, exposure: 1.25,
+   fog: 0xbccbd8, fogNear: 280, fogFar: 1250, sunDir: [0.55, 0.62, 0.35], sunColor: 0xffecd2, sunIntensity: 3.0,
+   skyLight: 0xc4daf2, groundLight: 0x6a6a52, hemiIntensity: 1.05, exposure: 1.32,
+   // richer, crisper than the post default (1.06 / 1.02), which read muddy next to the warships look
+   grade: { saturation: 1.14, contrast: 1.07 },
    skyTop: 0x3f7ccc, skyHor: 0xbfd5e6, skyLow: 0x8a9488, cloud: 0.45,
 };
 
@@ -39,7 +41,7 @@ export const MAPS = {
    steppe: {
       id: 'steppe', name: 'Steppe', desc: 'Offenes, welliges Grasland mit langen Hügelkämmen – Hull-Down-Stellungen und weite Schussbahnen.',
       palette: 'steppe', seed: 11,
-      render: { ...SUMMER, fog: 0xc8c6b0, skyHor: 0xd4d0b8, sunColor: 0xfff0d0, cloud: 0.35, fogFar: 1350 },
+      render: { ...SUMMER, fog: 0xc6cfd2, skyHor: 0xd0dbe2, sunColor: 0xfff0d0, cloud: 0.35, fogFar: 1350 },
       noise: { amp: 5, scale: 260, detail: 0.6, ridgedAmp: 4 },
       ground: { soft: 0.18, hard: 0.1 },
       features: [
@@ -87,7 +89,7 @@ export const MAPS = {
    waldhuegel: {
       id: 'waldhuegel', name: 'Waldhügel', desc: 'Bewaldete Hügel, Lichtungen und Hohlwege – Tarnung, Buschwerk und kurze Gefechte.',
       palette: 'summer', seed: 37,
-      render: { ...SUMMER, fog: 0xaeb9ae, fogNear: 220, fogFar: 1050, sunIntensity: 2.4, skyHor: 0xbfcac4, cloud: 0.7 },
+      render: { ...SUMMER, fog: 0xb2c2c8, fogNear: 220, fogFar: 1050, sunIntensity: 2.6, skyHor: 0xc0d0d8, cloud: 0.7 },
       noise: { amp: 12, scale: 200, detail: 0.7, ridgedAmp: 9 },
       ground: { soft: 0.2, hard: 0.08 },
       features: [
@@ -109,7 +111,7 @@ export const MAPS = {
    flusstal: {
       id: 'flusstal', name: 'Flusstal', desc: 'Ein Fluss teilt das Tal: Furten, eine Brücke und Kämme an beiden Ufern.',
       palette: 'summer', seed: 41,
-      render: { ...SUMMER, fog: 0xb4c2c4, skyHor: 0xc4d2d6, cloud: 0.6 },
+      render: { ...SUMMER, fog: 0xb8c8d4, skyHor: 0xc4d6e4, cloud: 0.6 },
       noise: { amp: 6, scale: 240, detail: 0.6, ridgedAmp: 4 },
       ground: { soft: 0.15, hard: 0.1 },
       water: 0,
@@ -132,7 +134,8 @@ export const MAPS = {
       id: 'winter', name: 'Winterwald', desc: 'Verschneite Kiefernwälder um einen zugefrorenen See – das Eis trägt, bietet aber keine Deckung.',
       palette: 'winter', seed: 53,
       render: { ...SUMMER, fog: 0xd6dde3, fogNear: 200, fogFar: 1000, sunDir: [0.4, 0.45, 0.6], sunColor: 0xfff6ea, sunIntensity: 2.2,
-         skyLight: 0xdbe6f2, groundLight: 0x8a8f96, skyTop: 0x7e9cc0, skyHor: 0xdfe5ea, skyLow: 0xb8bec4, cloud: 0.8, exposure: 1.2 },
+         skyLight: 0xdbe6f2, groundLight: 0x8a8f96, skyTop: 0x7e9cc0, skyHor: 0xdfe5ea, skyLow: 0xb8bec4, cloud: 0.8, exposure: 1.2,
+         grade: { saturation: 1.05, contrast: 1.06 } },
       noise: { amp: 9, scale: 230, detail: 0.6, ridgedAmp: 6 },
       ground: { soft: 0.25, hard: 0.05 },
       features: [
