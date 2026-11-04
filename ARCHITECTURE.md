@@ -593,8 +593,28 @@ can run an operation unchanged and clients only render `world.campaign`.
 * Maps: `noRandom: true` in `MAPS` (e.g. the sea-half `kueste`) keeps a map out of `RANDOM_MAPS`, the
   pool the menu's "random" map draws from. Such maps are reached only through the campaign or by
   choosing them directly.
-* Tests: `tests/campaign.test.mjs` runs every op headless; `tests/out/_camp.mjs` (scratch) prints
-  per-op outcome and objective states.
+* Twist helpers (used by the story ops `spaehtrupp`, `beute`, …), all sim-side:
+  * `S.countdown(label, s, fn)` → timer object `{ label, left }` (lengthen with `.left += n`, relabel;
+    a later `S.timer` replaces it and its `fn` never fires). `S.retext(id, text)` rewrites an
+    objective (re-emits `objective`). `S.fog(amount, color?)` / `S.fadeFog(amount, s, fn)` change
+    `world.campaign.fog` / `fogColor` mid-op (dawn, snow squall); the client `syncFog` in `main.js`
+    re-applies `R.setFog` whenever the pair changes. A dark `fogColor` (luminance < 0.35) also dims
+    exposure, sun and hemisphere light in `fogTheme` → night ops.
+  * `S.inZone(who, x, z, r)` (`who` = `'player'` | team | tag), `S.zone(x, z, r, fn, { who, n })`
+    one-shot enter trigger, `S.holdZone(label, x, z, r, s, fn, { who, contest })` → `{ held, done,
+    stop() }`: a countdown that only runs while `who` is inside and (with `contest`) no enemy is;
+    the label shows "– umkämpft" / "– Zone verlassen" while paused.
+  * `spawn(..., { noAI, inert })`: `inert` = an abandoned vehicle (no AI, `ai.js` never targets or
+    counts it, e.g. the Tiger to capture). `S.crewUp(t, { aiErr, order })` gives it a crew (BotAI),
+    `S.defect(tanks, team)` switches sides.
+  * `when/at/after` return the trigger; `tr.dead = true` cancels it.
+  * Route orders advance a waypoint also when the bot is within 50 m and has not got closer for
+    10 s (stuck on a ridge or a wreck), not only at 22 m.
+* Tests: `tests/campaign.test.mjs` runs every op headless (plus the twist helpers and the story
+  ops' twist phases); `tests/playwright.campaign.mjs [ops|all]` (needs the dev server) plays each op
+  in the browser with the autopilot, checks the twist phases, the win and the loss path and that the
+  console stays clean; `tests/out/_camp.mjs`, `_trace.mjs <op> [diff] [salt]` (scratch) print
+  per-op outcome and the radio/objective timeline.
 
 ## Campaign UI (client: `menu.js`, `hud.js`, `tanks3d.js`, `progress.js`)
 

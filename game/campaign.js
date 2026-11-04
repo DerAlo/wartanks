@@ -50,6 +50,23 @@ export class Script {
    radio(text, kind = 'radio') { this.c.log.push({ t: this.w.time, text, kind }); this.w.emit('radio', { text, kind }); }
    phase(p) { this.c.phase = p; }
    timer(label, secs) { this.c.timer = label ? { label, left: secs } : null; }
+   /** Mission timer that calls fn when it runs out. Another S.timer()/countdown() replaces (cancels) it;
+    *  the returned object can be lengthened (`tm.left += 60`) or relabelled (`tm.label = ...`). */
+   countdown(label, secs, fn) {
+      this.timer(label, secs); const tm = this.c.timer;
+      this.when((S) => S.c.timer !== tm || tm.left <= 0, (S) => { if (S.c.timer === tm) { S.timer(null); fn?.(S); } });
+      return tm;
+   }
+   /** Rewrite an objective's text when the plan changes mid-mission (HUD shows it as a new order). */
+   retext(id, text) { const o = this.get(id); if (!o) return; o.text = text; if (!o.hidden && this.started) this.w.emit('objective', { id, state: o.state, text }); }
+   /** Mission fog / darkness 0..1: spotting range shrinks by up to 62 % (spotting.js), the client
+    *  re-fogs the scene whenever it changes; color tints it (night: dark blue-grey). */
+   fog(amount, color) { this.c.fog = Math.round(Math.max(0, Math.min(1, amount)) * 100) / 100; if (color != null) this.c.fogColor = color; }
+   /** Fade the fog to `amount` over `secs` (dawn, smoke drifting off); fn when done. */
+   fadeFog(amount, secs, fn) {
+      const f0 = this.c.fog, t0 = this.w.time;
+      const tr = this.when(() => true, (S) => { const k = Math.min(1, (S.time - t0) / secs); S.fog(f0 + (amount - f0) * k); if (k >= 1) { tr.dead = true; fn?.(S); } }, { repeat: true });
+   }
 
    // ------------------------------------------------------------ markers / player guidance
    mark(id, x, z, label, kind = 'goal', r = 0) {
@@ -115,6 +132,8 @@ export class Script {
       const t = w.addTank(cls, team, { x, z, yaw, name: o.name || cfg.name, isPlayer: !!o.isPlayer });
       t.placeOn?.(T);
       t.tag = o.tag || null; if (o.aiErr) t.aiErr = o.aiErr; if (o.viewMul) t.viewMul = o.viewMul;
+      if (o.noAI || o.inert) t.noAI = true;           // inert: abandoned, no crew; AIs of both sides ignore it (ai.js)
+      if (o.inert) t.inert = true;
       if (o.tag) { if (!this.tags.has(o.tag)) this.tags.set(o.tag, []); this.tags.get(o.tag).push(t); }
       if (w.ais && !o.isPlayer) {                     // after construction World does not wire these
          t.side = w.player && t.team === w.player.team ? 'ally' : 'enemy';
@@ -188,12 +207,44 @@ export class Script {
       return n;
    }
    enemyTanksAlive() { return this.w.tanks.filter((t) => t.team === 2 && t.alive && !t.cfg.site).length; }
+   /** How many of `who` ('player' | team number | tag) are alive inside the circle. */
+   inZone(who, x, z, r) {
+      if (who === 'player') { const p = this.player; return p?.alive && Math.hypot(p.pos.x - x, p.pos.z - z) < r ? 1 : 0; }
+      return this.countIn(who, x, z, r);
+   }
+   /** fn once `o.who` (default the player) has at least `o.n` (1) units inside the circle. */
+   zone(x, z, r, fn, o = {}) { return this.when((S) => S.inZone(o.who ?? 'player', x, z, r) >= (o.n ?? 1), fn); }
+   /** Hold a circle for `secs`: the mission timer runs while `o.who` (player) is inside and no tank of
+    *  `o.contest` (team 2; false = never contested) is; fn when held. Returns { held, stop() }. */
+   holdZone(label, x, z, r, secs, fn, o = {}) {
+      const h = { held: 0, done: false };
+      const tr = this.when(() => true, (S) => {
+         const inside = S.inZone(o.who ?? 'player', x, z, r) > 0, contested = o.contest !== false && S.countIn(o.contest ?? 2, x, z, r) > 0;
+         if (inside && !contested) h.held += TICK;
+         S.timer(label + (contested ? ' – umkämpft' : inside ? '' : ' – Zone verlassen'), Math.max(0, secs - h.held));
+         if (h.held >= secs) { h.stop(); fn?.(S); }
+      }, { repeat: true });
+      h.stop = () => { if (h.done) return; h.done = true; tr.dead = true; this.timer(null); };
+      return h;
+   }
+   /** Hand tanks to another team (a captured vehicle, a unit changing sides); AI targeting follows team. */
+   defect(tanks, team) {
+      for (const t of tanks) { t.team = team; t.side = this.w.player && t.team === this.w.player.team ? 'ally' : 'enemy'; t.ai?.reset?.(); }
+   }
+   /** A crew climbs into a vehicle spawned with { noAI } / { inert }: it gets a BotAI (and o.order). */
+   crewUp(t, o = {}) {
+      t.inert = false; t.noAI = false;
+      if (o.aiErr) t.aiErr = o.aiErr;
+      if (!t.ai && this.w.ais) { const ai = new BotAI(this.w, t); this.w.ais.push(ai); t.ai = ai; }
+      this._tuneAI(t);
+      if (o.order) this.order([t], o.order);
+   }
 
    // ------------------------------------------------------------ triggers
    /** fn(S) runs once when cond(S) becomes true (or every time with { repeat: true }) */
-   when(cond, fn, o = {}) { this.triggers.push({ cond, fn, repeat: !!o.repeat, dead: false }); }
-   at(t, fn) { this.when(() => this.w.time >= t, fn); }
-   after(dt, fn) { const t0 = this.w.time; this.when(() => this.w.time >= t0 + dt, fn); }
+   when(cond, fn, o = {}) { const tr = { cond, fn, repeat: !!o.repeat, dead: false }; this.triggers.push(tr); return tr; }   // tr.dead = true cancels
+   at(t, fn) { return this.when(() => this.w.time >= t, fn); }
+   after(dt, fn) { const t0 = this.w.time; return this.when(() => this.w.time >= t0 + dt, fn); }
    every(dt, fn) { let next = this.w.time + dt; this.when(() => { if (this.w.time < next) return false; next += dt; return true; }, fn, { repeat: true }); }
 
    win(reason) { this._end(1, reason); }
@@ -224,7 +275,10 @@ export class Script {
          const o = t.ai?.order; if (!o || !t.alive) continue;
          if (o.kind === 'route' && (o.i || 0) < o.pts.length - 1) {
             const p = o.pts[o.i || 0];
-            if (Math.hypot(t.pos.x - (p.x ?? p[0]), t.pos.z - (p.z ?? p[1])) < 22) { o.i = (o.i || 0) + 1; t.ai.setDest(t.ai.chooseDest()); }
+            const d = Math.hypot(t.pos.x - (p.x ?? p[0]), t.pos.z - (p.z ?? p[1]));
+            // reached, or hung up close to it (a crest, a house) for 10 s without getting nearer: next point
+            if (!(d > (o._bd ?? Infinity) - 2)) { o._bd = d; o._bt = w.time; }
+            if (d < 22 || (d < 50 && w.time - o._bt > 10)) { o.i = (o.i || 0) + 1; o._bd = Infinity; t.ai.setDest(t.ai.chooseDest()); }
          } else if (o.kind === 'ambush' && !o.sprung) {
             const r = o.r ?? 180;
             if (t.lastDamaged > 0 || w.tanks.some((e) => e.alive && e.team !== t.team && e.spotted && Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z) < r)) o.sprung = true;
@@ -581,5 +635,148 @@ export const OPS = {
          S.when((S) => S.isDone('kill'), (S) => { S.done('cp'); if (S.alive('allies') >= 2) S.done('b_ally'); S.timer(null); S.win('Angriff abgewehrt'); });
       },
    },
+   spaehtrupp: {
+      id: 'spaehtrupp', name: 'Spähtrupp an der Beresina', place: 'Südlich von Bobruisk, Weißrussland', date: '24. Juni 1944', nation: 'DE',
+      map: 'steppe', seed: 6244, tanks: ['luchs', 'pz4h'], start0: [0, 430, 0],
+      brief: [
+         'Juni 1944. Die Führung erwartet den sowjetischen Hauptangriff weiter südlich. Der Divisionsstab will Gewissheit: Was steht wirklich vor unserem Abschnitt?',
+         'Ein Spähtrupp aus zwei Luchs fährt vor. Drei Bereitstellungsräume sind gemeldet. Beobachten, melden, nicht kämpfen – ein Spähpanzer gewinnt kein Duell mit einem T-34.',
+         'Kommt ihr zurück, weiß der Stab, was ihn erwartet. Ob er es glauben will, ist eine andere Frage.',
+      ],
+      goals: ['Bereitstellungsräume aufklären', 'Unentdeckt bleiben', 'Mit dem Bericht zurückkehren'],
+      tip: 'Von den markierten Beobachtungspunkten aus stillhalten: Wer sich bewegt oder schießt, wird gesehen.',
+      script(S) {
+         // three Soviet assembly areas: tanks under nets, crews resting (poor view, slow reaction)
+         const A = [[-330, -190, 'West'], [40, -340, 'Nord'], [330, -205, 'Ost']];
+         // observation points with a line of sight into each area (found with tests/out/_obs.mjs)
+         const obs = [[-128, -67], [198, -116], [454, -30]];
+         A.forEach(([x, z], i) => {
+            const set = [['t34_76', -25, 0], ['t34_76', 25, 10], [i === 1 ? 'kv1' : 't34_76', 0, -30]];
+            for (const [c, dx, dz] of set) S.spawn(c, 2, x + dx, z + dz, { tag: 'area' + i, name: TANKS[c].short, viewMul: 0.45, aiErr: 1.5, order: { kind: 'ambush', x: x + dx, z: z + dz, r: 120 } });
+         });
+         S.spawn('luchs', 1, 30, 445, { tag: 'mate', name: 'Luchs (Uffz. Brandt)' });
+         S.obj('scout', 'Bereitstellungsräume aufklären', { need: 2 });
+         S.obj('out', 'Ausbruch: den Sammelpunkt der Kampfgruppe erreichen', { hidden: true });
+         S.obj('b_all', 'Alle drei Bereitstellungen aufklären', { bonus: true, need: 3 });
+         S.obj('b_quiet', 'Kein Schuss vor dem Durchbruch', { bonus: true });
+         S.obj('b_mate', 'Der zweite Luchs kommt durch', { bonus: true });
+         const seen = new Set();
+         const next = (S) => {
+            if (S.c.phase !== 'scout' || !S.player) return;
+            const p = S.player; let bi = -1, bd = Infinity;
+            obs.forEach(([x, z], i) => { if (seen.has(i)) return; const d = Math.hypot(x - p.pos.x, z - p.pos.z); if (d < bd) { bd = d; bi = i; } });
+            obs.forEach(([x, z], i) => { if (!seen.has(i)) S.mark('obs' + i, x, z, 'Beobachtung ' + A[i][2], 'area', 12); });
+            if (bi >= 0) S.goal(obs[bi][0], obs[bi][1], 'Beobachtungspunkt ' + A[bi][2], 12);
+         };
+         S.phase('scout');
+         this.start = (S) => { S.radio('Spähtrupp, hier Stab: Drei Räume sind gemeldet. Wir brauchen Stärke und Art – keine Abschüsse.'); next(S); };
+         // a report needs eyes on the tanks themselves from up close (≤ 320 m)
+         S.when((S) => S.c.phase === 'scout', (S) => {
+            A.forEach(([x, z], i) => {
+               if (seen.has(i) || !S.player?.alive) return;
+               if (Math.hypot(S.player.pos.x - x, S.player.pos.z - z) > 320 || !S.group('area' + i).some((t) => t.spotted)) return;
+               seen.add(i); S.unmark('obs' + i);
+               S.progress('scout', seen.size); S.progress('b_all', seen.size);
+               S.radio(['Raum West: Panzer unter Netzen, mindestens ein Bataillon. Gemeldet.', 'Raum Nord: schwere KW dabei! Gemeldet.', 'Raum Ost: T-34 in Bereitstellung, Infanterie sitzt auf. Gemeldet.'][i]);
+               next(S);
+            });
+            if (S.player?.stats.shots > 0 && S.get('b_quiet').state === 'active') S.fail('b_quiet');
+         }, { repeat: true });
+         S.every(12, (S) => { if (S.c.phase === 'scout' && S.player) S.order(S.group('mate').filter((t) => t.alive), { kind: 'advance', x: S.player.pos.x + 25, z: S.player.pos.z + 30 }); });
+         // the twist: the offensive starts while the patrol is still out; the way home is gone
+         const exits = [[-450, 255], [440, 330]]; let exit = exits[0];
+         S.when((S) => S.c.phase === 'scout' && ((S.isDone('scout') && (seen.size === 3 || S.time > 420)) || S.time > 600), (S) => {
+            // the rally point is whichever end of the front is nearer: west road or the farm in the south-east
+            const p = S.player; exit = exits[Math.hypot(p.pos.x - exits[0][0], p.pos.z - exits[0][1]) < Math.hypot(p.pos.x - exits[1][0], p.pos.z - exits[1][1]) ? 0 : 1];
+            S.phase('out'); if (S.get('b_quiet').state === 'active') S.done('b_quiet');
+            if (!S.isDone('scout')) S.fail('scout');
+            for (let i = 0; i < 3; i++) S.unmark('obs' + i);
+            S.radio('Hier Stab – Trommelfeuer auf der ganzen Front! Der Iwan greift beiderseits an euch vorbei an. Der Rückweg nach Süden ist abgeschnitten!', 'warn');
+            S.after(6, (S) => S.radio('Sammelpunkt der Kampfgruppe ist markiert. Durch den Rauch, nicht stehen bleiben!', 'warn'));
+            S.show('out'); S.mark('exit', exit[0], exit[1], 'Sammelpunkt', 'area', 60); S.goal(exit[0], exit[1], 'Sammelpunkt Kampfgruppe', 50);
+            S.fog(0.4, 0x9a9890);                                      // smoke of the barrage over the steppe
+            // the assembled tanks roll south past the patrol: they are after the front, not after one Luchs
+            for (let i = 0; i < 3; i++) S.order(S.group('area' + i).filter((t) => t.alive), { kind: 'route', pin: true, pts: [[-300 + i * 300, 150], [-300 + i * 300, 470]] });
+            // a blocking group on the road and a pursuit from the north-east
+            // a T-34 platoon has already crossed the road: it lies on the flank of the way to the rally point
+            const mx = (p.pos.x + exit[0]) / 2, mz = (p.pos.z + exit[1]) / 2, L = Math.hypot(exit[0] - p.pos.x, exit[1] - p.pos.z) || 1, nx = -(exit[1] - p.pos.z) / L, nz = (exit[0] - p.pos.x) / L, sd = mx * nx + mz * nz > 0 ? -1 : 1;
+            for (const k of [-30, 30]) S.spawn('t34_76', 2, mx + nx * sd * 190 + k, mz + nz * sd * 190 - k, { tag: 'block', name: 'T-34/76', aiErr: 1.8, viewMul: 0.7, order: { kind: 'ambush', x: mx + nx * sd * 190 + k, z: mz + nz * sd * 190 - k, r: 220 } });
+            S.after(25, (S) => {
+               for (const x of [200, 280]) S.spawn('t34_85', 2, x, -470, { tag: 'chase', name: 'T-34-85', aiErr: 1.3, order: { kind: 'route', pin: true, pts: [[x * 0.3, -150], [exit[0] * 0.5, exit[1] * 0.5], [exit[0], exit[1]]] } });
+               S.radio('Zwei T-34 hinter euch!', 'warn');
+            });
+            S.order(S.group('mate').filter((t) => t.alive), { kind: 'advance', x: exit[0], z: exit[1] });
+         });
+         S.when((S) => S.c.phase === 'out' && S.inZone('player', exit[0], exit[1], 60), (S) => {
+            S.done('out'); if (S.alive('mate')) S.done('b_mate'); else S.fail('b_mate');
+            S.radio('Ihr seid durch. Der Bericht kommt zu spät, um noch etwas zu ändern – aber die Kampfgruppe weiß jetzt, wohin sie ausweichen kann.');
+            S.win('Mit dem Bericht durchgekommen');
+         });
+         S.when((S) => S.dead('mate') > 0, (S) => { S.fail('b_mate'); S.radio('Brandt ist getroffen – der zweite Luchs brennt!', 'warn'); });
+      },
+   },
+
+   beute: {
+      id: 'beute', name: 'Beute im Schnee', place: 'Arbeitersiedlung Nr. 5 bei Leningrad', date: '17. Januar 1943', nation: 'SU',
+      map: 'winter', seed: 1743, tanks: ['t34_76', 'kv1'], start0: [0, 430, 0],
+      brief: [
+         'Operation Iskra: Seit Tagen kämpfen die Wolchow- und die Leningrader Front um einen Landweg in die belagerte Stadt.',
+         'Die Aufklärung meldet einen neuen schweren deutschen Panzer, im Moor nördlich des Sees festgefahren und von der Besatzung verlassen. Niemand bei uns hat so etwas je gesehen.',
+         'Die Wache ausschalten, den Panzer bergen und in die eigenen Linien bringen. Er darf nicht zerstört werden – die Deutschen werden genau das versuchen.',
+      ],
+      goals: ['Die Wache am Moor ausschalten', 'Den Panzer bergen', 'Ihn in die eigenen Linien geleiten'],
+      tip: 'Der erbeutete Panzer ist als eigener markiert – nicht darauf schießen. Stell dich zwischen ihn und den Gegenstoß.',
+      script(S) {
+         const P = [60, -175];
+         const tiger = S.spawn('tiger1', 1, P[0], P[1], { yaw: 0.6, inert: true, tag: 'prize', name: 'Tiger (verlassen)' });
+         for (const [x, z] of [[-60, -105], [150, -95]]) S.spawn('pak40', 2, x, z, { tag: 'guard', aiErr: 2.4, order: { kind: 'hold', x, z } });
+         for (const [x, z] of [[-10, -215]]) S.spawn('pz4h', 2, x, z, { tag: 'guard', name: 'Panzer IV', aiErr: 1.6, order: { kind: 'ambush', x, z, r: 170 } });
+         for (const [x, c] of [[-60, 't34_76'], [60, 'kv1']]) S.spawn(c, 1, x, 440, { tag: 'allies', name: TANKS[c].short, order: { kind: 'route', pts: [[-200 + x, 180], [-150 + x, -30]] } });
+         S.obj('guard', 'Die Wache am Moor ausschalten', { need: 3 });
+         S.obj('tow', 'Den Panzer freischleppen lassen', { hidden: true });
+         S.obj('escort', 'Den Beutepanzer in die eigenen Linien geleiten', { hidden: true });
+         S.obj('b_tiger', 'Den zweiten Tiger vernichten', { bonus: true, hidden: true });
+         S.obj('b_hp', 'Die Beute kommt mit mehr als halber Panzerung an', { bonus: true });
+         S.goal(-210, 170, 'Waldrand West', 30);
+         S.zone(-210, 170, 50, (S) => S.goal(-160, -40, 'Westufer des Sees', 30));
+         for (const t of S.group('guard')) t.viewMul = 0.55;           // freezing in their dugouts, watching the ice
+         S.fog(0.45, 0xe6eaee);                     // driving snow: the guard sees no farther than we do
+         this.start = (S) => S.radio('Hier Regiment: Schneetreiben – nutzt es. Das Eis trägt, aber auf dem See gibt es keine Deckung. Am Westufer entlang zum Moor!');
+         S.zone(-160, -40, 60, (S) => { for (const t of S.group('guard')) t.viewMul = 1; S.radio('Wache am Moor erkannt. Pak und Panzer – aber trefft den Koloss nicht!'); S.hunt('guard', 'Wache'); });
+         S.after(150, (S) => { if (!S._hunt && S.alive('guard')) S.hunt('guard', 'Wache'); });
+         S.when(() => true, (S) => S.progress('guard', S.dead('guard')), { repeat: true });
+         S.when(() => !tiger.alive, (S) => { S.fail('escort'); S.lose('Der Beutepanzer ist zerstört'); });
+         S.when((S) => S.isDone('guard'), (S) => {
+            S._hunt = null; S.show('tow'); S.phase('tow'); S.fadeFog(0.1, 40); S.refit(0.35, 'Ein Bergeschlepper und Pioniere kommen über das Eis. Haltet ihnen den Rücken frei!');
+            S.goal(P[0], P[1] - 25, 'Beutepanzer', 20);
+            S.order(S.group('allies').filter((t) => t.alive), { kind: 'advance', x: P[0] - 30, z: P[1] - 30 });
+            S.holdZone('Bergetrupp schleppt frei', P[0], P[1], 70, 50, (S) => {
+               S.done('tow'); S.phase('escort'); S.show('escort');
+               S.radio('Er läuft! Unsere Fahrer bringen ihn in Gang – mit der Kanone können sie nicht umgehen. Begleitet ihn über das Eis nach Süden!');
+               S.crewUp(tiger, { aiErr: 2.5, order: { kind: 'route', pin: true, pts: [[60, -90], [20, 0], [0, 200], [0, 400]] } });
+               tiger.name = 'Tiger (erbeutet)';
+               S.goal(0, 400, 'Eigene Linien', 60);
+               S.order(S.group('allies').filter((t) => t.alive), { kind: 'advance', x: 160, z: 100 });
+               // the twist: a second Tiger of the same company comes after its lost comrade
+               S.after(25, (S) => {
+                  S.show('b_tiger'); S.radio('Noch so ein Koloss hinter euch, aus Nordwest! Er jagt die Beute – stellt euch dazwischen, trefft ihn seitlich!', 'warn');
+                  S.spawn('tiger1', 2, -300, -460, { tag: 'tiger', name: 'Tiger', aiErr: 1.7, viewMul: 0.75, order: { kind: 'route', pin: true, pts: [[-150, -250], [60, -60], [150, 120]] } });
+               });
+            });
+            // the twist: the Germans counter-attack to recover or destroy it, led by a second Tiger
+            S.after(20, (S) => {
+               tiger.inert = false;                    // from now on they want it destroyed
+               S.radio('Gegenstoß aus Norden! Panzer IV – sie wollen ihn zurückholen oder sprengen!', 'warn');
+               for (const [x, dt] of [[220, 0], [-60, 35]]) S.after(dt, (S) => S.spawn('pz4h', 2, x, -470, { tag: 'counter', name: 'Panzer IV', aiErr: 1.8, order: { kind: 'route', pts: [[x * 0.6, -300], [P[0], P[1] - 40]] } }));
+            });
+         });
+         S.when((S) => S.group('tiger').length && !S.alive('tiger'), (S) => { S.done('b_tiger'); S.radio('Der zweite Tiger brennt!'); });
+         S.when((S) => S.c.phase === 'escort' && Math.hypot(tiger.pos.x, tiger.pos.z - 400) < 70, (S) => {
+            S.done('escort'); if (tiger.hp > tiger.maxHP * 0.5) S.done('b_hp'); else S.fail('b_hp');
+            S.radio('Der Beutepanzer ist in unseren Linien. Bald wissen unsere Panzerjäger, wo er verwundbar ist.');
+            S.win('Beutepanzer geborgen');
+         });
+      },
+   },
 };
-export const OP_LIST = ['westwall', 'arracourt', 'lasttiger', 'danzig', 'seelow'];
+export const OP_LIST = ['westwall', 'arracourt', 'lasttiger', 'danzig', 'seelow', 'spaehtrupp', 'beute'];

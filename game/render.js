@@ -187,9 +187,12 @@ export function fogTheme(th = {}, f = 0, color = 0xc3c7c2) {
    f = Math.min(1, f);
    const mix = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), Math.min(1, t)).getHex();
    const fog = mix(th.fog ?? 0xb9c2b8, color, f);
+   const cc = new THREE.Color(color), lum = 0.3 * cc.r + 0.6 * cc.g + 0.1 * cc.b;
    return { ...th, fog, fogNear: Math.max(15, (th.fogNear ?? 260) * (1 - 1.4 * f)), fogFar: Math.max(240, (th.fogFar ?? 1150) * (1 - 1.12 * f)),
       skyHor: fog, skyTop: mix(th.skyTop ?? 0x5f8fc4, fog, f * 1.3), skyLow: fog,
       sunIntensity: (th.sunIntensity ?? 2.6) * (1 - 0.45 * f), hemiIntensity: (th.hemiIntensity ?? 0.95) * (1 + 0.25 * f), cloud: (th.cloud ?? 0.6) * (1 - f),
       skySun: mix(th.sunColor ?? 0xfff1d6, 0x000000, 0.4 + 0.6 * f),   // no glow or white clouds through the mist
-      grade: { ...(th.grade || {}), saturation: (th.grade?.saturation ?? 1.06) * (1 - 0.25 * f), bloom: 0.1 } };
+      grade: { ...(th.grade || {}), saturation: (th.grade?.saturation ?? 1.06) * (1 - 0.25 * f), bloom: 0.1 },
+      // a dark tint (night ops) also darkens the light: lower exposure, sun and sky fill with the tint's brightness
+      ...(lum < 0.35 ? { exposure: (th.exposure ?? 1.05) * (1 - f * Math.max(0, 0.55 - 1.5 * lum)), sunIntensity: (th.sunIntensity ?? 2.6) * (1 - f * (0.8 - lum)), hemiIntensity: (th.hemiIntensity ?? 0.95) * (1 - f * (0.5 - lum)) } : {}) };
 }

@@ -194,7 +194,7 @@ export class BotAI {
       const t = this.tank, mem = intel(this.w, t.team);
       let best = null, bs = Infinity;
       for (const e of this.w.tanks) {
-         if (!e.alive || e.team === t.team) continue;
+         if (!e.alive || e.team === t.team || e.inert) continue;   // inert: an abandoned vehicle (campaign) nobody shoots at
          const k = mem.get(e.id); if (!k) continue;
          const score = Math.hypot(k.x - t.pos.x, k.z - t.pos.z) + (this.w.time - k.t) * 2;
          if (score < bs) { bs = score; best = k; }
@@ -311,6 +311,7 @@ export class BotAI {
       for (const e of w.tanks) {
          if (!e.alive) continue;
          if (e.team === t.team) { nOwn++; continue; }
+         if (e.inert) continue;
          nEnemy++;
          if (e.spotted) { const k = mem.get(e.id); if (k) { k.x = e.pos.x; k.z = e.pos.z; k.t = w.time; } else mem.set(e.id, { x: e.pos.x, z: e.pos.z, t: w.time }); }
       }
@@ -367,7 +368,7 @@ export class BotAI {
       const t = this.tank, w = this.w;
       let best = null, bs = Infinity;
       for (const e of w.tanks) {
-         if (!e.alive || e.team === t.team || !e.spotted) continue;
+         if (!e.alive || e.team === t.team || !e.spotted || e.inert) continue;
          const d = Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z);
          if (d > WORLD.DRAW_RANGE) continue;
          if (!this.los(e)) continue;

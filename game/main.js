@@ -42,8 +42,8 @@ export function startBattle(opts = {}) {
    const world = G.world = opts.world || new stateM.World({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
    if (!opts.world && opts.playerPerks && world.player?.setPerks) world.player.setPerks(opts.playerPerks);   // crew skills from the garage (net games: setup.buildWorld)
    G.battleOpts = { ...opts }; delete G.battleOpts.world; G.endT = 0; G.paused = false;
-   const th = fogTheme(themeOf(world.mapId ?? opts.mapId), world.campaign?.fog || 0);   // misty ops (Arracourt)
-   R.setTheme(th); sky.setTheme(th, R.sunDir);
+   const base = themeOf(world.mapId ?? opts.mapId), th = fogTheme(base, world.campaign?.fog || 0, world.campaign?.fogColor);   // misty / night ops
+   R.setTheme(base); sky.setTheme(base, R.sunDir); G.fogSeen = -1; syncFog(world);
    terrain3d = new Terrain3D(R.scene, world.terrain, th, q);
    if (tanks3dM.Tanks3D) tanks3d = G.tanks3d = new tanks3dM.Tanks3D(R.scene, world);
    if (fxM.FX) fx = new fxM.FX(R.scene, world, q);
@@ -62,6 +62,12 @@ export function stopBattle() {
    terrain3d = tanks3d = G.tanks3d = fx = hud = null; G.world = null; G.paused = false; G.aimTarget = null; G.fireReq = null;
    document.getElementById('scope').classList.remove('on');
    const hc = document.getElementById('hudc'); hc.getContext('2d')?.clearRect(0, 0, hc.width, hc.height);
+}
+// campaign fog / night can change mid-mission (S.fog / S.fadeFog: dawn, smoke): re-fog on change only
+function syncFog(world) {
+   const C = world?.campaign; if (!C) return;
+   const key = (C.fog || 0) + ':' + (C.fogColor ?? '');
+   if (key !== G.fogSeen) { G.fogSeen = key; R.setFog(C.fog || 0, C.fogColor); }
 }
 function getAudio() { if (audioM.Audio && !audio) audio = G.audio = new audioM.Audio(); return audio; }
 // battle over (world.phase won/lost/draw): short pause on the battlefield, then the results screen
@@ -267,6 +273,7 @@ function frame(now) {
       G.acc += dt; let n = 0;
       while (G.acc >= SIM_DT && n++ < 6) { snapPrev(world); world.update(SIM_DT); G.acc -= SIM_DT; }
       if (n >= 6) G.acc = 0;
+      syncFog(world);
       lerpPoses(world, G.acc / SIM_DT);   // draw tanks between the last two sim steps (no stepping judder)
       if (p) {
          const v = (!p.alive && G.spec?.alive) ? G.spec : p;   // spectator: follow the chosen ally
