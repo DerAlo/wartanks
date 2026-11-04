@@ -395,6 +395,13 @@ nation. Works without localStorage (memory fallback).
   snow on upward faces on the winter map), tank weathering (`tanks3d.weathered`: mud on the
   running gear by height above ground, dust, streaks, winter whitewash + snow; per map via
   `setTankWeather(mapId)`).
+* Reflections (mid/high, `render.js`): the sky dome plus a ground disc is prefiltered (PMREM) into
+  `scene.environment` whenever the theme or fog changes (`Sky.setTheme` sets `envDirty`, rebuilt on
+  the next frame). Its diffuse part is scaled to 35 % and the hemisphere light to 80 %, so the env
+  mostly adds specular sky reflections; low tier has no env and the full hemi. Tank paint is
+  semi-gloss with chipped bare-steel flecks and a faint cast bump (`weathered`), water has
+  analytic ripple normals, sun glint and fresnel alpha, tree crowns get leaf clusters and sun
+  translucency (`patchLeaves`).
 * Quality tiers (`gfxquality.js`): low = no MSAA, no bloom; mid = MSAA 4, 4 bloom levels; high =
   MSAA 4, 5 levels. Post costs ~10 draw calls (bloom chain + composite).
 
