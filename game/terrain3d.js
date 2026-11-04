@@ -80,6 +80,31 @@ uniform float uWind;${snow ? ' varying float vSnowN; varying vec3 vSnowP;' : ''}
    };
    mat.customProgramCacheKey = () => key + (snow ? '-snow' : '');
 }
+// Foliage look on top of patchWind: leaf-cluster shading from object-space noise (breaks the smooth
+// lumps into clumps) and sun translucency, so crowns glow yellow-green when looking towards the sun.
+function patchLeaves(mat) {
+   const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey();
+   mat.onBeforeCompile = (sh, r) => {
+      prev(sh, r);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLeafP;')
+         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLeafP = position;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vLeafP;
+float lfH(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float lfN(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+   return mix(mix(mix(lfH(i), lfH(i+vec3(1,0,0)), f.x), mix(lfH(i+vec3(0,1,0)), lfH(i+vec3(1,1,0)), f.x), f.y),
+              mix(mix(lfH(i+vec3(0,0,1)), lfH(i+vec3(1,0,1)), f.x), mix(lfH(i+vec3(0,1,1)), lfH(i+vec3(1,1,1)), f.x), f.y), f.z); }`)
+         .replace('#include <color_fragment>', `#include <color_fragment>
+float leafN = lfN(vLeafP * 2.3) * 0.65 + lfN(vLeafP * 5.7) * 0.35;
+diffuseColor.rgb *= 0.74 + 0.5 * smoothstep(0.3, 0.75, leafN);`)
+         .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+#if NUM_DIR_LIGHTS > 0
+{ float bk = pow(max(dot(-normalize(vViewPosition), directionalLights[0].direction), 0.0), 5.0);
+  reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(1.0, 1.05, 0.6) * directionalLights[0].color * bk * 0.22 * (0.6 + leafN); }
+#endif`);
+   };
+   mat.customProgramCacheKey = () => key + '-leaf';
+}
 
 function hash(x, z) { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); }
 function vnoise(x, z) {
@@ -184,7 +209,7 @@ export class Terrain3D {
       this.groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.detail, bumpMap: this.detail, bumpScale: 2.2, roughness: 0.97, metalness: 0, envMapIntensity: 0.5 });
       patchGround(this.groundMat, { dry: this.winter ? 0.25 : pid === 'steppe' ? 0.8 : 0.6, rock: this.pal.rock.clone().multiplyScalar(this.winter ? 1.15 : 1) });
       this.vegMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, envMapIntensity: 0.6 });
-      patchWind(this.vegMat, [0.03, 2.5], 'pz-veg', this.winter ? 0.75 : 0);   // smooth: faceted crowns read as flat planes in the x8/x16 scope
+      patchWind(this.vegMat, [0.03, 2.5], 'pz-veg', this.winter ? 0.75 : 0); patchLeaves(this.vegMat);   // smooth: faceted crowns read as flat planes in the x8/x16 scope
       this.buildGround();
       this.buildWater();
       this.buildObjects();

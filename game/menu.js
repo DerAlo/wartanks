@@ -487,7 +487,9 @@ export class Menu {
    buildScene() {
       if (this.scene) return;
       const R = this.R, S = this.scene = new THREE.Group(); R.scene.add(S);
-      const th = this.ctx.themeOf?.('steppe') || {};
+      // the preview camera sits at azimuth ~0.85 rad: a sun from its left front models the hull (lit
+      // side, shaded side, glints on the deck) instead of flat front light
+      const th = { ...(this.ctx.themeOf?.('steppe') || {}), sunDir: [-0.3, 0.58, 0.76] };
       R.setTheme?.(th); this.ctx.sky?.setTheme?.(th, R.sunDir);
       this.own = [];   // geometries/materials to dispose
       const mk = (geo, mat) => { this.own.push(geo, mat); return new THREE.Mesh(geo, mat); };
@@ -514,9 +516,9 @@ export class Menu {
       const ctex = new THREE.CanvasTexture(cv); ctex.colorSpace = THREE.SRGBColorSpace; ctex.anisotropy = 8; ctex.wrapS = ctex.wrapT = THREE.RepeatWrapping; ctex.repeat.set(2, 2); this.own.push(ctex);
       const apron = mk(new THREE.PlaneGeometry(26, 26), new THREE.MeshStandardMaterial({ map: ctex, roughness: 0.92 }));
       apron.rotation.x = -Math.PI / 2; apron.position.y = 0.02; apron.receiveShadow = true; S.add(apron);
-      const table = this.table = mk(new THREE.CylinderGeometry(5.4, 5.6, 0.32, 64), new THREE.MeshStandardMaterial({ color: 0x5c5b52, roughness: 0.7, metalness: 0.15 }));
+      const table = this.table = mk(new THREE.CylinderGeometry(5.4, 5.6, 0.32, 64), new THREE.MeshStandardMaterial({ color: 0x737168, roughness: 0.52, metalness: 0.4 }));
       table.position.y = 0.16; table.receiveShadow = true; table.castShadow = true; S.add(table);
-      const ring = mk(new THREE.TorusGeometry(5.42, 0.07, 6, 96), new THREE.MeshStandardMaterial({ color: 0x8a7440, roughness: 0.6, metalness: 0.2 }));
+      const ring = mk(new THREE.TorusGeometry(5.42, 0.07, 6, 96), new THREE.MeshStandardMaterial({ color: 0xb08f48, roughness: 0.3, metalness: 0.85 }));
       ring.rotation.x = Math.PI / 2; ring.position.y = 0.3; S.add(ring);
       // depot props: fuel drums, ammo crates, sandbag wall (one merged vertex-coloured mesh)
       { const parts = [], add = (geo, x, y, z, ry, hex) => { geo.rotateY(ry); geo.translate(x, y, z); const c = new THREE.Color(hex), n = geo.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { const k = 0.9 + Math.random() * 0.15; a[i * 3] = c.r * k; a[i * 3 + 1] = c.g * k; a[i * 3 + 2] = c.b * k; } geo.setAttribute('color', new THREE.BufferAttribute(a, 3)); parts.push(geo.index ? geo.toNonIndexed() : geo); };
