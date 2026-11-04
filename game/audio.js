@@ -81,7 +81,7 @@ export class Audio {
          const V = this.voices[i], t = i === 0 ? (p?.alive !== false ? p : null) : near[i - 1];
          if (V.tank !== t) {
             V.v?.stop(); V.v = null; V.tank = t;
-            if (t) { const diesel = t.cfg?.engine?.diesel ?? (t.cfg?.engine?.fuel ? t.cfg.engine.fuel === 'diesel' : t.cfg?.nation === 'SU'); V.v = S.engineVoice(c, V.pan, diesel); }
+            if (t) V.v = S.engineVoice(c, V.pan, S.engineType(t.cfg));
          }
          if (!t || !V.v) continue;
          const spd = Math.abs(t.speed || 0), vmax = (t.cfg?.vMax ?? 40) / 3.6, thr = Math.abs(t.input?.throttle || 0);

@@ -95,27 +95,91 @@ export function crackleLoop(ctx, out) {
    return { gain: g, stop: () => { s.stop(); lfo.stop(); } };
 }
 // engine voice: two detuned oscillators + rough noise through a low-pass, plus a clatter loop
-export function engineVoice(ctx, out, diesel) {
+// ---- engine: combustion-pulse synthesis -------------------------------------------------------
+// A real engine is a train of exhaust pops (one per cylinder firing, two crank turns per cycle) ringing
+// through the exhaust pipe. Each loop is a few cycles of such pops with per-cylinder unevenness, rendered
+// at a fixed rpm; three loops (idle / mid / high) are pitched by playbackRate and crossfaded, as
+// sample-based car games do, so the pipe resonance never shifts far. Loops are cached per engine type.
+const ENGINE_LOOPS = new Map();
+function rng(seed) { let x = seed >>> 0 || 1; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296); }
+// type: { cyl, diesel, res (pipe resonance Hz), seed }
+function engineLoop(ctx, type, rpm) {
+   const key = type.key + '@' + rpm; let buf = ENGINE_LOOPS.get(key); if (buf) return buf;
+   const sr = ctx.sampleRate, cycle = 120 / rpm, nCyc = Math.max(4, Math.round(1.6 / cycle)), N = Math.round(nCyc * cycle * sr);
+   const d = new Float32Array(N), R = rng(type.seed + rpm), cyl = type.cyl;
+   // fixed per-cylinder character: V engines fire unevenly between banks, cylinders differ a little
+   const off = [], amp = []; for (let k = 0; k < cyl; k++) { off.push((R() - 0.5) * 0.06 + (k % 2 ? 0.025 : -0.025) * (type.vee ? 1 : 0)); amp.push(0.8 + R() * 0.4); }
+   const fr = type.res * (0.92 + rpm / 9000), tauR = type.diesel ? 0.009 : 0.012, fb = type.diesel ? 480 : 300, tauB = type.diesel ? 0.006 : 0.005;
+   const knock = type.diesel ? 0.9 : 0.35, L = Math.round(0.09 * sr);
+   // 4 pulse templates (the crack noise differs), then every firing is a scaled copy: cheap enough to
+   // build at battle start without a hitch
+   const tpl = [];
+   for (let v = 0; v < 4; v++) {
+      const P = new Float32Array(L), ph = R() * 0.6; let lp = 0;
+      for (let i = 0; i < L; i++) {
+         const t = i / sr, n = R() * 2 - 1; lp += (n - lp) * 0.35;
+         P[i] = Math.exp(-t / tauR) * Math.sin(6.2832 * fr * t + ph)          // pipe boom
+            + Math.exp(-t / tauB) * Math.sin(6.2832 * fb * t) * 0.9           // body bark
+            + Math.exp(-t / 0.003) * lp * knock * 1.6;                       // combustion crack
+      }
+      tpl.push(P);
+   }
+   for (let c = 0; c < nCyc; c++) for (let k = 0; k < cyl; k++) {
+      const t0 = (c + (k + off[k]) / cyl) * cycle + (R() - 0.5) * 0.012 * cycle / cyl, A = amp[k] * (0.85 + R() * 0.3);
+      const i0 = Math.round(t0 * sr), P = tpl[(R() * 4) | 0];
+      for (let i = 0; i < L; i++) d[(i0 + i) % N] += A * P[i];
+   }
+   // DC removal + gentle lowpass, normalise
+   let m = 0; for (let i = 0; i < N; i++) m += d[i]; m /= N;
+   let y = 0, pk = 1e-6; const k = 1 - Math.exp(-6.2832 * 2600 / sr);
+   for (let p = 0; p < 2; p++) for (let i = 0; i < N; i++) { y += (d[i] - m * (p ? 0 : 1) - y) * k; if (p) { d[i] = y; pk = Math.max(pk, Math.abs(y)); } }
+   for (let i = 0; i < N; i++) d[i] /= pk;
+   buf = ctx.createBuffer(1, N, sr); buf.copyToChannel(d, 0); ENGINE_LOOPS.set(key, buf);
+   return buf;
+}
+/** engine type from a tank config: cylinder count / fuel / pipe resonance (bigger engine -> deeper) */
+export function engineType(cfg) {
+   const e = cfg?.engine || {}, diesel = e.diesel ?? (e.fuel ? e.fuel === 'diesel' : cfg?.nation === 'SU');
+   const hp = e.hp || 400, cyl = e.cyl ?? (hp < 250 ? 6 : cfg?.nation === 'US' && hp <= 500 ? 8 : 12);
+   const res = e.res ?? Math.max(85, Math.min(150, 175 - hp * 0.12));
+   return { key: (diesel ? 'd' : 'p') + cyl + ':' + Math.round(res), cyl, diesel, vee: cyl >= 8, res, seed: cyl * 7919 + Math.round(res) };
+}
+const LOOP_RPM = [650, 1300, 2300];
+export function engineVoice(ctx, out, typeOrDiesel) {
+   const type = typeof typeOrDiesel === 'object' ? typeOrDiesel : engineType({ engine: { fuel: typeOrDiesel ? 'diesel' : 'petrol', hp: 500 } });
    const g = ctx.createGain(); g.gain.value = 0; g.connect(out);
-   const lp = filt(ctx, 'lowpass', 500, 1.5); lp.connect(g);
-   const o1 = ctx.createOscillator(); o1.type = diesel ? 'square' : 'sawtooth';
-   const o2 = ctx.createOscillator(); o2.type = 'sawtooth'; o2.detune.value = diesel ? -1200 : 7;
-   const og = ctx.createGain(); og.gain.value = diesel ? 0.18 : 0.22; o1.connect(og); o2.connect(og); og.connect(lp);
-   // firing pulses: amplitude modulation for the diesel knock
-   const am = ctx.createOscillator(); am.type = 'square'; const amg = ctx.createGain(); amg.gain.value = diesel ? 0.09 : 0.03; am.connect(amg).connect(og.gain);
-   const n = ctx.createBufferSource(); n.buffer = brown(ctx); n.loop = true; const ng = ctx.createGain(); ng.gain.value = 0.35; n.connect(ng).connect(lp);
-   const cl = ctx.createBufferSource(); cl.buffer = clatter(ctx); cl.loop = true; const cg = ctx.createGain(); cg.gain.value = 0; const cf = filt(ctx, 'bandpass', 1300, 0.7); cl.connect(cf).connect(cg).connect(out);
-   for (const s of [o1, o2, am, n, cl]) s.start();
+   const lp = filt(ctx, 'lowpass', 900, 0.6); lp.connect(g);
+   // load drives a soft clipper: under throttle the pops get rough and loud, off throttle they burble
+   const drive = ctx.createGain(); drive.gain.value = 1;
+   const sh = ctx.createWaveShaper(); const cv = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; cv[i] = Math.tanh(x * 2.2) / Math.tanh(2.2); } sh.curve = cv;
+   const low = filt(ctx, 'lowshelf', 110, 0.7); low.gain.value = 1.5;
+   drive.connect(sh).connect(low).connect(lp);
+   const srcs = LOOP_RPM.map((r) => { const s = ctx.createBufferSource(); s.buffer = engineLoop(ctx, type, r); s.loop = true; const sg = ctx.createGain(); sg.gain.value = 0; s.connect(sg).connect(drive); s.start(ctx.currentTime + Math.random() * 0.05); return { s, sg, r }; });
+   // transmission whine (spur gears / final drive), tied to road speed
+   const wo = ctx.createOscillator(); wo.type = 'triangle'; const wg = ctx.createGain(); wg.gain.value = 0; const wf = filt(ctx, 'bandpass', 700, 3); wo.connect(wf).connect(wg).connect(g); wo.start();
+   const cl = ctx.createBufferSource(); cl.buffer = clatter(ctx); cl.loop = true; const cg = ctx.createGain(); cg.gain.value = 0; const cf = filt(ctx, 'bandpass', 1300, 0.7); cl.connect(cf).connect(cg).connect(out); cl.start();
+   const idle = LOOP_RPM[0], max = 2600;
    return {
-      g, lp, o1, o2, am, cl, cg, diesel,
+      g, cl, cg, type,
       set(rpm, load, speed, vol, now) {   // rpm 0..1
-         const f = diesel ? 28 + rpm * 46 : 38 + rpm * 70;
-         o1.frequency.setTargetAtTime(f, now, 0.08); o2.frequency.setTargetAtTime(f * (diesel ? 1 : 1.005), now, 0.08); am.frequency.setTargetAtTime(f * (diesel ? 0.5 : 1), now, 0.08);
-         lp.frequency.setTargetAtTime(240 + rpm * 700 + load * 500, now, 0.1);
-         g.gain.setTargetAtTime(vol * (0.35 + load * 0.4 + rpm * 0.25), now, 0.1);
+         const R = idle + (max - idle) * rpm;
+         for (let i = 0; i < srcs.length; i++) {
+            const S = srcs[i], lo = LOOP_RPM[i - 1], hi = LOOP_RPM[i + 1];
+            let w = 1;
+            if (lo != null && R < S.r) w = Math.max(0, (R - lo) / (S.r - lo));
+            if (hi != null && R > S.r) w = Math.max(0, (hi - R) / (hi - S.r));
+            if (lo == null && R < S.r) w = 1; if (hi == null && R > S.r) w = 1;
+            S.sg.gain.setTargetAtTime(Math.sqrt(w), now, 0.06);
+            S.s.playbackRate.setTargetAtTime(R / S.r, now, 0.06);
+         }
+         drive.gain.setTargetAtTime(0.55 + load * 1.1, now, 0.08);
+         lp.frequency.setTargetAtTime(900 + rpm * 1400 + load * 1300, now, 0.1);
+         g.gain.setTargetAtTime(vol * (0.55 + load * 0.35 + rpm * 0.2), now, 0.1);
+         wo.frequency.setTargetAtTime(90 + speed * 38, now, 0.1); wf.frequency.setTargetAtTime(180 + speed * 76, now, 0.1);
+         wg.gain.setTargetAtTime(Math.min(1, speed / 3) * 0.05, now, 0.15);
          cl.playbackRate.setTargetAtTime(Math.max(0.05, speed * 0.16), now, 0.1);
          cg.gain.setTargetAtTime(vol * Math.min(1, speed / 4) * 0.35, now, 0.1);
       },
-      stop() { for (const s of [o1, o2, am, n, cl]) try { s.stop(); } catch { /* already */ } g.disconnect(); cg.disconnect(); },
+      stop() { for (const s of [...srcs.map((x) => x.s), wo, cl]) try { s.stop(); } catch { /* already */ } g.disconnect(); cg.disconnect(); },
    };
 }
