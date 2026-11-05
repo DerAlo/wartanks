@@ -7,6 +7,7 @@ import * as THREE from '../vendor/three/three.module.min.js';
 import { AMMO, BALLISTICS, MODULES, CREW_NAMES, CONSUMABLES, PLATE_NAMES, TIER_ROMAN } from './config.js';
 import { solveElevation } from './ballistics.js';
 import { MapFeatures } from './mapfeatures.js';
+import { MAPS } from './maps.js';
 
 const css = getComputedStyle(document.documentElement), tok = (n, d) => (css.getPropertyValue(n).trim() || d);
 const COL = {
@@ -89,7 +90,8 @@ export class HUD {
       const T = this.world.terrain, N = 256, cv = this.mapCv = document.createElement('canvas'); cv.width = cv.height = N;
       if (!T) return;
       const g = cv.getContext('2d'), img = g.createImageData(N, N), half = T.half ?? 500, s = 2 * half / N;
-      const cG = new THREE.Color(COL.mapGround), cF = new THREE.Color(COL.mapForest), cW = new THREE.Color(COL.mapWater), cR = new THREE.Color(COL.mapRoad), c = new THREE.Color();
+      const mm = MAPS[this.world.mapId]?.minimap || {};   // per-map tints (desert: sand, not field green)
+      const cG = new THREE.Color(mm.ground ?? COL.mapGround), cF = new THREE.Color(COL.mapForest), cW = new THREE.Color(COL.mapWater), cR = new THREE.Color(mm.road ?? COL.mapRoad), c = new THREE.Color();
       let hmin = Infinity, hmax = -Infinity; const H = new Float32Array(N * N);
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const h = T.heightAt(-half + (i + 0.5) * s, -half + (j + 0.5) * s); H[j * N + i] = h; hmin = Math.min(hmin, h); hmax = Math.max(hmax, h); }
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
@@ -106,7 +108,7 @@ export class HUD {
       g.putImageData(img, 0, 0);
       const toM = (v) => (v + half) / s;
       for (const o of T.objects || []) {
-         if (o.kind === 'tree' || o.kind === 'bush') { g.fillStyle = o.kind === 'tree' ? 'rgba(40,52,26,.75)' : 'rgba(60,76,36,.6)'; g.fillRect(toM(o.x) - 1, toM(o.z) - 1, 2, 2); }
+         if (o.kind === 'tree' || o.kind === 'bush') { g.fillStyle = o.kind === 'tree' ? mm.tree ?? 'rgba(40,52,26,.75)' : mm.bush ?? 'rgba(60,76,36,.6)'; g.fillRect(toM(o.x) - 1, toM(o.z) - 1, 2, 2); }
          else if (o.kind === 'house' || o.kind === 'church') {
             g.save(); g.translate(toM(o.x), toM(o.z)); g.rotate(-(o.yaw || 0)); g.fillStyle = '#3a3428'; g.fillRect(-o.w / s / 2, -o.d / s / 2, o.w / s, o.d / s); g.restore();
          } else if (o.kind === 'rock') { g.fillStyle = '#6b665c'; g.fillRect(toM(o.x) - 1, toM(o.z) - 1, 2, 2); }

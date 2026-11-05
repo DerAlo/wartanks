@@ -227,6 +227,7 @@ export const MAPS = {
          { kind: 'bushes', x: 300, z: -20, r: 80, n: 14 },
       ],
       scatter: { trees: 0, bushes: 70, rocks: 70 },
+      minimap: { ground: 0xc2a674, road: 0x8f7a56, bush: 'rgba(112,94,52,.65)', tree: 'rgba(96,82,46,.75)' },   // hud.buildMap: sand, not field green
    },
 };
 export const MAP_LIST = Object.keys(MAPS);

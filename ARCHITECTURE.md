@@ -599,7 +599,8 @@ can run an operation unchanged and clients only render `world.campaign`.
   12–15 mm plating, floats at `terrain.water − cfg.draft`). They never drive (`Tank._siteTick`).
 * Script helpers added for the balanced ops:
   * `S.hunt(tag|[tags], label, onDone)`: every ~2 s it puts the goal on the nearest live member of the
-    groups and calls `onDone` when all of them are dead (`S._hunt = null` cancels). A bunker target gets
+    groups and calls `onDone` when all of them are dead (`S._hunt = null` cancels). The approach offset is kept per
+    target, so a target picked again (after a 45 s no-progress skip, or the last one left) is approached 14 m closer each time. A bunker target gets
     its goal at the rear quarter (`max(14, off·0.8)` behind and to the side), so the player meets the
     70 mm door and not 300 mm of concrete.
   * `S.refit(frac = 0.4, text)` adds `frac·maxHP` HP, repairs all modules, revives the crew, gives each
@@ -652,11 +653,15 @@ can run an operation unchanged and clients only render `world.campaign`.
     rounds for 1941 Panzer III in `halfaya`).
 * Story ops `halfaya` (UK 1941, map `wueste`: sandstorm, the retreating Panzer III lure the Matildas
   onto a dug-in 8,8 battery; the guns spawn `noAI` and get a crew 10 s later, then the player flanks
-  through the eastern wadi and the goat track and comes down from behind the escarpment) and
+  through the eastern wadi and the goat track and comes down from behind the escarpment; two guns, the
+  crew abandons a gun the player hits from outside its arc within 150 m; Panzer III that will not come
+  off the escarpment for 200 s turn back and the op is won) and
   `bastogne` (US 1944, `winter` map, fog: hold the crossroads; the twist is Operation Greif, where
   a "versprengter" M10 and Sherman arrive as team 1 and `S.defect` to team 2 when the player hits
-  them or they get within 170 m; then the fog lifts and `strike` opens the counter-attack).
-* Map `wueste` (`maps.js`, `noRandom`): steppe palette re-coloured through `colors`, no trees, an
+  them or they get within 170 m; then the fog lifts and `strike` opens the counter-attack, on average
+  killing 1–2 of the three assembled tanks, and repeats every 70 s).
+* `MAPS[id].minimap = { ground, road, bush, tree }` overrides the minimap tints in `hud.buildMap`.
+* Map `wueste` (`maps.js`, `noRandom`): steppe palette re-coloured through `colors` (sand minimap), no trees, an
   escarpment ridge across z ≈ −170 with the pass at x 0 and a goat track at x ≈ 390, wadis
   (hollows) at (300, −20) and (−260, 110).
   * Route orders advance a waypoint also when the bot is within 50 m and has not got closer for

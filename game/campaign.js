@@ -102,7 +102,8 @@ export class Script {
       if (best !== h.cur) { h.bestD = bd; h.prog = this.w.time; }
       if (best === h.cur && h.cur?.alive && this.w.time - h.t < 20 && !near) return;
       // reached the report point and still nothing: close in further (woods, crests block the view)
-      h.off = best === h.cur ? Math.max(6, (h.off ?? 35) - 14) : 35;
+      // re-picking a target (after a skip, or the only one left) keeps closing in instead of starting at 35 m again
+      const offs = (h.offs ??= new Map()); h.off = offs.has(best) ? Math.max(6, offs.get(best) - 14) : 35; offs.set(best, h.off);
       h.cur = best; h.t = this.w.time;
       // a bunker is only open from behind (door) or square through the slit: lead round to its rear
       // quarter, outside the embrasure's arc
@@ -946,12 +947,12 @@ export const OPS = {
       tip: 'Im Sturm sieht keiner weit. Wer offen auf einen Steilhang zufährt, wenn der Sturm sich legt, ist ein Ziel. Wadis geben Deckung.',
       script(S) {
          S.fog(0.55, 0xc6a676);                                   // ghibli: dust-brown, short sight
-         const G = [[-50, -105], [0, -112], [55, -105]];
+         const G = [[-40, -108], [45, -106]];
          for (const [x, dx] of [[-30, -18], [30, 18]]) S.spawn('matilda', 1, x, 440, { tag: 'mate', name: 'Matilda (4th RTR)', order: { kind: 'route', pts: [[x + dx, 250], [x + dx, 120]] } });
          for (const [x, z] of [[-90, 40], [10, 10], [110, 30]]) S.spawn('pz3e', 2, x, z, { tag: 'pz', name: 'Panzer III', aiErr: 2, viewMul: 0.8, ammo: { APCR: 0 }, order: { kind: 'hold', x, z } });
          S.obj('screen', 'Die Panzer III zurückwerfen');
          S.obj('pass', 'Zum Pass nachstoßen');
-         S.obj('flak', 'Die 8,8-cm-Batterie am Pass ausschalten', { hidden: true, need: 3 });
+         S.obj('flak', 'Die 8,8-cm-Batterie am Pass ausschalten', { hidden: true, need: 2 });
          S.obj('b_mate', 'Mindestens eine weitere Matilda kommt durch', { bonus: true });
          S.obj('b_pz', 'Zwei Panzer III vernichten', { bonus: true, need: 2 });
          S.phase('advance'); S.goal(0, 140, 'Panzer III im Sturm', 40);
@@ -972,7 +973,7 @@ export const OPS = {
             for (const [x, z] of G) S.spawn('pak40', 2, x, z, { tag: 'flak', name: '8,8-cm-Flak', exact: true, noAI: true, viewMul: 0.35, face: [0, 200] });
             S.after(10, (S) => { for (const t of S.group('flak')) if (t.alive) S.crewUp(t, { aiErr: 4 }); });   // crews still laying the guns
             // the crews still lay their guns on the Matildas in front and the dust settles: aim improves after a while
-            S.after(25, (S) => { for (const t of S.group('flak')) { t.viewMul = 0.85; if (t.ai) t.ai.D = { ...t.ai.D, err: t.ai.D.err * 0.65 }; } });
+            S.after(30, (S) => { for (const t of S.group('flak')) { t.viewMul = 0.7; if (t.ai) t.ai.D = { ...t.ai.D, err: t.ai.D.err * 0.8 }; } });
             S.radio('Der Sturm legt sich … Geschütze am Hang! Lange Rohre – das ist Flak, 8,8!', 'warn');
             S.after(5, (S) => S.radio('Die gehen durch Matildas wie durch Pappe! Raus aus ihrem Schussfeld, ins Wadi nach Osten!', 'warn'));
             S.show('flak'); S.retext('pass', 'Ins Wadi Ost ausweichen');
@@ -982,7 +983,7 @@ export const OPS = {
          });
          // from the wadi up the goat track in the east, then along the crest into the battery's flank
          S.when((S) => S.c.phase === 'guns' && (S.inZone('player', 310, -10, 60) || S.time > S._tg + 100), (S) => {
-            S.done('pass'); S.phase('flank'); S.unmark('wadi'); S.refit(0.5, null);
+            S.done('pass'); S.phase('flank'); S.unmark('wadi'); S.refit(0.8, null);
             S.radio('Im Wadi, außer Sicht. Notdürftig geflickt. Der Hang hat im Osten einen Ziegenpfad. Hoch damit und von der Flanke rein – mit Sprenggranaten, wenn ihr habt.');
             S.mark('path', 385, -175, 'Ziegenpfad', 'area', 30);
             S.goal(385, -175, 'Ziegenpfad', 25);
@@ -997,6 +998,16 @@ export const OPS = {
             S.order(S.group('mate').filter((t) => t.alive), { kind: 'route', pts: [[385, -175], [200, -200], [80, -150]] });
          });
          S.when((S) => S.c.phase === 'guns', (S) => { S._tg = S.time; });
+         // a gun hit from behind, its trails pointing the wrong way and a Matilda closing in: the crew runs for it
+         S.when((S) => S.c.phase === 'flank', (S) => {
+            const p = S.player; if (!p?.alive) return;
+            for (const t of S.group('flak')) {
+               if (!t.alive || t.lastHitBy !== p.id) continue;
+               const d = Math.hypot(p.pos.x - t.pos.x, p.pos.z - t.pos.z); if (d > 150) continue;
+               const off = Math.abs(((Math.atan2(-(p.pos.x - t.pos.x), -(p.pos.z - t.pos.z)) - t.yaw + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+               if (off > 1.2) { S.w.damage(t, t.hp, p, 'shell'); S.radio('Die Bedienung lässt das Geschütz im Stich – sie rennen!'); }
+            }
+         }, { repeat: true });
          S.when((S) => S.c.phase !== 'advance', (S) => S.progress('flak', S.dead('flak')), { repeat: true });
          // last: the panzers come back through the pass to save their guns
          S.when((S) => S.isDone('flak'), (S) => {
@@ -1005,7 +1016,13 @@ export const OPS = {
             for (const [x, dt] of [[-20, 0], [20, 10]]) S.after(dt, (S) => S.spawn('pz3e', 2, x, -420, { tag: 'pz2', name: 'Panzer III', aiErr: 1.7, ammo: { APCR: 0 }, order: { kind: 'route', pts: [[x, -250], [0, -150], [60, -150]] } }));
             S.after(12, (S) => S.hunt('pz2', 'Panzer III'));
          });
-         S.when((S) => S.c.phase === 'counter' && S.group('pz2').length === 2 && !S.alive('pz2'), (S) => {
+         // a Panzer III that will not come down off the escarpment for minutes gives up on the guns and turns back north
+         S.when((S) => S.c.phase === 'counter' && S.time > S._tc + 200 && S.alive('pz2') > 0, (S) => {
+            S.radio('Die restlichen Panzer III drehen ab, zurück nach Sollum. Sie lassen die Batterie liegen.');
+            S._gone = true;
+         });
+         S.when((S) => S.c.phase === 'counter', (S) => { S._tc = S.time; });
+         S.when((S) => S.c.phase === 'counter' && ((S.group('pz2').length === 2 && !S.alive('pz2')) || S._gone), (S) => {
             if (S.alive('mate') > 0) S.done('b_mate'); else S.fail('b_mate');
             if (S.get('b_pz').state === 'active') S.fail('b_pz');
             S.radio('Der Pass ist für heute unser. Die 8,8 im Erdkampf – das wird die ganze Armee lernen müssen.');
@@ -1050,7 +1067,7 @@ export const OPS = {
             S.radio('Ein M10 und ein Sherman von Süden, versprengt aus Foy. Sie wollen durch zur Kreuzung. Nicht schießen.');
             fake = [[160, 470, 'panther', 'M10 (versprengt)'], [195, 490, 'm4', 'Sherman (versprengt)']].map(([x, z, c, n]) => S.spawn(c, 1, x, z, { tag: 'fake', name: n, aiErr: 2.6, viewMul: 0.7,
                order: { kind: 'route', pin: true, pts: [[40, 320], [X[0] + 40, X[1] + 60], [X[0], X[1]]] } }));
-            for (const t of fake) t.hp = t.maxHP * (t.cls === 'panther' ? 0.5 : 0.8);          // hard-used, short of fuel and spares
+            for (const t of fake) t.hp = t.maxHP * (t.cls === 'panther' ? 0.35 : 0.8);          // hard-used, short of fuel and spares
             S.after(14, (S) => S.radio('MP an alle: Fragt nach der Hauptstadt von Illinois. Wer nicht Springfield sagt, ist kein Ami.'));
             S.show('b_spy');
          });
@@ -1069,8 +1086,8 @@ export const OPS = {
             S._hunt = null; S.phase('clear'); if (hitFirst) S.done('b_spy'); else S.fail('b_spy');
             S.refit(0.4, 'Ein paar Tage später: Der Himmel reißt auf. Kälte, Sonne – Flugwetter!');
             S.fadeFog(0.04, 25);
-            for (const [c, x, z] of [['pz4h', 100, -250], ['stug3g', 150, -215], ['panther', 60, -210]]) S.spawn(c, 2, x, z, { tag: 'ctr', name: TANKS[c].short, aiErr: 2, viewMul: 0.7, order: { kind: 'hold', x, z } });
-            S.after(10, (S) => { S.radio('Thunderbolts über der Bereitstellung am Gehöft! Jetzt nach, solange sie die Köpfe einziehen!', 'warn'); S.strike(0, 0, 16, { tag: 'ctr', n: 9, secs: 14, dmg: 320, team: 2 }); });
+            for (const [c, x, z] of [['pz4h', 100, -250], ['stug3g', 150, -215], ['panther', 60, -210]]) { const t = S.spawn(c, 2, x, z, { tag: 'ctr', name: TANKS[c].short, aiErr: 2, viewMul: 0.7, order: { kind: 'hold', x, z } }); if (c === 'panther') t.hp = t.maxHP * 0.6; }   // the Panther limped back from the night's fighting
+            S.after(10, (S) => { S.radio('Thunderbolts über der Bereitstellung am Gehöft! Jetzt nach, solange sie die Köpfe einziehen!', 'warn'); S.strike(0, 0, 9, { tag: 'ctr', n: 10, secs: 16, dmg: 340, team: 2 }); });
             S.after(14, (S) => { S.show('ctr'); S.hunt('ctr', 'Bereitstellung'); S.order(S.group('mate').filter((t) => t.alive), { kind: 'advance', x: 100, z: -200 }); });
          });
          S.when((S) => S.c.phase === 'clear', (S) => S.progress('ctr', S.dead('ctr')), { repeat: true });
