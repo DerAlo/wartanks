@@ -243,9 +243,10 @@ export function buildArmor(cfg) {
       const faces = [];
       const n = T.base.length;
       const center = [0, T.h / 2, (T.lenR - T.lenF) / 2];
-      for (let i = 0; i < n; i++) {
-         const a = T.base[i], b = T.base[(i + 1) % n], at = T.top[i], bt = T.top[(i + 1) % n];
-         const loop = [[a[0], 0, a[1]], [b[0], 0, b[1]], [bt[0], T.h, bt[1]], [at[0], T.h, at[1]]];
+      const R = T.rings || [[0, T.base], [T.h, T.top]];   // domed turrets: one band of faces per ring pair
+      for (let k = 0; k + 1 < R.length; k++) for (let i = 0; i < n; i++) {
+         const [y0, P0] = R[k], [y1, P1] = R[k + 1], a = P0[i], b = P0[(i + 1) % n], at = P1[i], bt = P1[(i + 1) % n];
+         const loop = [[a[0], y0, a[1]], [b[0], y0, b[1]], [bt[0], y1, bt[1]], [at[0], y1, at[1]]];
          faces.push(makeFace(loop, center, T.faces[i].id, T.faces[i].t));
       }
       faces.push(makeFace(T.top.map((p) => [p[0], T.h, p[1]]), center, 'troof', T.openTop ? 0 : T.roofT));

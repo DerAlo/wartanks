@@ -321,6 +321,12 @@ function buildHull(S) {
       A.box(x, y0 + 0.02, zF + heavy + rest / 2, 0.035, 0.05, rest, BLACK);                  // rubber lower edge
       A.box(x - s * 0.04, top + 0.015, (zF + T.z1) / 2, 0.16, 0.03, T.z1 - zF, PAINT);      // fender edge above the plates
    }
+   else if (S.skirts && S.skirts.style === 'full') for (const s of [-1, 1]) {   // Maus / E 100: one continuous armour plate per side, ends chamfered
+      const sk = S.skirts, y0 = sk.y0, y1 = y0 + sk.h, x = s * sk.x, z0 = tz - sk.len / 2, z1 = tz + sk.len / 2, c = Math.min(0.45, sk.h * 0.5);
+      extrude(A, [[z0, y1], [z0 + c * 0.7, y0], [z1 - c * 0.5, y0], [z1, y0 + c * 0.6], [z1, y1]], x - 0.02, x + 0.02, alongX, PAINT);
+      for (let k = 1; k < 4; k++) A.box(x + s * 0.022, y0 + sk.h / 2, z0 + sk.len * k / 4, 0.01, sk.h - 0.06, 0.03, DARK);           // plate joints
+      for (let k = 0; k < 14; k++) A.box(x + s * 0.025, y1 - 0.07, z0 + 0.2 + (sk.len - 0.4) * k / 13, 0.02, 0.05, 0.05, DARK);      // bolt row to the hull
+   }
    else if (S.skirts) for (const s of [-1, 1]) { const sk = S.skirts, y0 = sk.y0 ?? 0.6, hh = sk.h ?? 0.6; for (let k = 0; k < 6; k++) A.box(s * (T.x + T.w / 2 + 0.06), y0 + hh / 2, T.z0 + tl * (k + 0.5) / 6, 0.025, hh, tl / 6 - 0.04, PAINT, 0, 0, s * 0.03); }
    const zs = wheelZs(T), r = T.r, { sz, sy, iz, iy } = sprocketIdler(T), wy0 = r + beltT(T);
    const TYRE = [0.13, 0.13, 0.12];
@@ -456,6 +462,20 @@ function hullDetails(A, S, front, back) {
          if (g1 - g0 > 0.08) A.box(s * T.x, T.top + 0.025, (g0 + g1) / 2, T.w + 0.06, 0.03, g1 - g0, PAINT);            // front mudguard
       }
    }
+   if (D.maus) {   // Maus: side plates run past the glacis with big towing holes, engine air grilles ahead of the turret
+      const yb = H.sponsonY ?? T.top, ry = H.roofY, zb = frontZAt(P, yb + 0.02), zt = frontZAt(P, ry - 0.02), L = 0.32;
+      for (const s of [-1, 1]) {
+         const x = s * (H.w / 2 - 0.06);
+         extrude(A, [[zb - L, yb], [zb + 0.3, yb], [zt + 0.3, ry - 0.04], [zt - L * 0.4, ry - 0.04]], x - 0.06, x + 0.06, alongX, PAINT);
+         const hz = zb - L * 0.35 + (zt - zb) * 0.3, hy = yb + (ry - yb) * 0.3;
+         A.cyl(x, hy, hz, 0.11, 0.11, 0.13, BLACK, 'x', 10);
+      }
+      for (const s of [-1, 1]) {
+         const gz = -1.25, at = roofYAt(P, gz);
+         A.box(s * 0.85, at + 0.02, gz, 1.05, 0.04, 1.5, DARK);
+         for (let k = 0; k < 7; k++) A.box(s * 0.85, at + 0.045, gz - 0.66 + k * 0.22, 1.0, 0.02, 0.05, BLACK);
+      }
+   }
    if (D.doors) for (const s of [-1, 1]) {
       const { sz, iz } = sprocketIdler(T), za = Math.min(sz, iz) + 0.25, zb = Math.max(sz, iz) - 0.25, yb = wy0 + T.r + 0.04, yt = T.top - beltT(T) - 0.03;
       const x = s * (T.x + T.w / 2 + 0.02);
@@ -489,11 +509,18 @@ function buildTurret(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
    const A = new Acc(), T = S.turret, base = T.base, top = T.top, n = base.length;
    const ctr = [base.reduce((s, p) => s + p[0], 0) / n, T.h / 2, base.reduce((s, p) => s + p[1], 0) / n];
    const B = base.map(([x, z]) => [x, 0, z]), U = top.map(([x, z]) => [x, T.h, z]);
-   for (let i = 0; i < n; i++) { const j = (i + 1) % n; A.quad(B[i], B[j], U[j], U[i], PAINT, ctr); }
+   const R = (T.rings || [[0, base], [T.h, top]]).map(([y, P]) => P.map(([x, z]) => [x, y, z]));   // domed: bands between rings
+   for (let k = 0; k + 1 < R.length; k++) for (let i = 0; i < n; i++) { const j = (i + 1) % n; A.quad(R[k][i], R[k][j], R[k + 1][j], R[k + 1][i], PAINT, ctr); }
    for (let i = 1; i < n - 1; i++) { A.tri(U[0], U[i], U[i + 1], PAINT, ctr); A.tri(B[0], B[i], B[i + 1], PAINT, ctr); }
    const zs = top.map((p) => p[1]), zBack = Math.max(...zs), zFront = Math.min(...zs), xMax = Math.max(...top.map((p) => p[0]));
    if (S.look === 'leo2') { leoTurret(A, S, PAINT, DARK); return A.build(); }
-   if (!T.openTop) {
+   if (T.cup === 'peri') {   // no cupola (Maus): a low armoured periscope housing (the armour's 'cup' box) and a loader's hatch
+      const C = T.cupola;
+      A.box(C.x, C.y, C.z, C.s, C.h, C.s, PAINT);
+      for (let k = 0; k < 3; k++) A.box(C.x + (k - 1) * 0.17, C.y + C.h / 2 + 0.04, C.z - C.s * 0.32, 0.1, 0.08, 0.1, BLACK);
+      A.cyl(-C.x * 0.9, T.h + 0.03, C.z - 0.1, 0.3, 0.3, 0.06, PAINT, 'y', 12);
+      A.box(-C.x * 0.9, T.h + 0.09, C.z - 0.36, 0.1, 0.08, 0.1, BLACK);
+   } else if (!T.openTop) {
       const cz = zFront + (zBack - zFront) * 0.68, cx = -Math.min(0.42, xMax * 0.55);
       A.cyl(cx, T.h + 0.14, cz, 0.34, 0.31, 0.28, PAINT, 'y', 12);
       for (let k = 0; k < 7; k++) A.box(cx + Math.cos(k * 0.9) * 0.32, T.h + 0.17, cz + Math.sin(k * 0.9) * 0.32, 0.06, 0.08, 0.12, BLACK, 0, -k * 0.9);

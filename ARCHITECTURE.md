@@ -402,10 +402,15 @@ front/rear exponents; each edge keeps the plate/t of the oct facing its normal p
 `tanks3d` draws those clipped loops, so visual = armour; `mantlet.type` 'bell' | 'saukopf' (visual inside the mantlet box);
 gun `brakeT` 'de' | 'su' | 'us' (default by nation); `turret.skirt` (Pz IV turret Schürzen, visual only); `run.hvss` (dual
 wheels, horizontal bogies), `run.gap1` (wider first road-wheel gap, T-54); `hull.spare: { plate, n, cols }` spare track links
-on a profile plate; `hull.drums: n` external fuel drums per side on the rear hull sides.
+on a profile plate; `hull.drums: n` external fuel drums per side on the rear hull sides. `turret.dome: [frac, ds, df, n=3]`
+= domed turret: over the top `frac` of the height the walls curve in (quarter ellipse, n rings) by ds m at the sides/rear
+and df at the front; config emits `turret.rings` [[y, poly]...] and both `armor.js` (one face band per ring pair, same
+plate/t per edge, still convex) and `tanks3d` use them, `top` = the last ring. `turret.cup: 'peri'` = no cupola: the
+armour 'cup' box becomes a low periscope housing (0.62 × 0.18 m, Maus). `skirts.style: 'full'` = one continuous plate
+per side with chamfered ends (same box as the armour skirt), instead of six hinged Schürzen.
 Visual-only detail flags (no armour): `hull.det` { `nose` 'cast' | 3 (Sherman rounded differential housing, 3 = bolted
 three-piece), `hoods` (Sherman driver hoods on the ufp; spare links then use the lower 60 %), `feifel` (Tiger I rear air
-filters), `horns` m (Tiger I side plates past the front plate + front mudguards), `doors` (Churchill pannier plate with
+filters), `horns` m (Tiger I side plates past the front plate + front mudguards), `maus` (side plates past the glacis with towing holes, engine grilles ahead of the turret), `doors` (Churchill pannier plate with
 mud chutes and escape door; the hull roundel moves onto it), `boxes` n (roof-edge stowage boxes per side, KV) };
 `turret.det` { `bustle: [len, frac]` (upper rear overhang, top `frac` of the turret height; replaces the German rear bin),
 `bins` (Centurion side bins + rear basket), `bin: false` (no German rear stowage box) }. US leaf bogies (no `hvss`) draw

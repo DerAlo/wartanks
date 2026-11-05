@@ -561,13 +561,14 @@ const RAW = [
       id: 'maus', name: 'Pz.Kpfw. VIII Maus', short: 'Maus', nation: 'DE', cls: 'HT', tier: 10, parent: 'e75', look: 'maus',
       hp: 2250, mass: 188, engine: { hp: 1200, fuel: 'petrol' }, vMax: 20, vRev: 8, traverse: 16, ground: [1.2, 1.4, 2.6],
       view: 390, camo: { still: 0.02, move: 0.01 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
-      hull: { floorY: 0.55, w: 3.67, lowerW: 2.0, sponsonY: 1.25, front: [['lfp', 200, -35, 0.65], ['ufp', 200, 55, 0.95]], roof: [60, 6.9],
-         rear: [['urp', 160, 30, 0.95], ['lrp', 160, -30, null]], floorT: 50, side: { t: 180, tLow: 100, tSpon: 50 } },
-      turret: { round: [16, 2.3, 8], z: 0.75, ringR: 1.15, h: 1.1, roofT: 60, oct: [3.4, 1.45, 2.1, 0.75, 0.45], f: [240, 0], cheek: [220, 15], s: [200, 30], rr: [200, 15], r: [200, 15], traverse: 14 },
-      mantlet: { w: 1.2, h: 0.9, d: 0.35, t: 220 },
-      skirts: { t: 100, h: 0.85, y0: 0.42 },
+      // 9 m × 3.67 m × 3.66 m: the superstructure spans the tracks, the skirts sit flush under its sides
+      hull: { floorY: 0.55, w: 3.6, lowerW: 1.7, sponsonY: 1.3, front: [['lfp', 200, -35, 0.75], ['ufp', 200, 55, 1.15]], roof: [60, 6.6],
+         rear: [['urp', 160, 30, 1.0], ['lrp', 160, -30, null]], floorT: 50, side: { t: 180, tLow: 100, tSpon: 50 }, det: { maus: true } },
+      turret: { round: [16, 2.2, 8], dome: [0.8, 0.12, 0.5, 4], cup: 'peri', det: { bin: false }, z: 1.3, ringR: 1.15, h: 1.15, roofT: 60, oct: [3.3, 1.45, 1.95, 0.75, 0.45], f: [240, 0], cheek: [220, 12], s: [200, 24], rr: [200, 15], r: [200, 12], traverse: 14 },
+      mantlet: { type: 'bell', w: 1.25, h: 0.82, d: 0.4, t: 220 },
+      skirts: { t: 100, h: 0.95, y0: 0.4, style: 'full' },
       gun: gun(G.kwk44_128, { reload: 14.5 }),
-      run: R.interleaved({ wheels: 12, wheelR: 0.3, interleave: 2, trackW: 1.1, len: 7.7, h: 1.25, t: 40 }),
+      run: R.interleaved({ wheels: 12, wheelR: 0.3, interleave: 2, trackW: 0.85, len: 7.9, h: 1.25, t: 40, sprocket: 'rear' }),
       layout: { ammo: 'sponson', fuel: 'sides' },
    },
    {  // E 100: the long E-series hull with heavy side skirts and a Tiger II-style turret holding the 15 cm KwK 44
@@ -1397,6 +1398,33 @@ function buildTurret(spec, hull) {
       const t = ((L1.px - L0.px) * L1.dz - (L1.pz - L0.pz) * L1.dx) / den;
       top.push([+(L0.px + L0.dx * t).toFixed(4), +(L0.pz + L0.dz * t).toFixed(4)]);
    }
+   // Domed turret (spec.dome = [frac, ds, df, n?]): over the top `frac` of the height the walls curve
+   // in along a quarter ellipse, by ds (m) on the sides/rear and df at the front (eased by facing), so
+   // the roof rolls down into the walls (IS-3 / T-54 frying pan, Maus front). rings = [[y, poly]...]
+   // from the base to the roof; armour and model both use the bands between them (still convex).
+   let rings = null;
+   if (spec.dome) {
+      const [frac, ds, df, nr = 3] = spec.dome, ym = spec.h * (1 - frac);
+      // per-vertex inward direction (bisector of the two neighbouring edge normals) and inset amount
+      const dir = base.map((p, i) => {
+         const a = base[(i + n - 1) % n], b = base[(i + 1) % n];
+         const e1 = [p[0] - a[0], p[1] - a[1]], e2 = [b[0] - p[0], b[1] - p[1]];
+         const l1 = Math.hypot(...e1), l2 = Math.hypot(...e2);
+         const nx = (-e1[1] / l1 - e2[1] / l2) * sgn, nz = (e1[0] / l1 + e2[0] / l2) * sgn, l = Math.hypot(nx, nz) || 1;
+         return [nx / l, nz / l];
+      });
+      const amt = dir.map((d) => ds + (df - ds) * Math.max(0, d[1]) ** 2);   // front vertices: inward points back (+z)
+      rings = [[0, base]];
+      for (let k = 0; k <= nr; k++) {
+         const th = (k / nr) * Math.PI / 2, y = ym + (spec.h - ym) * Math.sin(th), u = y / spec.h;
+         if (y < rings[rings.length - 1][0] + 1e-3) continue;
+         rings.push([+y.toFixed(4), base.map((p, i) => {
+            const q = top[i], c = 1 - Math.cos(th);
+            return [+(p[0] + (q[0] - p[0]) * u + dir[i][0] * amt[i] * c).toFixed(4), +(p[1] + (q[1] - p[1]) * u + dir[i][1] * amt[i] * c).toFixed(4)];
+         })]);
+      }
+      top.splice(0, n, ...rings[rings.length - 1][1]);
+   }
    const plates = {};
    for (const f of faces) plates[f.id] = { name: PLATE_NAMES[f.id], t: f.t };
    plates.troof = { name: PLATE_NAMES.troof, t: spec.roofT };
@@ -1407,13 +1435,14 @@ function buildTurret(spec, hull) {
    if (!spec.openTop) {
       const zs = top.map((p) => p[1]), zB = Math.max(...zs), zF = Math.min(...zs), xMax = Math.max(...top.map((p) => p[0]));
       const t = spec.cupT ?? Math.round(Math.min(50, Math.max(25, spec.roofT * 1.5 + 10)));
-      cupola = { x: -Math.min(0.42, xMax * 0.55), y: spec.h + 0.16, z: zF + (zB - zF) * 0.68, s: 0.6, h: 0.32, t };
+      cupola = spec.cup === 'peri' ? { x: -Math.min(0.42, xMax * 0.55), y: spec.h + 0.09, z: zF + (zB - zF) * 0.55, s: 0.62, h: 0.18, t }   // low periscope housing (Maus)
+         : { x: -Math.min(0.42, xMax * 0.55), y: spec.h + 0.16, z: zF + (zB - zF) * 0.68, s: 0.6, h: 0.32, t };
       plates.cup = { name: PLATE_NAMES.cup, t };
    }
    return {
       cupola,
-      x: 0, z: spec.z, y: hull.roofY, ringR: spec.ringR, h: spec.h, base, top, faces, roofT: spec.roofT, plates,
-      openTop: !!spec.openTop, skirt: !!spec.skirt, det: spec.det ?? null, traverse: spec.traverse, lenF, lenR, w,
+      x: 0, z: spec.z, y: hull.roofY, ringR: spec.ringR, h: spec.h, base, top, rings, faces, roofT: spec.roofT, plates,
+      openTop: !!spec.openTop, skirt: !!spec.skirt, cup: spec.cup ?? null, det: spec.det ?? null, traverse: spec.traverse, lenF, lenR, w,
    };
 }
 
