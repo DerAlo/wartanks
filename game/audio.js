@@ -20,7 +20,7 @@ export class Audio {
       const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
       const c = this.ctx = new AC();
       this.master = c.createGain(); this.master.gain.value = this.muted ? 0 : this.volume;
-      const comp = c.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 5; comp.attack.value = 0.003; comp.release.value = 0.25;
+      const comp = c.createDynamicsCompressor(); comp.threshold.value = -10; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.25;
       this.master.connect(comp).connect(c.destination);
       this.rev = c.createConvolver(); this.rev.buffer = S.reverbIR(c); this.revIn = c.createGain(); this.revIn.gain.value = 0.55;
       this.revIn.connect(this.rev).connect(this.master);
@@ -35,8 +35,10 @@ export class Audio {
       this.stop(); this.world = world; this.lastSeq = -1; this.ts.clear();
       const c = this.ctx; if (!c) return;
       this.voices = [];
+      // engine bus: ducked under shots and hits so the big sounds punch through the drone
+      this.eng = c.createGain(); this.eng.gain.value = 1; this.eng.connect(this.sfx);
       for (let i = 0; i < NEAR + 1; i++) {
-         const pan = c.createStereoPanner(); pan.connect(this.sfx);
+         const pan = c.createStereoPanner(); pan.connect(this.eng);
          this.voices.push({ pan, v: null, tank: null });
       }
       // turret whine
@@ -47,7 +49,7 @@ export class Audio {
    }
    stop() {
       for (const v of this.voices) { v.v?.stop(); v.pan.disconnect(); }
-      this.voices = [];
+      this.voices = []; this.eng?.disconnect(); this.eng = null;
       try { this.whineOsc?.stop(); this.fire?.stop(); } catch { /* ignore */ }
       this.whineOsc = this.fire = null; this.world = null;
    }
@@ -57,6 +59,11 @@ export class Audio {
       else if (name === 'click') S.click(c, this.sfx, c.currentTime, 0.5);
       else if (name === 'blip') S.blip(c, this.sfx, c.currentTime, 1);
       else if (name === 'spotted') { S.blip(c, this.sfx, c.currentTime, 1.3, 0.55); S.blip(c, this.sfx, c.currentTime + 0.22, 1.3, 0.55); }
+   }
+   // dip the engine bus for a moment (sidechain-style), then recover
+   duck(t, depth) {
+      const g = this.eng?.gain; if (!g) return;
+      g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(depth, t + 0.02); g.setTargetAtTime(1, t + 0.25, 0.35);
    }
    // distance attenuation + stereo pan for a one-shot at world position p
    spatial(p, cam, yaw) {
@@ -86,7 +93,7 @@ export class Audio {
          if (!t || !V.v) continue;
          const spd = Math.abs(t.speed || 0), vmax = (t.cfg?.vMax ?? 40) / 3.6, thr = Math.abs(t.input?.throttle || 0);
          const rpm = Math.min(1, 0.15 + thr * 0.35 + spd / vmax * 0.6), d = Math.hypot(t.pos.x - cp.x, t.pos.z - cp.z);
-         const vol = i === 0 ? 0.5 : 0.55 / (1 + d / 35);
+         const vol = i === 0 ? 0.18 : 0.2 / (1 + d / 35);
          V.v.set(rpm, thr, spd, vol, now);
          const rel = Math.atan2(-(t.pos.x - cp.x), -(t.pos.z - cp.z)) - yaw;
          V.pan.pan.setTargetAtTime(i === 0 ? 0 : Math.max(-1, Math.min(1, -Math.sin(rel))), now, 0.1);
@@ -106,7 +113,8 @@ export class Audio {
          if (t.lastFire != null && t.lastFire !== s.lastFire) {
             s.lastFire = t.lastFire;
             const sp = this.spatial(t.pos, cp, yaw), far = Math.min(1, sp.d / 500);
-            S.gunShot(c, sp.node, now + (t === p ? 0 : sp.delay), t.cfg?.gun?.cal ?? 75, t === p ? 1.1 : 1.6, far);
+            const at = now + (t === p ? 0 : sp.delay); S.gunShot(c, sp.node, at, t.cfg?.gun?.cal ?? 75, t === p ? 1.0 : 2.0, far);
+            if (sp.d < 120) this.duck(at, t === p ? 0.25 : 0.5);
          }
       }
       // --- near-miss whistle: enemy shells passing close to the player
@@ -131,7 +139,8 @@ export class Audio {
       const c = this.ctx, type = e.type ?? e.kind, pos = e.pos || e.point || w.tanks?.find((t) => t.id === e.dstId)?.pos;
       const mine = p && e.srcId === p.id, onMe = p && e.dstId === p.id;
       if (!pos) return;
-      const sp = this.spatial(pos, cp, yaw), at = now + (onMe ? 0 : sp.delay * 0.5), loud = onMe ? 1.6 : mine ? 1.3 : 1;
+      const sp = this.spatial(pos, cp, yaw), at = now + (onMe ? 0 : sp.delay * 0.5), loud = onMe ? 1.0 : mine ? 0.9 : 0.8;
+      if (onMe && (type === 'pen' || type === 'noPen' || type === 'ricochet' || type === 'he')) this.duck(at, 0.3);
       if (type === 'ricochet') S.ricochet(c, sp.node, at, loud);
       else if (type === 'pen') S.clang(c, sp.node, at, loud);
       else if (type === 'noPen') S.dong(c, sp.node, at, loud);

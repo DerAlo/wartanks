@@ -39,15 +39,30 @@ function src(ctx, buf, t, dur, rate = 1) { const s = ctx.createBufferSource(); s
 function filt(ctx, type, f, q = 0.7) { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; }
 function osc(ctx, type, f, t, dur) { const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, t); o.start(t); o.stop(t + dur); return o; }
 
-// gun shot: noise crack + low thump, caliber scales weight; `far` 0..1 dulls it
+// gun shot: a muzzle blast is a pressure wave, not a hiss. Four layers summed into a saturating bus
+// (the clipping is what makes it sound violent rather than polite): supersonic crack, mid "blam",
+// a sub-bass pressure kick, and a long low rumble. `far` 0..1 strips the crack/highs with distance.
+let SAT = null;
+function satCurve() { if (SAT) return SAT; SAT = new Float32Array(2048); for (let i = 0; i < 2048; i++) { const x = i / 1023.5 - 1; SAT[i] = Math.tanh(x * 2.5) / Math.tanh(2.5); } return SAT; }
+function punchBus(ctx, out, t, vol) {
+   const pre = ctx.createGain(), sh = ctx.createWaveShaper(), post = ctx.createGain();
+   sh.curve = satCurve(); sh.oversample = '2x'; post.gain.value = vol; pre.connect(sh).connect(post).connect(out);
+   return pre;
+}
 export function gunShot(ctx, out, t, cal = 75, vol = 1, far = 0) {
-   const k = Math.min(2, cal / 75);
-   const n = src(ctx, noise(ctx), t, 1.6), lp = filt(ctx, 'lowpass', 5200 - far * 4200 - k * 600), g = ctx.createGain();
-   env(g, t, 0.003, 0.9 * vol, 0.35 + k * 0.35); n.connect(lp).connect(g).connect(out);
-   const b = src(ctx, brown(ctx), t, 2.2), bl = filt(ctx, 'lowpass', 380), bg = ctx.createGain();
-   env(bg, t, 0.006, 1.4 * vol, 0.9 + k * 0.7); b.connect(bl).connect(bg).connect(out);
-   const o = osc(ctx, 'sine', 70 / Math.sqrt(k), t, 0.8), og = ctx.createGain();
-   o.frequency.exponentialRampToValueAtTime(28, t + 0.5); env(og, t, 0.004, 1.1 * vol * (1 - far * 0.6), 0.45); o.connect(og).connect(out);
+   const k = Math.min(2.2, Math.max(0.4, cal / 75)), bus = punchBus(ctx, out, t, vol);
+   // 1. crack (shock wave): very short broadband burst
+   const n = src(ctx, noise(ctx), t, 0.4), hp = filt(ctx, 'highpass', 500), lp = filt(ctx, 'lowpass', 9000 - far * 7500), g = ctx.createGain();
+   env(g, t, 0.0006, 2.2 * (1 - far * 0.7), 0.05 + k * 0.03); n.connect(hp).connect(lp).connect(g).connect(bus);
+   // 2. blast body: mid boom
+   const m = src(ctx, noise(ctx), t, 1), bp = filt(ctx, 'bandpass', 260 / Math.sqrt(k), 0.6), mg = ctx.createGain();
+   env(mg, t, 0.002, 3.2, 0.22 + k * 0.18); m.connect(bp).connect(mg).connect(bus);
+   // 3. pressure kick: falling sine
+   const o = osc(ctx, 'sine', 95 / Math.sqrt(k), t, 0.9), og = ctx.createGain();
+   o.frequency.exponentialRampToValueAtTime(32, t + 0.3); env(og, t, 0.0015, 3.0, 0.35 + k * 0.2); o.connect(og).connect(bus);
+   // 4. rumble tail (rolling over the landscape)
+   const b = src(ctx, brown(ctx), t, 3.6), bl = filt(ctx, 'lowpass', 300), bg = ctx.createGain();
+   env(bg, t, 0.015, 1.6, 1.4 + k * 0.9); b.connect(bl).connect(bg).connect(bus);
 }
 export function explosion(ctx, out, t, size = 1, vol = 1) {
    const b = src(ctx, brown(ctx), t, 3.5), bl = filt(ctx, 'lowpass', 600 + size * 200), g = ctx.createGain();
@@ -62,16 +77,24 @@ function metal(ctx, out, t, base, ratios, dec, vol) {
    for (let i = 0; i < ratios.length; i++) { const o = osc(ctx, 'sine', base * ratios[i], t, dec + 0.1), g = ctx.createGain(); env(g, t, 0.002, vol / (1 + i * 0.6), dec / (1 + i * 0.4)); o.connect(g).connect(out); }
 }
 export function ricochet(ctx, out, t, vol = 1) {
-   metal(ctx, out, t, 2200 + Math.random() * 900, [1, 1.52, 2.31], 0.35, 0.35 * vol);
-   const o = osc(ctx, 'sine', 3800, t, 0.6), g = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(900, t + 0.55); env(g, t + 0.02, 0.01, 0.18 * vol, 0.5); o.connect(g).connect(out);
+   const bus = punchBus(ctx, out, t, vol);
+   const n = src(ctx, noise(ctx), t, 0.2), hp = filt(ctx, 'highpass', 1500), g = ctx.createGain(); env(g, t, 0.0005, 2.2, 0.03); n.connect(hp).connect(g).connect(bus);   // tack
+   metal(ctx, bus, t, 1700 + Math.random() * 900, [1, 1.52, 2.31, 3.7], 0.5, 1.1);
+   const o = osc(ctx, 'sine', 3200 + Math.random() * 800, t, 0.9), og = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(600, t + 0.8); env(og, t + 0.02, 0.01, 0.55, 0.75); o.connect(og).connect(bus);   // whizz away
 }
+// penetration: heavy crunch + clang + thump
 export function clang(ctx, out, t, vol = 1) {
-   metal(ctx, out, t, 340 + Math.random() * 60, [1, 2.76, 5.4, 8.9], 0.9, 0.5 * vol);
-   const n = src(ctx, noise(ctx), t, 0.3), bp = filt(ctx, 'bandpass', 1800, 1.2), g = ctx.createGain(); env(g, t, 0.002, 0.8 * vol, 0.18); n.connect(bp).connect(g).connect(out);
+   const bus = punchBus(ctx, out, t, vol);
+   const n = src(ctx, noise(ctx), t, 0.4), bp = filt(ctx, 'bandpass', 1400, 0.8), g = ctx.createGain(); env(g, t, 0.0008, 2.6, 0.12); n.connect(bp).connect(g).connect(bus);
+   metal(ctx, bus, t, 300 + Math.random() * 60, [1, 2.76, 5.4, 8.9], 1.0, 1.6);
+   const o = osc(ctx, 'sine', 110, t, 0.5), og = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(40, t + 0.25); env(og, t, 0.002, 2.4, 0.3); o.connect(og).connect(bus);
 }
+// non-penetration: a deep bell-like DONG of a shell hitting thick plate
 export function dong(ctx, out, t, vol = 1) {
-   metal(ctx, out, t, 150 + Math.random() * 30, [1, 2.4, 3.9], 1.1, 0.55 * vol);
-   const n = src(ctx, noise(ctx), t, 0.2), lp = filt(ctx, 'lowpass', 900), g = ctx.createGain(); env(g, t, 0.002, 0.5 * vol, 0.12); n.connect(lp).connect(g).connect(out);
+   const bus = punchBus(ctx, out, t, vol);
+   const n = src(ctx, noise(ctx), t, 0.25), lp = filt(ctx, 'lowpass', 2500), g = ctx.createGain(); env(g, t, 0.0008, 2.0, 0.07); n.connect(lp).connect(g).connect(bus);
+   metal(ctx, bus, t, 140 + Math.random() * 30, [1, 2.4, 3.9, 6.1], 1.3, 1.8);
+   const o = osc(ctx, 'sine', 80, t, 0.5), og = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(35, t + 0.3); env(og, t, 0.002, 2.0, 0.3); o.connect(og).connect(bus);
 }
 export function whistle(ctx, out, t, vol = 1) {
    const o = osc(ctx, 'sine', 1900, t, 0.7), g = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(700, t + 0.6);
@@ -97,7 +120,7 @@ export function crackleLoop(ctx, out) {
    s.connect(hp).connect(mod).connect(g).connect(out); s.start(); lfo.start();
    return { gain: g, stop: () => { s.stop(); lfo.stop(); } };
 }
-// engine voice: two detuned oscillators + rough noise through a low-pass, plus a clatter loop
+// engine voice: pulse-train loops (below) + transmission whine; no track clatter (removed by request)
 // ---- engine: combustion-pulse synthesis -------------------------------------------------------
 // A real engine is a train of exhaust pops (one per cylinder firing, two crank turns per cycle) ringing
 // through the exhaust pipe. Each loop is a few cycles of such pops with per-cylinder unevenness, rendered
@@ -145,10 +168,10 @@ function engineLoop(ctx, type, rpm) {
 export function engineType(cfg) {
    const e = cfg?.engine || {}, diesel = e.diesel ?? (e.fuel ? e.fuel === 'diesel' : cfg?.nation === 'SU');
    const hp = e.hp || 400, cyl = e.cyl ?? (hp < 250 ? 6 : cfg?.nation === 'US' && hp <= 500 ? 8 : 12);
-   const res = e.res ?? Math.max(62, Math.min(115, 135 - hp * 0.1));
+   const res = e.res ?? Math.max(48, Math.min(88, 108 - hp * 0.09));
    return { key: (diesel ? 'd' : 'p') + cyl + ':' + Math.round(res), cyl, diesel, vee: cyl >= 8, res, seed: cyl * 7919 + Math.round(res) };
 }
-const LOOP_RPM = [600, 1100, 1900];   // tank diesels/Maybachs: low-revving, governed ~2000 rpm
+const LOOP_RPM = [480, 850, 1400];   // tank diesels/Maybachs: low-revving, governed ~2000 rpm
 export function engineVoice(ctx, out, typeOrDiesel) {
    const type = typeof typeOrDiesel === 'object' ? typeOrDiesel : engineType({ engine: { fuel: typeOrDiesel ? 'diesel' : 'petrol', hp: 500 } });
    const g = ctx.createGain(); g.gain.value = 0; g.connect(out);
@@ -161,10 +184,9 @@ export function engineVoice(ctx, out, typeOrDiesel) {
    const srcs = LOOP_RPM.map((r) => { const s = ctx.createBufferSource(); s.buffer = engineLoop(ctx, type, r); s.loop = true; const sg = ctx.createGain(); sg.gain.value = 0; s.connect(sg).connect(drive); s.start(ctx.currentTime + Math.random() * 0.05); return { s, sg, r }; });
    // transmission whine (spur gears / final drive), tied to road speed
    const wo = ctx.createOscillator(); wo.type = 'triangle'; const wg = ctx.createGain(); wg.gain.value = 0; const wf = filt(ctx, 'bandpass', 700, 3); wo.connect(wf).connect(wg).connect(g); wo.start();
-   const cl = ctx.createBufferSource(); cl.buffer = clatter(ctx); cl.loop = true; const cg = ctx.createGain(); cg.gain.value = 0; const cf = filt(ctx, 'bandpass', 950, 0.6); cl.connect(cf).connect(cg).connect(out); cl.start();
-   const idle = LOOP_RPM[0], max = 2100;
+   const idle = LOOP_RPM[0], max = 1600;
    return {
-      g, cl, cg, type,
+      g, type,
       set(rpm, load, speed, vol, now) {   // rpm 0..1
          const R = idle + (max - idle) * rpm;
          for (let i = 0; i < srcs.length; i++) {
@@ -177,13 +199,11 @@ export function engineVoice(ctx, out, typeOrDiesel) {
             S.s.playbackRate.setTargetAtTime(R / S.r, now, 0.06);
          }
          drive.gain.setTargetAtTime(0.55 + load * 1.1, now, 0.08);
-         lp.frequency.setTargetAtTime(1100 + rpm * 900 + load * 1400, now, 0.1);
+         lp.frequency.setTargetAtTime(700 + rpm * 600 + load * 900, now, 0.1);
          g.gain.setTargetAtTime(vol * (0.55 + load * 0.35 + rpm * 0.2), now, 0.1);
          wo.frequency.setTargetAtTime(90 + speed * 38, now, 0.1); wf.frequency.setTargetAtTime(180 + speed * 76, now, 0.1);
          wg.gain.setTargetAtTime(Math.min(1, speed / 3) * 0.05, now, 0.15);
-         cl.playbackRate.setTargetAtTime(Math.max(0.05, speed * 0.2), now, 0.1);
-         cg.gain.setTargetAtTime(vol * Math.min(1, speed / 3) * 0.6, now, 0.1);
       },
-      stop() { for (const s of [...srcs.map((x) => x.s), wo, cl]) try { s.stop(); } catch { /* already */ } g.disconnect(); cg.disconnect(); },
+      stop() { for (const s of [...srcs.map((x) => x.s), wo]) try { s.stop(); } catch { /* already */ } g.disconnect(); },
    };
 }
