@@ -3,8 +3,6 @@
 // distant/echoing sounds. Per-tank engine voices for the player and the 3 nearest tanks, turret
 // whine, fire crackle; one-shots from tank state (lastFire, reload) and world.events. Volume and
 // mute persist in localStorage (wartanks.audio.v1); menu.js calls setVolume / setMuted.
-// engine/track drone switched off: the user found every synthesised engine unbearable (2026-11-05)
-const ENGINE_SOUND = false;
 import * as S from './audiosynth.js';
 
 const KEY = 'wartanks.audio.v1', SOUND = 343, NEAR = 3;
@@ -79,7 +77,7 @@ export class Audio {
       near.length = 0;
       for (const t of w.tanks || []) if (t !== p && t.alive !== false && !t.cfg?.site) near.push(t);   // sites have no engine (vMax 0 -> NaN rpm)
       near.sort((a, b) => ((a.pos.x - cp.x) ** 2 + (a.pos.z - cp.z) ** 2) - ((b.pos.x - cp.x) ** 2 + (b.pos.z - cp.z) ** 2));
-      for (let i = 0; ENGINE_SOUND && i < this.voices.length; i++) {
+      for (let i = 0; i < this.voices.length; i++) {
          const V = this.voices[i], t = i === 0 ? (p?.alive !== false ? p : null) : near[i - 1];
          if (V.tank !== t) {
             V.v?.stop(); V.v = null; V.tank = t;

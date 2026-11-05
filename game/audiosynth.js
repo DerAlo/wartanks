@@ -90,8 +90,11 @@ export function crackleLoop(ctx, out) {
    const s = ctx.createBufferSource(); s.buffer = noise(ctx); s.loop = true;
    const hp = filt(ctx, 'highpass', 1400), g = ctx.createGain(); g.gain.value = 0;
    const lfo = ctx.createBufferSource(); lfo.buffer = noise(ctx); lfo.loop = true; lfo.playbackRate.value = 0.02;
-   const lg = ctx.createGain(); lg.gain.value = 0.5; lfo.connect(lg).connect(g.gain);
-   s.connect(hp).connect(g).connect(out); s.start(); lfo.start();
+   // the flicker modulates a separate stage: added straight onto g.gain it kept the crackle audible at
+   // "gain 0" -- a constant hiss from the first countdown second, whether anything burned or not
+   const mod = ctx.createGain(); mod.gain.value = 0.6;
+   const lg = ctx.createGain(); lg.gain.value = 0.4; lfo.connect(lg).connect(mod.gain);
+   s.connect(hp).connect(mod).connect(g).connect(out); s.start(); lfo.start();
    return { gain: g, stop: () => { s.stop(); lfo.stop(); } };
 }
 // engine voice: two detuned oscillators + rough noise through a low-pass, plus a clatter loop
