@@ -405,12 +405,15 @@ wheels, horizontal bogies), `run.gap1` (wider first road-wheel gap, T-54); `hull
 on a profile plate; `hull.drums: n` external fuel drums per side on the rear hull sides. `turret.dome: [frac, ds, df, n=3]`
 = domed turret: over the top `frac` of the height the walls curve in (quarter ellipse, n rings) by ds m at the sides/rear
 and df at the front; config emits `turret.rings` [[y, poly]...] and both `armor.js` (one face band per ring pair, same
-plate/t per edge, still convex) and `tanks3d` use them, `top` = the last ring. `turret.cup: 'peri'` = no cupola: the
+plate/t per edge, still convex) and `tanks3d` use them, `top` = the last ring. `turret.roll: [b, n=4]` = rolled cast walls (IS-3, T-54, T-62A frying pan): the same rings mechanism, walls bulge out by
+up to b m mid-height between the unchanged base and roof outlines (average slope per facing as specified; the mantlet and
+pivot move forward by b to stay on the face). `turret.cup: 'peri'` = no cupola: the
 armour 'cup' box becomes a low periscope housing (0.62 × 0.18 m, Maus). `skirts.style: 'full'` = one continuous plate
-per side with chamfered ends (same box as the armour skirt), instead of six hinged Schürzen.
+per side with chamfered ends (same box as the armour skirt), instead of six hinged Schürzen; a shelf covers any gap to
+the superstructure side (E 100).
 Visual-only detail flags (no armour): `hull.det` { `nose` 'cast' | 3 (Sherman rounded differential housing, 3 = bolted
 three-piece), `hoods` (Sherman driver hoods on the ufp; spare links then use the lower 60 %), `feifel` (Tiger I rear air
-filters), `horns` m (Tiger I side plates past the front plate + front mudguards), `maus` (side plates past the glacis with towing holes, engine grilles ahead of the turret), `doors` (Churchill pannier plate with
+filters), `horns` m (Tiger I side plates past the front plate + front mudguards), `lugs` m (side plates run past the glacis with towing holes: Maus, Tiger II), `maus` (engine grilles ahead of the turret), `doors` (Churchill pannier plate with
 mud chutes and escape door; the hull roundel moves onto it), `boxes` n (roof-edge stowage boxes per side, KV) };
 `turret.det` { `bustle: [len, frac]` (upper rear overhang, top `frac` of the turret height; replaces the German rear bin),
 `bins` (Centurion side bins + rear basket), `bin: false` (no German rear stowage box) }. US leaf bogies (no `hvss`) draw

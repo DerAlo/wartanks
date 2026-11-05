@@ -563,7 +563,7 @@ const RAW = [
       view: 390, camo: { still: 0.02, move: 0.01 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
       // 9 m × 3.67 m × 3.66 m: the superstructure spans the tracks, the skirts sit flush under its sides
       hull: { floorY: 0.55, w: 3.6, lowerW: 1.7, sponsonY: 1.3, front: [['lfp', 200, -35, 0.75], ['ufp', 200, 55, 1.15]], roof: [60, 6.6],
-         rear: [['urp', 160, 30, 1.0], ['lrp', 160, -30, null]], floorT: 50, side: { t: 180, tLow: 100, tSpon: 50 }, det: { maus: true } },
+         rear: [['urp', 160, 30, 1.0], ['lrp', 160, -30, null]], floorT: 50, side: { t: 180, tLow: 100, tSpon: 50 }, det: { maus: true, lugs: 0.32 } },
       turret: { round: [16, 2.2, 8], dome: [0.8, 0.12, 0.5, 4], cup: 'peri', det: { bin: false }, z: 1.3, ringR: 1.15, h: 1.15, roofT: 60, oct: [3.3, 1.45, 1.95, 0.75, 0.45], f: [240, 0], cheek: [220, 12], s: [200, 24], rr: [200, 15], r: [200, 12], traverse: 14 },
       mantlet: { type: 'bell', w: 1.25, h: 0.82, d: 0.4, t: 220 },
       skirts: { t: 100, h: 0.95, y0: 0.4, style: 'full' },
@@ -575,11 +575,11 @@ const RAW = [
       id: 'e100', name: 'E 100', short: 'E 100', nation: 'DE', cls: 'HT', tier: 10, parent: 'e75',
       hp: 2300, mass: 140, engine: { hp: 1200, fuel: 'petrol' }, vMax: 30, vRev: 10, traverse: 20, ground: [1.15, 1.35, 2.5],
       view: 390, camo: { still: 0.02, move: 0.01 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
-      hull: { floorY: 0.55, w: 3.75, lowerW: 2.15, sponsonY: 1.25, front: [['lfp', 150, -50, 0.6], ['ufp', 200, 60, 1.0]], roof: [40, 6.5],
-         rear: [['urp', 150, 30, 1.0], ['lrp', 80, -30, null]], floorT: 40, side: { t: 120, tLow: 120, tSpon: 40 } },
-      turret: { z: -0.35, ringR: 1.15, h: 1.0, roofT: 50, oct: [3.15, 1.2, 2.15, 0.42, 0.2], f: [250, 9], cheek: [200, 21], s: [150, 25], rr: [150, 25], r: [150, 25], traverse: 18 },
-      mantlet: { w: 0.95, h: 0.8, d: 0.45, t: 150 },
-      skirts: { t: 60, h: 0.9, y0: 0.45 },
+      hull: { floorY: 0.5, w: 3.75, lowerW: 2.15, sponsonY: 1.2, front: [['lfp', 150, -50, 0.55], ['ufp', 200, 60, 0.95]], roof: [40, 6.6],
+         rear: [['urp', 150, 30, 0.95], ['lrp', 80, -30, null]], floorT: 40, side: { t: 120, tLow: 120, tSpon: 40 } },
+      turret: { z: -0.25, ringR: 1.15, h: 0.95, roofT: 50, oct: [3.15, 1.25, 2.1, 0.55, 0.25], dome: [0.4, 0.04, 0.35, 1], det: { bustle: [0.4, 0.6] }, f: [250, 9], cheek: [200, 24], s: [150, 25], rr: [150, 25], r: [150, 20], traverse: 18 },
+      mantlet: { type: 'saukopf', w: 0.95, h: 0.8, d: 0.45, t: 150 },
+      skirts: { t: 60, h: 0.85, y0: 0.42, style: 'full' },
       gun: gun(G.kwk44_150),
       run: R.interleaved({ wheels: 10, wheelR: 0.45, interleave: 2, trackW: 1.0, len: 7.9, h: 1.25, t: 40 }),
       layout: { ammo: 'sponson', fuel: 'rear' },
@@ -639,9 +639,9 @@ const RAW = [
       id: 'tiger2', name: 'Tiger II', short: 'Tiger II', nation: 'DE', cls: 'HT', tier: 8, parent: 'tiger1',
       hp: 1750, mass: 68.5, engine: { hp: 700, fuel: 'petrol' }, vMax: 38, vRev: 12, traverse: 26, ground: [1.1, 1.3, 2.3],
       view: 380, camo: { still: 0.03, move: 0.01 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
-      hull: { floorY: 0.49, w: 3.6, lowerW: 1.95, sponsonY: 1.15, front: [['lfp', 100, -50, 0.55], ['ufp', 150, 50, 0.95]], roof: [40, 5.7],
-         rear: [['urp', 80, 30, 0.95], ['lrp', 40, -45, null]], floorT: 25, side: { t: 80, slope: 25, tLow: 80, tSpon: 25 } },
-      turret: { z: -0.3, ringR: 0.93, h: 0.85, roofT: 40, oct: [2.5, 1.0, 1.75, 0.5, 0.15], det: { bustle: [0.35, 0.6] }, f: [180, 9], cheek: [80, 21], s: [80, 21], rr: [80, 21], r: [80, 21], traverse: 24 },
+      hull: { floorY: 0.49, w: 3.6, lowerW: 1.95, sponsonY: 1.1, front: [['lfp', 100, -50, 0.5], ['ufp', 150, 50, 0.88]], roof: [40, 5.85],
+         rear: [['urp', 80, 30, 0.88], ['lrp', 40, -45, null]], floorT: 25, side: { t: 80, slope: 25, tLow: 80, tSpon: 25 }, det: { lugs: 0.2 } },
+      turret: { z: -0.2, ringR: 0.93, h: 0.85, roofT: 40, oct: [2.45, 1.05, 1.85, 0.55, 0.15], dome: [0.4, 0.02, 0.32, 1], det: { bustle: [0.35, 0.6] }, f: [180, 9], cheek: [80, 21], s: [80, 21], rr: [80, 21], r: [80, 21], traverse: 24 },
       mantlet: { type: 'saukopf', w: 0.75, h: 0.7, d: 0.35, t: 100 },
       gun: gun(G.kwk43_88),
       run: R.interleaved({ wheels: 9, wheelR: 0.4, interleave: 2, trackW: 0.8, len: 6.6, h: 1.15 }),
@@ -753,7 +753,7 @@ const RAW = [
       view: 390, camo: { still: 0.14, move: 0.10 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.42, w: 3.27, front: [['lfp', 100, -55, 0.42], ['ufp', 100, 60, 0.78]], roof: [30, 4.6],
          rear: [['urp', 45, 20, 0.6], ['lrp', 20, -20, null]], floorT: 20, side: { t: 80 } },
-      turret: { round: [16, 2, 2], z: -0.45, ringR: 0.92, h: 0.78, roofT: 30, oct: [2.55, 1.2, 1.25, 0.62, 0.58], f: [200, 30], cheek: [200, 38], s: [160, 42], rr: [130, 42], r: [65, 42], traverse: 40 },
+      turret: { round: [16, 2, 2], roll: [0.13, 4], z: -0.45, ringR: 0.92, h: 0.78, roofT: 30, oct: [2.55, 1.2, 1.25, 0.62, 0.58], f: [200, 30], cheek: [200, 38], s: [160, 42], rr: [130, 42], r: [65, 42], traverse: 40 },
       mantlet: { type: 'bell', w: 0.7, h: 0.48, d: 0.18, t: 200 },
       gun: gun(G.d10t_100, { reload: 8.0, disp: 0.35, aim: 2.2, ammo: [{ type: 'AP', name: 'BR-412D', pen: 210, dmg: 300, vel: 895 },
          { type: 'APCR', name: 'BR-412P', pen: 270, dmg: 300, vel: 1120 }, { type: 'HE', name: 'OF-412', pen: 50, dmg: 400, vel: 900 }] }),
@@ -766,7 +766,7 @@ const RAW = [
       view: 400, camo: { still: 0.14, move: 0.10 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { floorY: 0.42, w: 3.3, front: [['lfp', 100, -55, 0.42], ['ufp', 100, 60, 0.78]], roof: [30, 5.0],
          rear: [['urp', 45, 20, 0.6], ['lrp', 20, -20, null]], floorT: 20, side: { t: 80 } },
-      turret: { round: [16, 2, 2], z: -0.35, ringR: 1.0, h: 0.78, roofT: 30, oct: [2.65, 1.3, 1.3, 0.72, 0.72], f: [240, 34], cheek: [220, 40], s: [150, 45], rr: [100, 45], r: [60, 45], traverse: 40 },
+      turret: { round: [16, 2, 2], roll: [0.13, 4], z: -0.35, ringR: 1.0, h: 0.78, roofT: 30, oct: [2.65, 1.3, 1.3, 0.72, 0.72], f: [240, 34], cheek: [220, 40], s: [150, 45], rr: [100, 45], r: [60, 45], traverse: 40 },
       mantlet: { type: 'bell', w: 0.62, h: 0.45, d: 0.18, t: 240 },
       gun: gun(G.u5ts_115),
       run: R.torsion({ wheels: 5, wheelR: 0.41, rollers: 0, trackW: 0.58, len: 6.1, h: 1.0 }),
@@ -778,7 +778,7 @@ const RAW = [
       view: 370, camo: { still: 0.07, move: 0.04 }, crew: ['commander', 'gunner', 'loader', 'driver'],
       hull: { drums: 1, pike: { len: 1.35, tip: 0.1 }, floorY: 0.42, w: 3.15, lowerW: 1.8, sponsonY: 1.05, front: [['lfp', 110, -50, 0.45], ['ufp', 110, 62, 0.72]], roof: [25, 4.6],
          rear: [['urp', 60, 45, 0.45], ['lrp', 60, -40, null]], floorT: 20, side: { t: 90, slope: 35, tLow: 90, tSpon: 30 } },
-      turret: { round: [16, 2, 2], z: -0.2, ringR: 0.95, h: 0.68, roofT: 30, oct: [2.5, 1.2, 1.3, 0.65, 0.6], f: [220, 40], cheek: [200, 45], s: [175, 45], rr: [100, 45], r: [60, 45], traverse: 22 },
+      turret: { round: [16, 2, 2], roll: [0.12, 4], z: -0.2, ringR: 0.95, h: 0.68, roofT: 30, oct: [2.5, 1.2, 1.3, 0.65, 0.6], f: [220, 40], cheek: [200, 45], s: [175, 45], rr: [100, 45], r: [60, 45], traverse: 22 },
       mantlet: { type: 'bell', w: 0.85, h: 0.45, d: 0.22, t: 220 },
       gun: gun(G.d25_122, { reload: 12 }),
       run: R.torsion({ wheels: 6, wheelR: 0.3, trackW: 0.65, len: 5.9, h: 1.05 }),
@@ -925,7 +925,7 @@ const RAW = [
       view: 340, camo: { still: 0.10, move: 0.07 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
       hull: { det: { nose: 3, hoods: true }, spare: { plate: 'ufp', n: 4, cols: 2 }, floorY: 0.43, w: 2.62, lowerW: 1.8, sponsonY: 1.25, front: [['lfp', 51, -50, 0.3], ['nose', 51, 20, 0.3], ['ufp', 51, 56, 0.95]],
          roof: [19, 4.5], rear: [['urp', 38, 10, 0.8], ['lrp', 38, -30, null]], floorT: 13, side: { t: 38, tLow: 38, tSpon: 13 } },
-      turret: { round: [14, 2.2, 2.2], z: -0.2, ringR: 0.82, h: 0.72, roofT: 25, oct: [1.85, 0.8, 1.15, 0.45, 0.4], f: [76, 30], cheek: [51, 30], s: [51, 5], rr: [51, 5], r: [51, 0], traverse: 38 },
+      turret: { round: [14, 2.2, 2.2], dome: [0.55, 0.16, 0.22, 3], det: { bustle: [0.28, 0.55] }, z: -0.2, ringR: 0.82, h: 0.8, roofT: 25, oct: [1.85, 0.8, 1.15, 0.45, 0.4], f: [76, 30], cheek: [51, 30], s: [51, 5], rr: [51, 5], r: [51, 0], traverse: 38 },
       mantlet: { w: 0.7, h: 0.42, d: 0.18, t: 89 },
       gun: gun(G.m3_75),
       run: R.leaf({ wheels: 6, bogies: 3, wheelR: 0.26, trackW: 0.42, rollers: 3, len: 5.3, h: 1.0 }),
@@ -1059,7 +1059,7 @@ const RAW = [
       view: 350, camo: { still: 0.10, move: 0.07 }, crew: ['commander', 'gunner', 'loader', 'driver', 'radio'],
       hull: { det: { nose: 'cast', hoods: true }, spare: { plate: 'ufp', n: 4, cols: 2 }, floorY: 0.43, w: 2.62, lowerW: 1.8, sponsonY: 1.25, front: [['lfp', 63, -50, 0.3], ['nose', 108, 20, 0.3], ['ufp', 64, 47, 0.95]],
          roof: [19, 4.63], rear: [['urp', 38, 10, 0.8], ['lrp', 38, -30, null]], floorT: 13, side: { t: 38, tLow: 38, tSpon: 13 } },
-      turret: { round: [14, 2.6, 2.2], z: -0.25, ringR: 0.88, h: 0.75, roofT: 25, oct: [2.0, 0.9, 1.3, 0.4, 0.35], f: [76, 30], cheek: [64, 25], s: [64, 5], rr: [64, 5], r: [64, 0], traverse: 38 },
+      turret: { round: [14, 2.6, 2.2], dome: [0.45, 0.12, 0.18, 3], det: { bustle: [0.38, 0.5] }, z: -0.25, ringR: 0.88, h: 0.8, roofT: 25, oct: [2.0, 0.9, 1.3, 0.4, 0.35], f: [76, 30], cheek: [64, 25], s: [64, 5], rr: [64, 5], r: [64, 0], traverse: 38 },
       mantlet: { w: 0.85, h: 0.5, d: 0.2, t: 89 },
       gun: gun(G.m1_76),
       run: R.leaf({ wheels: 6, bogies: 3, hvss: true, wheelR: 0.29, trackW: 0.584, rollers: 3, len: 5.6, h: 1.0 }),
@@ -1402,9 +1402,12 @@ function buildTurret(spec, hull) {
    // in along a quarter ellipse, by ds (m) on the sides/rear and df at the front (eased by facing), so
    // the roof rolls down into the walls (IS-3 / T-54 frying pan, Maus front). rings = [[y, poly]...]
    // from the base to the roof; armour and model both use the bands between them (still convex).
+   // Rolled cast turret (spec.roll = [b, n=4]): the walls bulge out by up to b (m) between base and roof,
+   // steeper below and flatter on top with the same base and roof outline (IS-3, T-54 'frying pan'):
+   // the average slope per facing stays as specified.
    let rings = null;
-   if (spec.dome) {
-      const [frac, ds, df, nr = 3] = spec.dome, ym = spec.h * (1 - frac);
+   if (spec.dome || spec.roll) {
+      const [frac, ds, df, nr = 3] = spec.dome || [1, 0, 0, spec.roll[1] ?? 4], ym = spec.h * (1 - frac);
       // per-vertex inward direction (bisector of the two neighbouring edge normals) and inset amount
       const dir = base.map((p, i) => {
          const a = base[(i + n - 1) % n], b = base[(i + 1) % n];
@@ -1415,7 +1418,11 @@ function buildTurret(spec, hull) {
       });
       const amt = dir.map((d) => ds + (df - ds) * Math.max(0, d[1]) ** 2);   // front vertices: inward points back (+z)
       rings = [[0, base]];
-      for (let k = 0; k <= nr; k++) {
+      if (spec.roll) for (let k = 1; k <= nr; k++) {
+         const u = k / nr, b = spec.roll[0] * Math.sin(Math.PI * u);
+         rings.push([+(u * spec.h).toFixed(4), base.map((p, i) => [+(p[0] + (top[i][0] - p[0]) * u - dir[i][0] * b).toFixed(4), +(p[1] + (top[i][1] - p[1]) * u - dir[i][1] * b).toFixed(4)])]);
+      }
+      else for (let k = 0; k <= nr; k++) {
          const th = (k / nr) * Math.PI / 2, y = ym + (spec.h - ym) * Math.sin(th), u = y / spec.h;
          if (y < rings[rings.length - 1][0] + 1e-3) continue;
          rings.push([+y.toFixed(4), base.map((p, i) => {
@@ -1442,7 +1449,7 @@ function buildTurret(spec, hull) {
    return {
       cupola,
       x: 0, z: spec.z, y: hull.roofY, ringR: spec.ringR, h: spec.h, base, top, rings, faces, roofT: spec.roofT, plates,
-      openTop: !!spec.openTop, skirt: !!spec.skirt, cup: spec.cup ?? null, det: spec.det ?? null, traverse: spec.traverse, lenF, lenR, w,
+      openTop: !!spec.openTop, skirt: !!spec.skirt, cup: spec.cup ?? null, bulge: spec.roll ? spec.roll[0] : 0, det: spec.det ?? null, traverse: spec.traverse, lenF, lenR, w,
    };
 }
 
@@ -1469,7 +1476,7 @@ function finalize(raw) {
    if (cfg.turret) {
       const T = cfg.turret, f = T.faces[0];
       const py = T.h * 0.5;
-      const zFront = -T.lenF + py * Math.tan(f.slope * D2R);   // front face z at pivot height
+      const zFront = -T.lenF + py * Math.tan(f.slope * D2R) - T.bulge;   // front face z at pivot height (rolled walls bulge out there)
       m.mount = 'turret'; m.x = 0; m.y = py; m.z = zFront - m.d / 2 + 0.03;
       g.pivot = { x: 0, y: py, z: zFront + 0.15 };
    } else {

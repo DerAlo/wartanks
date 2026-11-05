@@ -324,6 +324,8 @@ function buildHull(S) {
    else if (S.skirts && S.skirts.style === 'full') for (const s of [-1, 1]) {   // Maus / E 100: one continuous armour plate per side, ends chamfered
       const sk = S.skirts, y0 = sk.y0, y1 = y0 + sk.h, x = s * sk.x, z0 = tz - sk.len / 2, z1 = tz + sk.len / 2, c = Math.min(0.45, sk.h * 0.5);
       extrude(A, [[z0, y1], [z0 + c * 0.7, y0], [z1 - c * 0.5, y0], [z1, y0 + c * 0.6], [z1, y1]], x - 0.02, x + 0.02, alongX, PAINT);
+      const gap = sk.x - 0.02 - H.w / 2;   // shelf from the superstructure side out to the skirt (E 100); flush skirts (Maus) need none
+      if (gap > 0.04) A.box(s * (H.w / 2 + gap / 2 - 0.01), y1 - 0.015, tz, gap + 0.02, 0.03, sk.len, PAINT);
       for (let k = 1; k < 4; k++) A.box(x + s * 0.022, y0 + sk.h / 2, z0 + sk.len * k / 4, 0.01, sk.h - 0.06, 0.03, DARK);           // plate joints
       for (let k = 0; k < 14; k++) A.box(x + s * 0.025, y1 - 0.07, z0 + 0.2 + (sk.len - 0.4) * k / 13, 0.02, 0.05, 0.05, DARK);      // bolt row to the hull
    }
@@ -462,19 +464,19 @@ function hullDetails(A, S, front, back) {
          if (g1 - g0 > 0.08) A.box(s * T.x, T.top + 0.025, (g0 + g1) / 2, T.w + 0.06, 0.03, g1 - g0, PAINT);            // front mudguard
       }
    }
-   if (D.maus) {   // Maus: side plates run past the glacis with big towing holes, engine air grilles ahead of the turret
-      const yb = H.sponsonY ?? T.top, ry = H.roofY, zb = frontZAt(P, yb + 0.02), zt = frontZAt(P, ry - 0.02), L = 0.32;
+   if (D.lugs) {   // side plates run past the glacis with towing holes (Maus, Tiger II); lugs = how far, m
+      const yb = H.sponsonY ?? T.top, ry = H.roofY, zb = frontZAt(P, yb + 0.02), zt = frontZAt(P, ry - 0.02), L = D.lugs;
       for (const s of [-1, 1]) {
-         const x = s * (H.w / 2 - 0.06);
+         const x = s * (roofHalfW(H, (yb + ry) / 2) - 0.06);   // sloped sides (Tiger II): the plate's mid height
          extrude(A, [[zb - L, yb], [zb + 0.3, yb], [zt + 0.3, ry - 0.04], [zt - L * 0.4, ry - 0.04]], x - 0.06, x + 0.06, alongX, PAINT);
          const hz = zb - L * 0.35 + (zt - zb) * 0.3, hy = yb + (ry - yb) * 0.3;
-         A.cyl(x, hy, hz, 0.11, 0.11, 0.13, BLACK, 'x', 10);
+         A.cyl(x, hy, hz, L * 0.34, L * 0.34, 0.13, BLACK, 'x', 10);
       }
-      for (const s of [-1, 1]) {
-         const gz = -1.25, at = roofYAt(P, gz);
-         A.box(s * 0.85, at + 0.02, gz, 1.05, 0.04, 1.5, DARK);
-         for (let k = 0; k < 7; k++) A.box(s * 0.85, at + 0.045, gz - 0.66 + k * 0.22, 1.0, 0.02, 0.05, BLACK);
-      }
+   }
+   if (D.maus) for (const s of [-1, 1]) {   // Maus: engine air grilles ahead of the turret
+      const gz = -1.25, at = roofYAt(P, gz);
+      A.box(s * 0.85, at + 0.02, gz, 1.05, 0.04, 1.5, DARK);
+      for (let k = 0; k < 7; k++) A.box(s * 0.85, at + 0.045, gz - 0.66 + k * 0.22, 1.0, 0.02, 0.05, BLACK);
    }
    if (D.doors) for (const s of [-1, 1]) {
       const { sz, iz } = sprocketIdler(T), za = Math.min(sz, iz) + 0.25, zb = Math.max(sz, iz) - 0.25, yb = wy0 + T.r + 0.04, yt = T.top - beltT(T) - 0.03;
@@ -545,7 +547,7 @@ function buildTurret(S, PAINT = [1, 1, 1], DARK = [0.42, 0.42, 0.4]) {
       A.box(0, T.h * 0.5, bBack + 0.17, Math.min(1.7, hwAt(bBack - 0.3) * 1.5), T.h * 0.55, 0.34, PAINT);
    }
    if (S.nation === 'de' && TD.bin !== false && !TD.bustle) A.box(0, T.h * 0.5, bBack + 0.18, Math.min(1.3, xMax * 1.3), T.h * 0.6, 0.36, PAINT);
-   else if (!TD.bins && (S.nation === 'us' || S.nation === 'uk')) A.box(0, T.h * 0.55, bBack + 0.1, xMax * 0.9, T.h * 0.35, 0.2, DARK);
+   else if (!TD.bins && !TD.bustle && (S.nation === 'us' || S.nation === 'uk')) A.box(0, T.h * 0.55, bBack + 0.1, xMax * 0.9, T.h * 0.35, 0.2, DARK);
    A.box(xMax * 0.3, T.h + 0.1, zFront + 0.35, 0.12, 0.18, 0.12, DARK);
    if (T.skirt) {   // turret Schürzen (Pz IV H): spaced plates around the sides and rear on brackets
       const zb = Math.max(...base.map((p) => p[1])), hw = Math.max(...base.map((p) => p[0])) + 0.22, zf = zFront + 0.45, hh = T.h * 0.95;
