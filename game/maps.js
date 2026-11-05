@@ -198,6 +198,36 @@ export const MAPS = {
       ],
       scatter: { trees: 90, bushes: 120, rocks: 8 },
    },
+   wueste: {
+      id: 'wueste', name: 'Wüste', desc: 'Libysch-ägyptische Grenze: Sand und Geröll, flache Wadis und ein Steilhang mit zwei Pässen – Deckung gibt nur das Gelände.',
+      palette: 'steppe', seed: 79, noRandom: true,     // North Africa ops (campaign) / chosen only
+      colors: { grass: 0xc9ad78, grass2: 0xd8c08c, dirt: 0xa98a5e, rock: 0x9a8268, road: 0xb89e74, sand: 0xdcc898, soft: 0xbfa070, tree: 0x6f6a3c, tree2: 0x7d7646, pine: 0x5a5a34, bush: 0x8a7e4c },
+      render: { ...SUMMER, fog: 0xdccdb0, skyHor: 0xe4d8c0, skyTop: 0x5e8cc4, skyLow: 0xb8a68a, sunColor: 0xfff0d6, sunIntensity: 3.2,
+         skyLight: 0xd8dce4, groundLight: 0x9a845e, cloud: 0.08, fogNear: 300, fogFar: 1400, grade: { saturation: 1.04, contrast: 1.06 } },
+      noise: { amp: 3.5, scale: 300, detail: 0.5, ridgedAmp: 2.5 },
+      ground: { soft: 0.22, hard: 0.3 },
+      features: [
+         // the escarpment (Halfaya): a long steep step across the north, the pass in the middle, a goat track in the east
+         { kind: 'ridge', x0: -540, z0: -175, x1: 540, z1: -165, w: 110, h: 24, gaps: [[0.5, 46], [0.86, 40]] },
+         { kind: 'road', pts: [[10, 500], [0, 250], [0, 0], [0, -170], [20, -500]], w: 7 },
+         { kind: 'road', pts: [[-500, 230], [-200, 160], [0, 140]], w: 5 },
+         // wadis: shallow dry valleys, the only cover on the plain
+         { kind: 'hill', x: 300, z: -20, r: 95, h: -6 },
+         { kind: 'hill', x: -260, z: 110, r: 110, h: -5 },
+         { kind: 'hill', x: 150, z: 260, r: 70, h: -3 },
+         { kind: 'hill', x: -150, z: -40, r: 70, h: 5 },
+         { kind: 'hill', x: 120, z: 60, r: 60, h: 4 },
+         { kind: 'house', x: -205, z: 215, yaw: 0.1, w: 9, d: 7, h: 3.5 },
+         { kind: 'house', x: -190, z: 228, yaw: 0.1, w: 6, d: 6, h: 3 },
+         { kind: 'rocks', sym: true, x: 230, z: 120, r: 70, n: 12 },
+         { kind: 'rocks', x: -100, z: -120, r: 90, n: 14 },
+         { kind: 'rocks', x: 200, z: -120, r: 90, n: 14 },
+         { kind: 'rocks', x: 380, z: -150, r: 60, n: 10 },
+         { kind: 'bushes', sym: true, x: -280, z: 100, r: 90, n: 16 },
+         { kind: 'bushes', x: 300, z: -20, r: 80, n: 14 },
+      ],
+      scatter: { trees: 0, bushes: 70, rocks: 70 },
+   },
 };
 export const MAP_LIST = Object.keys(MAPS);
 /** Maps the random pick (menu, lobby host) rolls from: no coast map with open sea for 7v7. */

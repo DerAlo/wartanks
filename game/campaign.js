@@ -134,6 +134,7 @@ export class Script {
       t.tag = o.tag || null; if (o.aiErr) t.aiErr = o.aiErr; if (o.viewMul) t.viewMul = o.viewMul;
       if (o.noAI || o.inert) t.noAI = true;           // inert: abandoned, no crew; AIs of both sides ignore it (ai.js)
       if (o.inert) t.inert = true;
+      if (o.ammo) for (const k in o.ammo) if (k in t.ammoCount) t.ammoCount[k] = o.ammo[k];   // e.g. { APCR: 0 }: no tungsten in 1941
       if (o.tag) { if (!this.tags.has(o.tag)) this.tags.set(o.tag, []); this.tags.get(o.tag).push(t); }
       if (w.ais && !o.isPlayer) {                     // after construction World does not wire these
          t.side = w.player && t.team === w.player.team ? 'ally' : 'enemy';
@@ -226,6 +227,22 @@ export class Script {
       }, { repeat: true });
       h.stop = () => { if (h.done) return; h.done = true; tr.dead = true; this.timer(null); };
       return h;
+   }
+   /** Artillery / fighter-bomber strike: `o.n` (6) impacts over `o.secs` (6) inside the circle (or round a
+    *  random live member of `o.tag` each time, Jabos picking tanks). Each impact hurts tanks within 9 m
+    *  (only `o.team` if given; emplacements too) by up to `o.dmg` (180); 'explosion' effects for the client. */
+   strike(x, z, r, o = {}) {
+      const n = o.n ?? 6, secs = o.secs ?? 6, dmg = o.dmg ?? 180;
+      for (let i = 0; i < n; i++) this.after(secs * i / n, (S) => {
+         let cx = x, cz = z;
+         if (o.tag) { const live = S.group(o.tag).filter((t) => t.alive); if (!live.length) return; const t = live[(S.rng() * live.length) | 0]; cx = t.pos.x; cz = t.pos.z; }
+         const a = S.rng() * Math.PI * 2, d = Math.sqrt(S.rng()) * r, px = cx + Math.cos(a) * d, pz = cz + Math.sin(a) * d;
+         S.w.effect('explosion', { x: px, y: S.T.heightAt(px, pz), z: pz }, { cal: 250, size: 3, life: 2.5 });
+         for (const t of S.w.tanks) {
+            if (!t.alive || t.inert || (o.team != null && t.team !== o.team)) continue;
+            const dd = Math.hypot(t.pos.x - px, t.pos.z - pz); if (dd < 9) { S.w.damage(t, dmg * (1 - dd / 12), null, 'strike'); t.lastDamaged = S.w.time; }
+         }
+      });
    }
    /** Hand tanks to another team (a captured vehicle, a unit changing sides); AI targeting follows team. */
    defect(tanks, team) {
@@ -917,5 +934,153 @@ export const OPS = {
          });
       },
    },
+   halfaya: {
+      id: 'halfaya', name: 'Höllenfeuerpass', place: 'Halfaya-Pass, ägyptisch-libysche Grenze', date: '15. Juni 1941', nation: 'UK',
+      map: 'wueste', seed: 1541, tanks: ['matilda', 'crusader'], start0: [0, 430, 0], fog: 0.55,
+      brief: [
+         'Operation Battleaxe: Tobruk ist eingeschlossen, die 8. Armee soll die Grenze freikämpfen. Am Halfaya-Pass führt die Straße den Steilhang hinauf nach Libyen.',
+         'Ein Sandsturm liegt über der Ebene. Vor uns weicht eine Gruppe Panzer III zurück. Die Matildas sollen nachstoßen und den Pass nehmen, bevor sich der Sturm legt.',
+         'Die Panzerung der Matilda hält fast alles aus, was der Gegner hat. Fast alles.',
+      ],
+      goals: ['Die Panzer III zurückwerfen', 'Zum Pass nachstoßen', '???'],
+      tip: 'Im Sturm sieht keiner weit. Wer offen auf einen Steilhang zufährt, wenn der Sturm sich legt, ist ein Ziel. Wadis geben Deckung.',
+      script(S) {
+         S.fog(0.55, 0xc6a676);                                   // ghibli: dust-brown, short sight
+         const G = [[-50, -105], [0, -112], [55, -105]];
+         for (const [x, dx] of [[-30, -18], [30, 18]]) S.spawn('matilda', 1, x, 440, { tag: 'mate', name: 'Matilda (4th RTR)', order: { kind: 'route', pts: [[x + dx, 250], [x + dx, 120]] } });
+         for (const [x, z] of [[-90, 40], [10, 10], [110, 30]]) S.spawn('pz3e', 2, x, z, { tag: 'pz', name: 'Panzer III', aiErr: 2, viewMul: 0.8, ammo: { APCR: 0 }, order: { kind: 'hold', x, z } });
+         S.obj('screen', 'Die Panzer III zurückwerfen');
+         S.obj('pass', 'Zum Pass nachstoßen');
+         S.obj('flak', 'Die 8,8-cm-Batterie am Pass ausschalten', { hidden: true, need: 3 });
+         S.obj('b_mate', 'Mindestens eine weitere Matilda kommt durch', { bonus: true });
+         S.obj('b_pz', 'Zwei Panzer III vernichten', { bonus: true, need: 2 });
+         S.phase('advance'); S.goal(0, 140, 'Panzer III im Sturm', 40);
+         this.start = (S) => S.radio('Hier Schwadron: Fritz zieht sich vor uns zurück. Dranbleiben, solange der Sturm uns deckt!');
+         S.when(() => true, (S) => S.progress('b_pz', S.dead('pz')), { repeat: true });
+         S.when((S) => S.alive('mate') === 0, (S) => S.fail('b_mate'));
+         // the Panzer III fall back towards the pass as soon as the Matildas press: the bait
+         S.when((S) => S.c.phase === 'advance' && (S.dead('pz') > 0 || S.time > 100 || S.inZone('player', 0, 30, 170)), (S) => {
+            S.phase('pursue'); S.done('screen');
+            S.radio('Sie weichen! Ihre Granaten prallen an uns ab. Nach, bis an den Pass!');
+            S.order(S.group('pz').filter((t) => t.alive), { kind: 'route', pin: true, pts: [[0, -110], [0, -230], [-40, -330]] });
+            S.order(S.group('mate').filter((t) => t.alive), { kind: 'route', pin: true, pts: [[-40, 20], [-20, -60]] });
+            S.goal(0, -40, 'Passeingang', 40);
+         });
+         // the twist: the storm drops and shows the guns dug in on the slope: 8,8-cm-Flak in the ground role
+         S.when((S) => S.c.phase === 'pursue' && (S.inZone('player', 0, -40, 270) || S.time > 220), (S) => {
+            S.phase('guns'); S.fadeFog(0.12, 14, (S) => S.fog(0.1, 0xdccdb0));
+            for (const [x, z] of G) S.spawn('pak40', 2, x, z, { tag: 'flak', name: '8,8-cm-Flak', exact: true, noAI: true, viewMul: 0.35, face: [0, 200] });
+            S.after(10, (S) => { for (const t of S.group('flak')) if (t.alive) S.crewUp(t, { aiErr: 4 }); });   // crews still laying the guns
+            // the crews still lay their guns on the Matildas in front and the dust settles: aim improves after a while
+            S.after(25, (S) => { for (const t of S.group('flak')) { t.viewMul = 0.85; if (t.ai) t.ai.D = { ...t.ai.D, err: t.ai.D.err * 0.65 }; } });
+            S.radio('Der Sturm legt sich … Geschütze am Hang! Lange Rohre – das ist Flak, 8,8!', 'warn');
+            S.after(5, (S) => S.radio('Die gehen durch Matildas wie durch Pappe! Raus aus ihrem Schussfeld, ins Wadi nach Osten!', 'warn'));
+            S.show('flak'); S.retext('pass', 'Ins Wadi Ost ausweichen');
+            S.order(S.group('mate').filter((t) => t.alive), { kind: 'route', pin: true, pts: [[170, 170], [330, 80], [310, -10]] });
+            S.mark('wadi', 310, -10, 'Wadi', 'area', 60); S.goal(310, -10, 'Wadi Ost', 35);
+            if (S.autopilot && S.player) S.order([S.player], { kind: 'route', pin: true, pts: [[150, 190], [330, 90], [310, -10]] });
+         });
+         // from the wadi up the goat track in the east, then along the crest into the battery's flank
+         S.when((S) => S.c.phase === 'guns' && (S.inZone('player', 310, -10, 60) || S.time > S._tg + 100), (S) => {
+            S.done('pass'); S.phase('flank'); S.unmark('wadi'); S.refit(0.5, null);
+            S.radio('Im Wadi, außer Sicht. Notdürftig geflickt. Der Hang hat im Osten einen Ziegenpfad. Hoch damit und von der Flanke rein – mit Sprenggranaten, wenn ihr habt.');
+            S.mark('path', 385, -175, 'Ziegenpfad', 'area', 30);
+            S.goal(385, -175, 'Ziegenpfad', 25);
+            const swing = (S) => { for (const t of S.group('flak')) if (t.ai) t.ai.D = { ...t.ai.D, err: t.ai.D.err * 2.2, react: t.ai.D.react * 2.5 }; };   // they must manhandle 5 t of gun round
+            // over the top and along the back of the escarpment: come down on the battery from behind
+            S.zone(385, -175, 65, (S) => {
+               S.unmark('path'); S.goal(170, -235, 'Hinter dem Hang', 30);
+               S.radio('Oben. Jetzt hinter dem Kamm nach Westen – sie schauen alle nach Süden.');
+               S.zone(170, -235, 45, (S) => { swing(S); S.hunt('flak', '8,8-cm-Flak'); });
+            });
+            S.after(160, (S) => { if (!S._hunt && S.alive('flak')) { S.unmark('path'); swing(S); S.hunt('flak', '8,8-cm-Flak'); } });
+            S.order(S.group('mate').filter((t) => t.alive), { kind: 'route', pts: [[385, -175], [200, -200], [80, -150]] });
+         });
+         S.when((S) => S.c.phase === 'guns', (S) => { S._tg = S.time; });
+         S.when((S) => S.c.phase !== 'advance', (S) => S.progress('flak', S.dead('flak')), { repeat: true });
+         // last: the panzers come back through the pass to save their guns
+         S.when((S) => S.isDone('flak'), (S) => {
+            S._hunt = null; S.phase('counter'); S.refit(0.3, 'Batterie ausgeschaltet. Munitionsnachschub aus dem Wadi – schnell, die Panzer kommen zurück.');
+            S.radio('Panzer III von Norden durch den Pass!', 'warn');
+            for (const [x, dt] of [[-20, 0], [20, 10]]) S.after(dt, (S) => S.spawn('pz3e', 2, x, -420, { tag: 'pz2', name: 'Panzer III', aiErr: 1.7, ammo: { APCR: 0 }, order: { kind: 'route', pts: [[x, -250], [0, -150], [60, -150]] } }));
+            S.after(12, (S) => S.hunt('pz2', 'Panzer III'));
+         });
+         S.when((S) => S.c.phase === 'counter' && S.group('pz2').length === 2 && !S.alive('pz2'), (S) => {
+            if (S.alive('mate') > 0) S.done('b_mate'); else S.fail('b_mate');
+            if (S.get('b_pz').state === 'active') S.fail('b_pz');
+            S.radio('Der Pass ist für heute unser. Die 8,8 im Erdkampf – das wird die ganze Armee lernen müssen.');
+            S.win('Halfaya-Pass genommen');
+         });
+      },
+   },
+   bastogne: {
+      id: 'bastogne', name: 'Die Kreuzung im Nebel', place: 'Noville bei Bastogne, Ardennen', date: '19.–23. Dezember 1944', nation: 'US',
+      map: 'winter', seed: 1219, tanks: ['m4', 'm18'], start0: [-150, 330, 0], fog: 0.55,
+      brief: [
+         'Die deutsche Ardennenoffensive hat die Front aufgerissen. Bastogne mit seinen sieben Straßen muss gehalten werden, bis die 101. Luftlandedivision eingegraben ist.',
+         'Ein Panzertrupp hält die Kreuzung nördlich der Stadt. Nebel und Schnee, kein Flugwetter. Was aus dem Weiß auftaucht, ist meistens deutsch.',
+         'Die Militärpolizei warnt vor deutschen Soldaten in amerikanischen Uniformen hinter den Linien. Traut niemandem, den ihr nicht kennt.',
+      ],
+      goals: ['Die Kreuzung gegen den Angriff halten', '???', 'Bei klarem Wetter zum Gegenstoß antreten'],
+      tip: 'Im Nebel zuerst schießen, wer zuerst sieht. Achte auf die Silhouette: Nicht jeder „Freund“ ist einer.',
+      script(S) {
+         S.fog(0.55, 0xdde2e6);                                   // freezing fog over the snow
+         const X = [-190, 70];                                    // the crossroads on the road north
+         S.spawn('m18', 1, -235, 95, { tag: 'mate', name: 'M18 (705th TD)', order: { kind: 'ambush', x: -235, z: 95, r: 260 } });
+         S.spawn('m4', 1, -140, 105, { tag: 'mate', name: 'Sherman (Team Desobry)', order: { kind: 'ambush', x: -140, z: 105, r: 260 } });
+         S.obj('hold', 'Die Kreuzung halten', { need: 4 });
+         S.obj('greif', 'Die falschen Amerikaner stellen', { hidden: true, need: 2 });
+         S.obj('ctr', 'Gegenstoß: die Bereitstellung am Gehöft zerschlagen', { hidden: true, need: 3 });
+         S.obj('b_spy', 'Den Schwindel erkennen, bevor sie schießen', { bonus: true, hidden: true });
+         S.obj('b_mate', 'Kein Fahrzeug des Trupps verloren', { bonus: true });
+         S.phase('hold');
+         const [hx, hz] = S.hullDown(X[0], X[1], 25, -150, -300);
+         S.mark('x', X[0], X[1], 'Kreuzung', 'area', 60); S.goal(hx, hz, 'Kreuzung – Stellung', 18);
+         this.start = (S) => S.radio('Hier Desobry: Haltet die Kreuzung. Wir hören Motoren im Nebel, Richtung Norden. Lasst sie nah rankommen.');
+         const wave = (S, list) => list.forEach(([c, dx, dt]) => S.after(dt, (S) => S.spawn(c, 2, -80 + dx, -470, { tag: 'w', name: c === 'panther' ? 'Panther' : 'Panzer IV', aiErr: 1.7, viewMul: 0.8,
+            order: { kind: 'route', pts: [[-90 + dx, -300], [-200 + dx, -100], [X[0] + dx * 0.4, X[1] - 20]] } })));
+         S.after(15, (S) => { wave(S, [['pz4h', 0, 0], ['pz4h', 30, 12]]); S.radio('Panzer auf der Straße, aus dem Nebel – Feuer frei auf Sicht!', 'warn'); });
+         S.when((S) => S.c.phase === 'hold' && (S.dead('w') >= 2 || S.time > 160), (S) => { wave(S, [['panther', -20, 0], ['pz4h', 25, 14]]); S.radio('Zweite Welle! Ein Panther dabei – auf die Seite zielen, frontal ist er zu stark.', 'warn'); });
+         S.when(() => true, (S) => S.progress('hold', S.dead('w')), { repeat: true });
+         S.when((S) => S.dead('mate') > 0, (S) => S.fail('b_mate'));
+         // the twist: "M10s" from the rear, cut off at Foy, ask to be let through. They are Panthers in disguise (Operation Greif).
+         let fake = [], hitFirst = false;
+         S.when((S) => S.isDone('hold'), (S) => {
+            S.phase('greif'); S.refit(0.35, 'Jeep mit Munition durchgekommen. Auffüllen – und Augen offen.');
+            S.radio('Ein M10 und ein Sherman von Süden, versprengt aus Foy. Sie wollen durch zur Kreuzung. Nicht schießen.');
+            fake = [[160, 470, 'panther', 'M10 (versprengt)'], [195, 490, 'm4', 'Sherman (versprengt)']].map(([x, z, c, n]) => S.spawn(c, 1, x, z, { tag: 'fake', name: n, aiErr: 2.6, viewMul: 0.7,
+               order: { kind: 'route', pin: true, pts: [[40, 320], [X[0] + 40, X[1] + 60], [X[0], X[1]]] } }));
+            for (const t of fake) t.hp = t.maxHP * (t.cls === 'panther' ? 0.5 : 0.8);          // hard-used, short of fuel and spares
+            S.after(14, (S) => S.radio('MP an alle: Fragt nach der Hauptstadt von Illinois. Wer nicht Springfield sagt, ist kein Ami.'));
+            S.show('b_spy');
+         });
+         const unmask = (S, early) => {
+            if (S.c.phase !== 'greif') return; S.phase('unmask');
+            hitFirst = early; S.defect(fake.filter((t) => t.alive), 2);
+            for (const t of fake) { t.name = t.cls === 'panther' ? 'Panther (getarnt)' : 'Beute-Sherman'; if (t.alive) S.order([t], { kind: 'advance', x: S.player?.pos.x ?? X[0], z: S.player?.pos.z ?? X[1] }); }
+            S.show('greif'); S.hunt('fake', 'Falsche M10');
+            S.radio(early ? 'Gut aufgepasst! Ein Panther mit aufgeschweißten Blechen und ein Beute-Sherman – deutsche Besatzungen!' : 'Die schießen auf uns! Ein getarnter Panther und ein Beute-Sherman – das sind Deutsche!', 'warn');
+         };
+         S.when((S) => S.c.phase === 'greif' && fake.some((t) => t.lastDamaged > 0 && t.lastHitBy === S.player?.id), (S) => unmask(S, true));
+         S.when((S) => S.c.phase === 'greif' && fake.some((t) => t.alive && (S.inZone('player', t.pos.x, t.pos.z, 170) || S.countIn('mate', t.pos.x, t.pos.z, 120) > 0)), (S) => unmask(S, false));
+         S.when((S) => S.c.phase === 'unmask', (S) => S.progress('greif', fake.filter((t) => !t.alive).length), { repeat: true });
+         // last: the fog lifts (23 Dec), the fighter-bombers come and the troop turns to the counter-attack
+         S.when((S) => S.c.phase === 'unmask' && S.isDone('greif'), (S) => {
+            S._hunt = null; S.phase('clear'); if (hitFirst) S.done('b_spy'); else S.fail('b_spy');
+            S.refit(0.4, 'Ein paar Tage später: Der Himmel reißt auf. Kälte, Sonne – Flugwetter!');
+            S.fadeFog(0.04, 25);
+            for (const [c, x, z] of [['pz4h', 100, -250], ['stug3g', 150, -215], ['panther', 60, -210]]) S.spawn(c, 2, x, z, { tag: 'ctr', name: TANKS[c].short, aiErr: 2, viewMul: 0.7, order: { kind: 'hold', x, z } });
+            S.after(10, (S) => { S.radio('Thunderbolts über der Bereitstellung am Gehöft! Jetzt nach, solange sie die Köpfe einziehen!', 'warn'); S.strike(0, 0, 16, { tag: 'ctr', n: 9, secs: 14, dmg: 320, team: 2 }); });
+            S.after(14, (S) => { S.show('ctr'); S.hunt('ctr', 'Bereitstellung'); S.order(S.group('mate').filter((t) => t.alive), { kind: 'advance', x: 100, z: -200 }); });
+         });
+         S.when((S) => S.c.phase === 'clear', (S) => S.progress('ctr', S.dead('ctr')), { repeat: true });
+         S.every(70, (S) => { if (S.c.phase === 'clear' && S.alive('ctr')) { S.radio('Die Thunderbolts kommen noch einmal herum.'); S.strike(0, 0, 14, { tag: 'ctr', n: 4, secs: 8, dmg: 320, team: 2 }); } });
+         S.when((S) => S.c.phase === 'clear' && S.isDone('ctr'), (S) => {
+            if (S.get('b_mate').state === 'active') S.done('b_mate');
+            S.radio('Die Bereitstellung brennt. Bastogne hält – und die Straßen gehören wieder uns.');
+            S.win('Kreuzung gehalten, Gegenstoß gelungen');
+         });
+      },
+   },
 };
-export const OP_LIST = ['westwall', 'arracourt', 'lasttiger', 'danzig', 'seelow', 'spaehtrupp', 'beute', 'totalize', 'koeder'];
+export const OP_LIST = ['westwall', 'arracourt', 'lasttiger', 'danzig', 'seelow', 'spaehtrupp', 'beute', 'totalize', 'koeder', 'halfaya', 'bastogne'];

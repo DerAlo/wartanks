@@ -66,7 +66,7 @@ test('inert vehicles are ignored by bots; crewUp and defect bring them into the 
    step(w, 1);
 });
 
-for (const [id, twist] of [['spaehtrupp', 'out'], ['beute', 'escort'], ['totalize', 'tigers'], ['koeder', 'out']]) {
+for (const [id, twist] of [['spaehtrupp', 'out'], ['beute', 'escort'], ['totalize', 'tigers'], ['koeder', 'out'], ['halfaya', 'flank'], ['bastogne', 'unmask']]) {
    test('story op ' + id + ' reaches its twist (' + twist + ') and is won by the autopilot', () => {
       const w = new World({ mode: 'campaign', op: id, playerCls: null, difficulty: 0, countdown: 0 });
       const seen = new Set(); let st = 0;
@@ -74,3 +74,11 @@ for (const [id, twist] of [['spaehtrupp', 'out'], ['beute', 'escort'], ['totaliz
       assert.ok(seen.has(twist), 'phases ' + [...seen]); assert.equal(w.result?.outcome, 'win', w.result?.reason);
    });
 }
+
+test('strike hurts tanks near the impacts only; spawn ammo override empties a type', () => {
+   const w = fresh(), S = w.script, p = w.player;
+   const a = S.spawn('pz4h', 2, p.pos.x + 300, p.pos.z, { noAI: true, ammo: { APCR: 0 } }); a.pos.x = p.pos.x + 300; a.pos.z = p.pos.z;
+   if ('APCR' in a.ammoCount) assert.equal(a.ammoCount.APCR, 0);
+   const hp0 = p.hp; S.strike(a.pos.x, a.pos.z, 0, { n: 3, secs: 1, dmg: 100 }); step(w, 2);
+   assert.ok(a.hp < a.maxHP, 'target hit'); assert.equal(p.hp, hp0, 'far tank untouched');
+});

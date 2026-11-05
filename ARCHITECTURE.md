@@ -626,7 +626,7 @@ can run an operation unchanged and clients only render `world.campaign`.
 * Maps: `noRandom: true` in `MAPS` (e.g. the sea-half `kueste`) keeps a map out of `RANDOM_MAPS`, the
   pool the menu's "random" map draws from. Such maps are reached only through the campaign or by
   choosing them directly.
-* Twist helpers (used by the story ops `spaehtrupp`, `beute`, `totalize` (night → dawn via `fadeFog`), `koeder`), all sim-side:
+* Twist helpers (used by the story ops `spaehtrupp`, `beute`, `totalize` (night → dawn via `fadeFog`), `koeder`, `halfaya`, `bastogne`), all sim-side:
   * `S.countdown(label, s, fn)` → timer object `{ label, left }` (lengthen with `.left += n`, relabel;
     a later `S.timer` replaces it and its `fn` never fires). `S.retext(id, text)` rewrites an
     objective (re-emits `objective`). `S.fog(amount, color?)` / `S.fadeFog(amount, s, fn)` change
@@ -641,13 +641,29 @@ can run an operation unchanged and clients only render `world.campaign`.
     counts it, e.g. the Tiger to capture). `S.crewUp(t, { aiErr, order })` gives it a crew (BotAI),
     `S.defect(tanks, team)` switches sides.
   * `when/at/after` return the trigger; `tr.dead = true` cancels it.
+  * `S.strike(x, z, r, { n, secs, dmg, tag, team })`: artillery / fighter-bomber strike, `n` impacts
+    over `secs` inside the circle (or round a random live member of `tag` each time). Each impact
+    hurts tanks within 9 m (only `team` if given; inert vehicles are spared) and emits an
+    `'explosion'` effect. Used for the Thunderbolts in `bastogne`.
+  * `spawn(..., { ammo: { APCR: 0 } })` overrides the starting ammo count per type (no tungsten
+    rounds for 1941 Panzer III in `halfaya`).
+* Story ops `halfaya` (UK 1941, map `wueste`: sandstorm, the retreating Panzer III lure the Matildas
+  onto a dug-in 8,8 battery; the guns spawn `noAI` and get a crew 10 s later, then the player flanks
+  through the eastern wadi and the goat track and comes down from behind the escarpment) and
+  `bastogne` (US 1944, `winter` map, fog: hold the crossroads; the twist is Operation Greif, where
+  a "versprengter" M10 and Sherman arrive as team 1 and `S.defect` to team 2 when the player hits
+  them or they get within 170 m; then the fog lifts and `strike` opens the counter-attack).
+* Map `wueste` (`maps.js`, `noRandom`): steppe palette re-coloured through `colors`, no trees, an
+  escarpment ridge across z ≈ −170 with the pass at x 0 and a goat track at x ≈ 390, wadis
+  (hollows) at (300, −20) and (−260, 110).
   * Route orders advance a waypoint also when the bot is within 50 m and has not got closer for
     10 s (stuck on a ridge or a wreck), not only at 22 m.
 * Tests: `tests/campaign.test.mjs` runs every op headless (plus the twist helpers and the story
   ops' twist phases); `tests/playwright.campaign.mjs [ops|all]` (needs the dev server) plays each op
   in the browser with the autopilot, checks the twist phases, the win and the loss path and that the
   console stays clean; `tests/out/_camp.mjs`, `_trace.mjs <op> [diff] [salt]` (scratch) print
-  per-op outcome and the radio/objective timeline.
+  per-op outcome and the radio/objective timeline; `_hits.mjs <op> [diff] [salt]` lists every hit on
+  the player's tank (source, range, damage) for balancing.
 
 ## Campaign UI (client: `menu.js`, `hud.js`, `tanks3d.js`, `progress.js`)
 
