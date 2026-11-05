@@ -21,7 +21,8 @@ export class Audio {
       const c = this.ctx = new AC();
       this.master = c.createGain(); this.master.gain.value = this.muted ? 0 : this.volume;
       const comp = c.createDynamicsCompressor(); comp.threshold.value = -10; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.25;
-      this.master.connect(comp).connect(c.destination);
+      const lim = c.createWaveShaper(); lim.curve = S.softClip(); lim.oversample = '2x';   // brick-wall safety: big hits stay loud without digital clipping
+      this.master.connect(comp).connect(lim).connect(c.destination);
       this.rev = c.createConvolver(); this.rev.buffer = S.reverbIR(c); this.revIn = c.createGain(); this.revIn.gain.value = 0.55;
       this.revIn.connect(this.rev).connect(this.master);
       this.sfx = c.createGain(); this.sfx.connect(this.master);
@@ -113,7 +114,7 @@ export class Audio {
          if (t.lastFire != null && t.lastFire !== s.lastFire) {
             s.lastFire = t.lastFire;
             const sp = this.spatial(t.pos, cp, yaw), far = Math.min(1, sp.d / 500);
-            const at = now + (t === p ? 0 : sp.delay); S.gunShot(c, sp.node, at, t.cfg?.gun?.cal ?? 75, t === p ? 1.0 : 2.0, far);
+            const at = now + (t === p ? 0 : sp.delay); S.gunShot(c, sp.node, at, t.cfg?.gun?.cal ?? 75, t === p ? 0.8 : 2.0, far);
             if (sp.d < 120) this.duck(at, t === p ? 0.25 : 0.5);
          }
       }
@@ -139,8 +140,8 @@ export class Audio {
       const c = this.ctx, type = e.type ?? e.kind, pos = e.pos || e.point || w.tanks?.find((t) => t.id === e.dstId)?.pos;
       const mine = p && e.srcId === p.id, onMe = p && e.dstId === p.id;
       if (!pos) return;
-      const sp = this.spatial(pos, cp, yaw), at = now + (onMe ? 0 : sp.delay * 0.5), loud = onMe ? 1.0 : mine ? 0.9 : 0.8;
-      if (onMe && (type === 'pen' || type === 'noPen' || type === 'ricochet' || type === 'he')) this.duck(at, 0.3);
+      const sp = this.spatial(pos, cp, yaw), at = now + (onMe ? 0 : sp.delay * 0.5), loud = onMe ? 1.9 : mine ? 0.9 : 0.8;
+      if (onMe && (type === 'pen' || type === 'noPen' || type === 'ricochet' || type === 'he')) { this.duck(at, 0.12); S.hullBoom(c, this.sfx, at, type === 'ricochet' ? 0.9 : 1.3); }
       if (type === 'ricochet') S.ricochet(c, sp.node, at, loud);
       else if (type === 'pen') S.clang(c, sp.node, at, loud);
       else if (type === 'noPen') S.dong(c, sp.node, at, loud);

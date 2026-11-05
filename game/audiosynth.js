@@ -42,7 +42,9 @@ function osc(ctx, type, f, t, dur) { const o = ctx.createOscillator(); o.type = 
 // gun shot: a muzzle blast is a pressure wave, not a hiss. Four layers summed into a saturating bus
 // (the clipping is what makes it sound violent rather than polite): supersonic crack, mid "blam",
 // a sub-bass pressure kick, and a long low rumble. `far` 0..1 strips the crack/highs with distance.
-let SAT = null;
+let SAT = null, SOFT = null;
+/** output limiter curve: linear up to ~0.7, then a smooth knee into ±1 */
+export function softClip() { if (SOFT) return SOFT; SOFT = new Float32Array(4096); for (let i = 0; i < 4096; i++) { const x = i / 2047.5 - 1, a = Math.abs(x); SOFT[i] = Math.sign(x) * (a < 0.7 ? a : 0.7 + 0.3 * Math.tanh((a - 0.7) / 0.3)); } return SOFT; }
 function satCurve() { if (SAT) return SAT; SAT = new Float32Array(2048); for (let i = 0; i < 2048; i++) { const x = i / 1023.5 - 1; SAT[i] = Math.tanh(x * 2.5) / Math.tanh(2.5); } return SAT; }
 function punchBus(ctx, out, t, vol) {
    const pre = ctx.createGain(), sh = ctx.createWaveShaper(), post = ctx.createGain();
@@ -72,29 +74,48 @@ export function explosion(ctx, out, t, size = 1, vol = 1) {
    const o = osc(ctx, 'sine', 55, t, 1.5), og = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(22, t + 1.2);
    env(og, t, 0.005, 1.3 * vol, 0.9 + size * 0.4); o.connect(og).connect(out);
 }
-// metallic partials (inharmonic): ping (ricochet), clang (penetration), dong (absorbed)
-function metal(ctx, out, t, base, ratios, dec, vol) {
-   for (let i = 0; i < ratios.length; i++) { const o = osc(ctx, 'sine', base * ratios[i], t, dec + 0.1), g = ctx.createGain(); env(g, t, 0.002, vol / (1 + i * 0.6), dec / (1 + i * 0.4)); o.connect(g).connect(out); }
+// ---- shell impacts -------------------------------------------------------------------------------
+// Thick armour does not ring like a bell: it is heavily damped. An impact is a violent crack + a body
+// thump + a short, dead metallic clank (narrow noise bursts, not sine partials) + falling debris/spall.
+function burst(ctx, out, t, f, q, peak, dec, type = 'bandpass') {
+   const n = src(ctx, noise(ctx), t, dec * 4 + 0.05), b = filt(ctx, type, f, q), g = ctx.createGain(); env(g, t, 0.0006, peak, dec); n.connect(b).connect(g).connect(out);
+}
+function thump(ctx, out, t, f0, f1, peak, dec) {
+   const o = osc(ctx, 'sine', f0, t, dec * 3 + 0.1), g = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(f1, t + dec); env(g, t, 0.0015, peak, dec); o.connect(g).connect(out);
+}
+function impactCore(ctx, bus, t, w) {
+   burst(ctx, bus, t, 400, 0.5, 3.2 * w, 0.045, 'highpass');                       // crack
+   thump(ctx, bus, t, 90, 32, 3.0 * w, 0.22);                                      // body blow
+   for (let k = 0; k < 3; k++) burst(ctx, bus, t + 0.004 * k, 650 + Math.random() * 900, 5, 1.4 * w, 0.035 + Math.random() * 0.03);   // dead clank
+   for (let k = 0; k < 7; k++) burst(ctx, bus, t + 0.05 + Math.random() * 0.45, 1800 + Math.random() * 2500, 2, 0.35 * w * (1 - k / 9), 0.015);   // spall / debris
+   const r = src(ctx, brown(ctx), t, 1.6), rl = filt(ctx, 'lowpass', 220), rg = ctx.createGain(); env(rg, t, 0.01, 1.2 * w, 0.6); r.connect(rl).connect(rg).connect(bus);   // dust rumble
+}
+// own tank hit: the hull itself booms around the crew (deep, close, short) — added on top when onMe
+export function hullBoom(ctx, out, t, vol = 1) {
+   const bus = punchBus(ctx, out, t, vol);
+   thump(ctx, bus, t, 60, 26, 3.5, 0.35);
+   burst(ctx, bus, t, 160, 0.8, 2.5, 0.18);
 }
 export function ricochet(ctx, out, t, vol = 1) {
    const bus = punchBus(ctx, out, t, vol);
-   const n = src(ctx, noise(ctx), t, 0.2), hp = filt(ctx, 'highpass', 1500), g = ctx.createGain(); env(g, t, 0.0005, 2.2, 0.03); n.connect(hp).connect(g).connect(bus);   // tack
-   metal(ctx, bus, t, 1700 + Math.random() * 900, [1, 1.52, 2.31, 3.7], 0.5, 1.1);
-   const o = osc(ctx, 'sine', 3200 + Math.random() * 800, t, 0.9), og = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(600, t + 0.8); env(og, t + 0.02, 0.01, 0.55, 0.75); o.connect(og).connect(bus);   // whizz away
+   impactCore(ctx, bus, t, 0.8);
+   // deflected shot tearing away: a falling, ragged noise band (no pure tone)
+   const n = src(ctx, noise(ctx), t, 1.0), bp = filt(ctx, 'bandpass', 2600, 7), g = ctx.createGain();
+   bp.frequency.setValueAtTime(2600 + Math.random() * 900, t + 0.02); bp.frequency.exponentialRampToValueAtTime(500, t + 0.7);
+   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(2.2, t + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75); n.connect(bp).connect(g).connect(bus);
 }
-// penetration: heavy crunch + clang + thump
+// penetration: harder crack, crunching tear, more spall
 export function clang(ctx, out, t, vol = 1) {
    const bus = punchBus(ctx, out, t, vol);
-   const n = src(ctx, noise(ctx), t, 0.4), bp = filt(ctx, 'bandpass', 1400, 0.8), g = ctx.createGain(); env(g, t, 0.0008, 2.6, 0.12); n.connect(bp).connect(g).connect(bus);
-   metal(ctx, bus, t, 300 + Math.random() * 60, [1, 2.76, 5.4, 8.9], 1.0, 1.6);
-   const o = osc(ctx, 'sine', 110, t, 0.5), og = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(40, t + 0.25); env(og, t, 0.002, 2.4, 0.3); o.connect(og).connect(bus);
+   impactCore(ctx, bus, t, 1.15);
+   burst(ctx, bus, t + 0.01, 1100, 1.2, 2.2, 0.12);                                 // tearing metal
+   for (let k = 0; k < 6; k++) burst(ctx, bus, t + 0.02 + Math.random() * 0.25, 900 + Math.random() * 3000, 3, 0.7, 0.02);
 }
-// non-penetration: a deep bell-like DONG of a shell hitting thick plate
+// non-penetration: heavy dull slam
 export function dong(ctx, out, t, vol = 1) {
    const bus = punchBus(ctx, out, t, vol);
-   const n = src(ctx, noise(ctx), t, 0.25), lp = filt(ctx, 'lowpass', 2500), g = ctx.createGain(); env(g, t, 0.0008, 2.0, 0.07); n.connect(lp).connect(g).connect(bus);
-   metal(ctx, bus, t, 140 + Math.random() * 30, [1, 2.4, 3.9, 6.1], 1.3, 1.8);
-   const o = osc(ctx, 'sine', 80, t, 0.5), og = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(35, t + 0.3); env(og, t, 0.002, 2.0, 0.3); o.connect(og).connect(bus);
+   impactCore(ctx, bus, t, 1.0);
+   thump(ctx, bus, t, 140, 55, 1.6, 0.12);
 }
 export function whistle(ctx, out, t, vol = 1) {
    const o = osc(ctx, 'sine', 1900, t, 0.7), g = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(700, t + 0.6);
