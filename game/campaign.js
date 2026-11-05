@@ -1194,5 +1194,106 @@ export const OPS = {
          });
       },
    },
+   prokhorovka: {
+      id: 'prokhorovka', name: 'Stahl gegen Stahl', place: 'Höhe 252,2 vor Prochorowka', date: '12. Juli 1943', nation: 'SU',
+      map: 'steppe', seed: 1243, tanks: ['t34_76'], start0: [0, 430, 0], fog: 0.25,
+      brief: [
+         'Kursker Bogen, achter Tag der deutschen Offensive. Das II. SS-Panzerkorps steht vor Prochorowka, auf der Höhe 252,2 graben sich Tiger und Panzer IV ein.',
+         'Die 5. Garde-Panzerarmee von General Rotmistrow tritt heute zum Gegenschlag an. Auf weite Entfernung sind die 8,8 der Tiger unschlagbar. Also gibt es nur einen Befehl: volle Fahrt voraus, ran an den Feind, Bordwand an Bordwand.',
+         'Nach dem Artillerieschlag geht das Signal „Stahl, Stahl, Stahl!“ über Funk. Dann fährt das ganze 29. Panzerkorps los. Wer stehen bleibt, ist tot.',
+      ],
+      goals: ['Mit voller Fahrt an die Höhe heran', '???', 'Die Tiger auf kurze Entfernung bekämpfen'],
+      tip: 'Den Tiger nie auf weite Entfernung angreifen. Unter 300 m durchschlägt die 76-mm-Kanone seine Seite, mit Unterkaliber auch die Front.',
+      script(S) {
+         S.fog(0.25, 0xb9b4a4);                                     // dust and powder smoke over the steppe
+         const DZ = -40, GAP = -150;                                // the Soviet anti-tank ditch, dug a week before, and its one unfinished stretch
+         const ditch = (x0, x1) => { const pts = []; for (let x = x0; x <= x1; x += 30) pts.push([x, DZ + ((Math.round(x / 30) & 1) ? 4 : -4)]); return pts; };
+         S.T.carveTrench?.(ditch(-480, GAP - 30), { w: 7, d: 3.6, enemy: [0, -400], parapet: 1 });
+         S.T.carveTrench?.(ditch(GAP + 30, 480), { w: 7, d: 3.6, enemy: [0, -400], parapet: 1 });
+         // the Leibstandarte on the hill: dug-in Tigers and Panzer IV, half blind in dust and smoke until the charge is close
+         for (const [x, z] of [[90, -160], [280, -150]]) S.spawn('tiger1', 2, x, z, { tag: 'tiger', name: 'Tiger (13./SS-Pz.Rgt. 1)', aiErr: 2.3, viewMul: 0.6, order: { kind: 'ambush', x, z, r: 330 } });
+         for (const [x, z] of [[-60, -125], [20, -140], [240, -145]]) S.spawn('pz4h', 2, x, z, { tag: 'pz4', name: 'Panzer IV', aiErr: 2.4, viewMul: 0.6, order: { kind: 'ambush', x, z, r: 300 } });
+         const mates = [];
+         for (const [x, z] of [[-60, 420], [60, 420], [-120, 440], [120, 440], [-180, 455], [180, 455]]) mates.push(S.spawn('t34_76', 1, x, z, { tag: 'mate', name: 'T-34 (29. Pz.-Korps)', aiErr: 1.4, order: { kind: 'hold', x, z } }));
+         S.obj('charge', 'Mit voller Fahrt an die Höhe 252,2 heran');
+         S.obj('gap', 'Einen Übergang über den Panzergraben finden', { hidden: true });
+         S.obj('kill', 'Panzer auf der Höhe auf kurze Entfernung vernichten', { hidden: true, need: 4 });
+         S.obj('b_fast', 'Den Graben in unter 60 s überwinden', { bonus: true, hidden: true });
+         S.obj('b_mates', 'Mindestens drei Kameraden kommen über den Graben', { bonus: true, hidden: true });
+         S.obj('b_tiger', 'Einen Tiger selbst vernichten', { bonus: true, hidden: true });
+         S.phase('barrage'); S.goal(0, 300, 'Bereitstellung', 40);
+         this.start = (S) => {
+            S.radio('Hier Rotmistrow: Die Artillerie schießt Feuerschlag auf die Höhe 252,2. Motoren an, noch nicht losfahren!');
+            S.strike(40, -190, 160, { n: 10, secs: 14, dmg: 60, team: 2 });
+         };
+         S.at(15, (S) => {
+            S.phase('charge'); S.radio('Stahl, Stahl, Stahl! Alle Panzer: volle Fahrt voraus! Ran an den Feind!', 'warn');
+            S.goal(0, DZ + 50, 'Höhe 252,2 – ran an den Feind', 40);
+            for (const t of mates) S.order([t], { kind: 'route', pin: true, pts: [[t.pos.x * 0.8, 150], [t.pos.x * 0.5 + 20, DZ + 22]] });
+         });
+         // the twist: the charge runs into the Red Army's own anti-tank ditch, 150 m short of the Tigers
+         let tDitch = 0;
+         S.when((S) => S.c.phase === 'charge' && (S.player.pos.z < DZ + 110 || mates.some((t) => t.alive && t.pos.z < DZ + 40) || S.time > 110), (S) => {
+            S.phase('ditch'); S.done('charge'); S.show('gap'); tDitch = S.time;
+            S.radio('Halt! HALT! Ein Panzergraben – unser eigener, vor einer Woche ausgehoben! Die ersten Panzer stürzen hinein!', 'warn');
+            for (const t of S.group(['tiger', 'pz4'])) { t.viewMul = 0.85; if (t.ai?.order) t.ai.order.r = 600; }
+            const lost = mates.filter((t) => t.alive).sort((a, b) => a.pos.z - b.pos.z).slice(0, 2);   // the leading two go over the edge
+            for (const t of lost) { S.w.damage(t, t.maxHP * 0.55, null, 'crash'); for (const m of ['trackL', 'trackR']) if (t.modules[m]) t.modules[m].state = 'destroyed'; }
+            for (const t of mates) if (t.alive) S.order([t], { kind: 'hold', x: t.pos.x, z: Math.max(t.pos.z, DZ + 30) });
+            S.goal(Math.max(-20, S.player.pos.x * 0.3), DZ + 65, 'Halt! Vor dem Graben sammeln', 25);
+            S.after(5, (S) => S.radio('Die Deutschen schießen in den Stau! Wir stehen wie auf dem Schießstand!', 'warn'));
+            S.after(8, (S) => {
+               S.radio('Ein Pionier winkt: Weiter links, am Feldweg, ist der Graben nie fertig geworden – dort kommt man durch!');
+               S.radio('Die Pioniere werfen Nebelkerzen vor den Graben!');
+               for (const t of S.group(['tiger', 'pz4'])) t.viewMul = 0.4;
+               S.mark('gap', GAP, DZ, 'Lücke im Graben', 'area', 18); S.goal(GAP, DZ + 45, 'Lücke im Panzergraben', 18);
+            });
+            // meanwhile the 18th Tank Corps works round the ditch's west end along the railway embankment
+            for (const [x, z, dt] of [[-420, 60, 4], [-440, 90, 10], [-400, 120, 16]]) S.after(dt, (S) => S.spawn('t34_76', 1, x, z, { tag: 'mate2', name: 'T-34 (18. Pz.-Korps)', aiErr: 1.4,
+               order: { kind: 'route', pin: true, pts: [[-470, -20], [-330, -90], [-240, -95]] } }));
+            S.after(20, (S) => S.radio('Das 18. Panzerkorps umfährt den Graben am Bahndamm – es kommt von Westen!'));
+            S.every(14, (S) => { if (S.c.phase === 'ditch') S.strike(-20, DZ + 25, 110, { n: 4, secs: 4, dmg: 90, team: 1 }); });
+         });
+         // the autopilot must not stop at the ditch to trade shots over the heads of the stalled column (it holds fire with a mate in line)
+         S.every(0.5, (S) => { if (S.c.phase === 'ditch' && S.autopilot && S.player?.ai) S.player.ai.flankT = 3; });
+         // in the ditch: a tractor crew hooks a cable on and drags the tank back out (once every 20 s)
+         let inT = 0, kills = 0;
+         S.every(1, (S) => {
+            const p = S.player; if (!p?.alive || (S.T.trenchDist?.(p.pos.x, p.pos.z) ?? 9) > 4 || Math.abs(p.speed) > 1) { inT = 0; return; }
+            if (++inT < 14) return; inT = -6;
+            p.pos.x = Math.max(GAP + 45, Math.min(400, p.pos.x)); p.pos.z = DZ + 16; p.yaw = 0; p.speed = 0; p.placeOn?.(S.T);
+            S.radio('Eine Zugmaschine hakt das Seil ein und schleppt euch aus dem Graben. Nach links, zur Lücke!', 'warn');
+         });
+         S.when((S) => S.c.phase === 'ditch' && S.inZone('player', GAP, DZ + 45, 24), (S) => S.goal(GAP, DZ - 60, 'Durch die Lücke!', 14));
+         S.when((S) => S.c.phase === 'ditch' && S.player.pos.z < DZ - 15 && Math.abs(S.player.pos.x - GAP) < 80, (S) => {
+            S.phase('melee'); S.done('gap'); S.show('kill'); S.show('b_fast'); S.show('b_mates'); S.show('b_tiger'); S.unmark('gap');
+            if (S.time - tDitch < 60) S.done('b_fast'); else S.fail('b_fast');
+            for (const t of S.group(['tiger', 'pz4'])) { t.viewMul = 0.5; if (t.ai) t.ai.D = { ...t.ai.D, err: t.ai.D.err * 2 }; }   // close range: the turrets traverse too slowly for T-34s at full speed
+            S.refit(0.5, 'Durch! Hinter euch kommen die anderen. Jetzt ran an die Tiger – Bordwand an Bordwand!');
+            for (const t of mates) if (t.alive) S.order([t], { kind: 'route', pin: true, pts: [[GAP, DZ + 30], [GAP, DZ - 35], [GAP - 30, DZ - 70]] });
+                        // hold at the embankment until the Shturmoviks have been and the second echelon is up, then all go in together
+            S.goal(GAP - 40, DZ - 55, 'Sammeln am Bahndamm', 20);
+            S.after(4, (S) => { S.radio('Il-2 im Tiefflug! Die Schlachtflieger werfen Hohlladungsbomben auf die Tiger!'); S.strike(0, 0, 8, { tag: 'tiger', n: 10, secs: 12, dmg: 300, team: 2 }); });
+            S.after(20, (S) => {
+               S.radio('Alle zusammen – Angriff! Von der Seite an sie heran, Bordwand an Bordwand!', 'warn');
+               for (const t of S.group(['mate', 'mate2'])) if (t.alive) S.order([t], { kind: 'route', pts: t.pos.z > DZ ? [[GAP, DZ + 30], [GAP, DZ - 35], [-60, -150], [120, -160]] : [[-60, -150], [120, -160]] });
+               S.after(8, (S) => S.hunt(['pz4', 'tiger'], 'Feindpanzer'));
+            });
+         });
+         S.when((S) => S.c.phase === 'melee', (S) => {
+            const k = S.dead('tiger') + S.dead('pz4'); S.progress('kill', k);
+            if (k > kills) { kills = k; if (k < 4) S.refit(0.3, k === 1 ? 'Einer brennt! Ihr nehmt Granaten vom Wrack eines Kameraden mit – weiter!' : 'Noch einer! Der Fahrer flickt die Kette im Schutz des Rauchs.'); }
+            if (mates.filter((t) => t.alive && t.pos.z < DZ - 10).length >= 3) S.done('b_mates');
+         }, { repeat: true });
+         S.when((S) => S.group('tiger').some((t) => !t.alive && t.lastHitBy === S.player.id), (S) => S.done('b_tiger'));
+         S.when((S) => S.c.phase === 'melee' && S.isDone('kill'), (S) => {
+            if (S.get('b_mates').state === 'active') S.fail('b_mates');
+            if (S.get('b_tiger').state === 'active') S.fail('b_tiger');
+            for (const t of S.group(['tiger', 'pz4'])) if (t.alive && t.ai) S.order([t], { kind: 'advance', x: t.pos.x, z: -450 });
+            S.radio('Die SS zieht sich hinter die Höhe zurück. Hunderte Panzer brennen auf dem Feld. Durchgebrochen sind wir nicht – aber sie auch nicht mehr.');
+            S.win('Höhe 252,2 gehalten');
+         });
+      },
+   },
 };
-export const OP_LIST = ['westwall', 'arracourt', 'lasttiger', 'danzig', 'seelow', 'spaehtrupp', 'beute', 'totalize', 'koeder', 'halfaya', 'bastogne', 'raseiniai'];
+export const OP_LIST = ['westwall', 'arracourt', 'lasttiger', 'danzig', 'seelow', 'spaehtrupp', 'beute', 'totalize', 'koeder', 'halfaya', 'bastogne', 'raseiniai', 'prokhorovka'];

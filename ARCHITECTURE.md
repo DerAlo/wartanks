@@ -630,7 +630,7 @@ can run an operation unchanged and clients only render `world.campaign`.
 * Maps: `noRandom: true` in `MAPS` (e.g. the sea-half `kueste`) keeps a map out of `RANDOM_MAPS`, the
   pool the menu's "random" map draws from. Such maps are reached only through the campaign or by
   choosing them directly.
-* Twist helpers (used by the story ops `spaehtrupp`, `beute`, `totalize` (night → dawn via `fadeFog`), `koeder`, `halfaya`, `bastogne`), all sim-side:
+* Twist helpers (used by the story ops `spaehtrupp`, `beute`, `totalize` (night → dawn via `fadeFog`), `koeder`, `halfaya`, `bastogne`, `prokhorovka`), all sim-side:
   * `S.countdown(label, s, fn)` → timer object `{ label, left }` (lengthen with `.left += n`, relabel;
     a later `S.timer` replaces it and its `fn` never fires). `S.retext(id, text)` rewrites an
     objective (re-emits `objective`). `S.fog(amount, color?)` / `S.fadeFog(amount, s, fn)` change
@@ -665,6 +665,14 @@ can run an operation unchanged and clients only render `world.campaign`.
   while a second 8,8 kills it from behind (scripted hits, `kv.viewMul = 0`); last a light Soviet relief
   (T-26/BT-7) comes up the west road. During the decoy the autopilot gets a pinned weaving route and
   `ai.flankT` is kept > 0 so it never stops to trade shots it cannot win).
+  `prokhorovka` (SU 1943, `steppe`, dust fog: after a barrage the T-34s charge the dug-in Tigers and
+  Panzer IV; the twist is the Red Army's own anti-tank ditch (`carveTrench` w 7, d 3.6, across the map
+  at z −40 with a 60 m gap at x −150): the two leading mates crash into it, the rest stall in the
+  open under fire; a pioneer shows the gap, smoke cuts the Germans' view. A player stuck in or at the
+  ditch for 14 s is towed back out to its south lip. Over the ditch: Il-2 `strike` on the Tigers, the
+  18th Tank Corps comes round the west end, then a pinned joint attack; 4 kills win, each of the first
+  three kills gives a `refit`. During the ditch phase the autopilot keeps `flankT` > 0, otherwise it
+  stops to shoot past the stalled mates and `_mateInLine` holds its fire for ever).
 * `MAPS[id].minimap = { ground, road, bush, tree }` overrides the minimap tints in `hud.buildMap`.
 * Map `wueste` (`maps.js`, `noRandom`): steppe palette re-coloured through `colors` (sand minimap), no trees, an
   escarpment ridge across z ≈ −170 with the pass at x 0 and a goat track at x ≈ 390, wadis
