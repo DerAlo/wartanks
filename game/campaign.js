@@ -1099,5 +1099,100 @@ export const OPS = {
          });
       },
    },
+   raseiniai: {
+      id: 'raseiniai', name: 'Der Koloss von Raseiniai', place: 'Brückenkopf an der Dubysa bei Raseiniai, Litauen', date: '24. Juni 1941', nation: 'DE',
+      map: 'waldhuegel', seed: 2461, tanks: ['pz3e', 'pz2'], start0: [440, 95, Math.PI / 2],
+      brief: [
+         'Dritter Tag des Unternehmens Barbarossa. Die Kampfgruppe Raus hält einen Brückenkopf über die Dubysa. Ihre einzige Nachschubstraße führt durch den Wald nach Osten.',
+         'Seit dem Morgen kommt nichts mehr durch. Zwölf Lastwagen brennen auf der Straße, die Verwundeten können nicht zurück. Irgendetwas steht da vorne und schießt alles zusammen.',
+         'Fahrt vor und seht nach, was die Straße sperrt. Unsere Pak hat bisher alles geknackt, was ihr vor das Rohr kam. Bisher.',
+      ],
+      goals: ['Die Straßensperre aufklären', '???', 'Die Straße wieder freikämpfen'],
+      tip: 'Nicht alles, was man trifft, kann man auch durchschlagen. Manchmal ist die beste Waffe eines Panzers, dass der Gegner auf ihn schießt.',
+      script(S) {
+         const K = [-70, -18];                                     // the KV on the road, a little west of the hollow
+         const kv = S.spawn('kv1', 2, K[0], K[1], { tag: 'kv', name: 'KW-1 (Straßensperre)', aiErr: 2.6, viewMul: 0.75, face: [440, 95], order: { kind: 'hold', x: K[0], z: K[1] } });
+         S.spawn('pz2', 1, 455, 120, { tag: 'mate', name: 'Panzer II (Lt. Wenk)', order: { kind: 'hold', x: 380, z: 115 } });
+         S.obj('scout', 'Die Straßensperre aufklären');
+         S.obj('decoy', 'Den KW ablenken: am Waldrand sein Feuer auf euch ziehen', { hidden: true });
+         S.obj('relief', 'Den sowjetischen Entsatz abwehren', { hidden: true, need: 3 });
+         S.obj('b_clean', 'Beim Aufklären keinen Treffer einstecken', { bonus: true });
+         S.obj('b_flak', 'Die zweite Flak übersteht den Gegenangriff', { bonus: true, hidden: true });
+         S.obj('b_dodge', 'Beim Ablenken höchstens einen schweren Treffer', { bonus: true });
+         S.phase('scout');
+         const [ox, oz] = S.hullDown(170, 15, 24, K[0], K[1]);
+         S.goal(ox, oz, 'Beobachtungspunkt', 14);
+         this.start = (S) => S.radio('Hier Raus: Fahrt vor bis an den Waldrand und meldet, was die Straße sperrt. Nicht angreifen, nur sehen.');
+         let hp0 = 0, flak2 = null;
+         S.when((S) => S.c.phase === 'scout' && S.player && S.player.hp < S.player.maxHP - 1, (S) => S.fail('b_clean'));
+         // spotted: a KV-1, 45 t, armour no gun of ours goes through. The 8,8 is brought up and knocked out before it fires twice
+         S.when((S) => S.c.phase === 'scout' && (kv.spotted || S.time > 150), (S) => {
+            S.phase('flak'); S.done('scout'); if (S.get('b_clean').state === 'active') S.done('b_clean');
+            S.radio('Ein Ungetüm auf der Straße – ein russischer Schwerer, ein KW! Unsere Granaten springen ab wie Erbsen!', 'warn');
+            S.after(6, (S) => S.radio('Raus an alle: Wir ziehen eine 8,8 nach vorn. Haltet still, bis sie steht.'));
+            const flak = S.spawn('pak40', 1, 300, 60, { tag: 'flak', name: '8,8-cm-Flak', exact: true, noAI: true, face: K });
+            S.mark('flak', 300, 60, '8,8-cm-Flak', 'area', 20);
+            S.after(14, (S) => S.radio('Die Flak geht in Stellung … sie richtet …'));
+            S.after(22, (S) => {
+               S.w.effect('explosion', { x: K[0] + 25, y: S.T.heightAt(K[0] + 25, K[1] + 10), z: K[1] + 10 }, { cal: 88, size: 2, life: 2 });
+               S.radio('Daneben! Der KW dreht den Turm –', 'warn');
+            });
+            S.after(27, (S) => {
+               if (flak.alive) { S.w.effect('explosion', { x: flak.pos.x, y: flak.pos.y + 1, z: flak.pos.z }, { cal: 76, size: 2, life: 2 }); S.w.damage(flak, flak.hp, kv, 'shell'); }
+               S.unmark('flak');
+               S.radio('Volltreffer auf die Flak! Die Bedienung … keiner rührt sich mehr.', 'warn');
+            });
+            // the twist: a second gun goes round through the wood behind the KV; it needs the KV looking the other way
+            S.after(33, (S) => {
+               S.phase('decoy'); S.show('decoy'); if (kv.ai) kv.ai.D = { ...kv.ai.D, err: kv.ai.D.err * 2 };   // a fast target weaving between the trees
+               S.refit(1, null); hp0 = S.player?.hp ?? 0;
+               S.radio('Raus: Wir bringen die zweite 8,8 durch den Wald in seinen Rücken. Dafür muss er nach vorn schauen – auf euch. Zeigt euch am Waldrand und bleibt in Bewegung!', 'warn');
+               const [dx, dz] = [130, -45];
+               S.mark('edge', dx, dz, 'Waldrand', 'area', 55); S.goal(dx, dz, 'Waldrand – Feuer auf euch ziehen', 30);
+               // a moving target: the autopilot weaves along the wood edge
+               if (S.autopilot && S.player?.ai) S.player.ai.careful = false;   // no stopping to trade shots it cannot win
+               if (S.autopilot && S.player) S.order([S.player], { kind: 'route', pin: true, pts: [[dx + 20, dz + 35], [dx - 15, dz - 25], [dx + 25, dz - 30], [dx - 10, dz + 30], [dx + 10, dz]] });
+               S.holdZone('KW ablenken', dx, dz, 60, 35, (S) => {
+                  S.done('decoy'); S.unmark('edge'); if (S.autopilot && S.player?.ai) S.player.ai.careful = true;
+                  if (S.get('b_dodge').state === 'active') S.done('b_dodge');
+                  S.phase('kill'); kv.viewMul = 0;   // the turret swings round to the gun behind it
+                  S.radio('Die zweite Flak steht – 200 Meter hinter ihm. Feuer!');
+                  flak2 = S.spawn('pak40', 1, K[0] - 190, K[1] - 45, { tag: 'flak2', name: '8,8-cm-Flak (2)', exact: true, noAI: true, face: K });
+                  for (let i = 0; i < 4; i++) S.after(2 + i * 3, (S) => {
+                     if (!kv.alive) return;
+                     S.w.effect('explosion', { x: kv.pos.x, y: kv.pos.y + 1.5, z: kv.pos.z }, { cal: 88, size: 2.5, life: 2 });
+                     S.w.damage(kv, kv.maxHP * 0.22, null, 'shell');
+                     if (i === 0) for (const m of ['trackL', 'engine']) if (kv.modules[m]) kv.modules[m].state = 'destroyed';
+                  });
+                  S.after(8, (S) => S.radio('Treffer, Treffer! Er rührt sich nicht mehr … der Turm dreht noch!', 'warn'));
+                  S.after(16, (S) => {
+                     if (kv.alive) S.w.damage(kv, kv.hp, null, 'shell');
+                     S.radio('Pioniere sind dran: geballte Ladungen auf den Motor. Er brennt!');
+                     S.after(6, (S) => relief(S));
+                  });
+               }, { contest: false });
+            });
+         });
+         S.every(0.5, (S) => { if (S.c.phase === 'decoy' && S.autopilot && S.player?.ai) S.player.ai.flankT = 3; });   // manoeuvring: no stopping to trade shots
+         S.when((S) => S.c.phase === 'decoy' && S.player && S.player.hp < hp0 - S.player.maxHP * 0.45, (S) => S.fail('b_dodge'));
+         // last: from the bridgehead's far side a Soviet tank company comes up the road to its KV
+         const relief = (S) => {
+            S.phase('relief'); S.show('relief'); S.show('b_flak');
+            if (flak2?.alive) { flak2.yaw = Math.atan2(470 + flak2.pos.x, 95 + flak2.pos.z); flak2.pose?.(); }   // swung round to the west road
+            if (flak2?.alive) S.crewUp(flak2, { aiErr: 1.6, order: { kind: 'hold', x: flak2.pos.x, z: flak2.pos.z } });
+            S.refit(0.85, 'Die Straße ist frei. Munition kommt nach vorn – und von Westen hört man Ketten.');
+            for (const [c, dz, dt] of [['t26', -20, 0], ['bt7', 20, 18], ['t26', 0, 36]]) S.after(dt, (S) => S.spawn(c, 2, -470, -95 + dz, { tag: 'rel', name: TANKS[c].short, aiErr: 2.8, viewMul: 0.75,
+               order: { kind: 'route', pts: [[-260, -50 + dz], [-120, -20 + dz], [40, 10]] } }));
+            S.after(4, (S) => { S.radio('Leichte russische Panzer, T-26 und BT, auf der Straße von Westen! Die wollen zu ihrem KW – haltet sie auf!', 'warn'); S.hunt('rel', 'Entsatz'); });
+            S.order(S.group('mate').filter((t) => t.alive), { kind: 'advance', x: 120, z: 30 });
+         };
+         S.when((S) => S.c.phase === 'relief', (S) => S.progress('relief', S.dead('rel')), { repeat: true });
+         S.when((S) => S.c.phase === 'relief' && S.isDone('relief'), (S) => {
+            if (flak2?.alive) S.done('b_flak'); else S.fail('b_flak');
+            S.radio('Die Straße ist frei. Ein einziger Panzer hat eine ganze Kampfgruppe einen Tag lang aufgehalten. Das wird man sich merken.');
+            S.win('Nachschubstraße frei');
+         });
+      },
+   },
 };
-export const OP_LIST = ['westwall', 'arracourt', 'lasttiger', 'danzig', 'seelow', 'spaehtrupp', 'beute', 'totalize', 'koeder', 'halfaya', 'bastogne'];
+export const OP_LIST = ['westwall', 'arracourt', 'lasttiger', 'danzig', 'seelow', 'spaehtrupp', 'beute', 'totalize', 'koeder', 'halfaya', 'bastogne', 'raseiniai'];

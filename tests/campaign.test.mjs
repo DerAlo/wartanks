@@ -66,7 +66,7 @@ test('inert vehicles are ignored by bots; crewUp and defect bring them into the 
    step(w, 1);
 });
 
-for (const [id, twist] of [['spaehtrupp', 'out'], ['beute', 'escort'], ['totalize', 'tigers'], ['koeder', 'out'], ['halfaya', 'flank'], ['bastogne', 'unmask']]) {
+for (const [id, twist] of [['spaehtrupp', 'out'], ['beute', 'escort'], ['totalize', 'tigers'], ['koeder', 'out'], ['halfaya', 'flank'], ['bastogne', 'unmask'], ['raseiniai', 'decoy']]) {
    test('story op ' + id + ' reaches its twist (' + twist + ') and is won by the autopilot', () => {
       const w = new World({ mode: 'campaign', op: id, playerCls: null, difficulty: 0, countdown: 0 });
       const seen = new Set(); let st = 0;

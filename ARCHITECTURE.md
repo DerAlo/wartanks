@@ -659,7 +659,12 @@ can run an operation unchanged and clients only render `world.campaign`.
   `bastogne` (US 1944, `winter` map, fog: hold the crossroads; the twist is Operation Greif, where
   a "versprengter" M10 and Sherman arrive as team 1 and `S.defect` to team 2 when the player hits
   them or they get within 170 m; then the fog lifts and `strike` opens the counter-attack, on average
-  killing 1–2 of the three assembled tanks, and repeats every 70 s).
+  killing 1–2 of the three assembled tanks, and repeats every 70 s) and
+  `raseiniai` (DE 1941, `waldhuegel`: a lone KV-1 blocks the supply road; the first 8,8 is knocked
+  out by script, then the player must hold a zone at the wood edge for 35 s to draw the KV's fire
+  while a second 8,8 kills it from behind (scripted hits, `kv.viewMul = 0`); last a light Soviet relief
+  (T-26/BT-7) comes up the west road. During the decoy the autopilot gets a pinned weaving route and
+  `ai.flankT` is kept > 0 so it never stops to trade shots it cannot win).
 * `MAPS[id].minimap = { ground, road, bush, tree }` overrides the minimap tints in `hud.buildMap`.
 * Map `wueste` (`maps.js`, `noRandom`): steppe palette re-coloured through `colors` (sand minimap), no trees, an
   escarpment ridge across z ≈ −170 with the pass at x 0 and a goat track at x ≈ 390, wadis
