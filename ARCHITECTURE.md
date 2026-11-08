@@ -627,9 +627,13 @@ can run an operation unchanged and clients only render `world.campaign`.
 * `World({ salt })` re-rolls the dice (shots, AI) without changing the terrain. `salt` 0 is the
   classic run. Balance sweep: `tests/out/_robust.mjs [ops|all] [diffs] [nSalt] [countdowns]`
   (scratch, gitignored) prints win rate, mean duration and stars per op and difficulty.
-* Maps: `noRandom: true` in `MAPS` (e.g. the sea-half `kueste`) keeps a map out of `RANDOM_MAPS`, the
-  pool the menu's "random" map draws from. Such maps are reached only through the campaign or by
-  choosing them directly.
+* Maps: `noRandom: true` in `MAPS` keeps a map out of `RANDOM_MAPS`, the pool the menu's "random"
+  map draws from (currently no map uses it; `kueste` and `wueste` are in the rotation).
+* Map variants (`maps.js` `variant(base, o)`): campaign maps re-used for random/encounter battles with
+  another terrain seed: `ardennen` (winter), `kursk` (steppe), `caen` (dorf), `ghibli` (wueste). `atmo`
+  { fog, color } is a standing weather look (main.startBattle -> R.setFog, only when no campaign op
+  sets its own fog; visual only, spotting unchanged). `trenches` [{ pts, w, d }] are carved in
+  terrain.makeTerrain right after construction, so they are deterministic per seed.
 * Twist helpers (used by the story ops `spaehtrupp`, `beute`, `totalize` (night → dawn via `fadeFog`), `koeder`, `halfaya`, `bastogne`, `prokhorovka`), all sim-side:
   * `S.countdown(label, s, fn)` → timer object `{ label, left }` (lengthen with `.left += n`, relabel;
     a later `S.timer` replaces it and its `fn` never fires). `S.retext(id, text)` rewrites an
@@ -674,7 +678,7 @@ can run an operation unchanged and clients only render `world.campaign`.
   three kills gives a `refit`. During the ditch phase the autopilot keeps `flankT` > 0, otherwise it
   stops to shoot past the stalled mates and `_mateInLine` holds its fire for ever).
 * `MAPS[id].minimap = { ground, road, bush, tree }` overrides the minimap tints in `hud.buildMap`.
-* Map `wueste` (`maps.js`, `noRandom`): steppe palette re-coloured through `colors` (sand minimap), no trees, an
+* Map `wueste` (`maps.js`): steppe palette re-coloured through `colors` (sand minimap), no trees, an
   escarpment ridge across z ≈ −170 with the pass at x 0 and a goat track at x ≈ 390, wadis
   (hollows) at (300, −20) and (−260, 110).
   * Route orders advance a waypoint also when the bot is within 50 m and has not got closer for

@@ -155,7 +155,7 @@ export const MAPS = {
    },
    kueste: {
       id: 'kueste', name: 'Küste', desc: 'Ostseeküste an der Danziger Bucht: Strand, Dünen und Kiefern, ein Backsteinhafen mit Mole – im Norden nur offene See.',
-      palette: 'coast', seed: 67, noRandom: true,      // half the map is sea: campaign / chosen only, not in the random rotation
+      palette: 'coast', seed: 67,      // half the map is sea: bases moved inland (bases / spawnZ below)
       render: { ...SUMMER, fog: 0xb3c0c8, skyHor: 0xc8d4dc, skyTop: 0x5b86b4, skyLow: 0x6f7a78, sunColor: 0xfff4e2,
          sunIntensity: 2.4, groundLight: 0x5e5a48, cloud: 0.65, fogNear: 320, fogFar: 1500 },
       noise: { amp: 2.5, scale: 260, detail: 0.4, ridgedAmp: 1.5 },
@@ -200,7 +200,7 @@ export const MAPS = {
    },
    wueste: {
       id: 'wueste', name: 'Wüste', desc: 'Libysch-ägyptische Grenze: Sand und Geröll, flache Wadis und ein Steilhang mit zwei Pässen – Deckung gibt nur das Gelände.',
-      palette: 'steppe', seed: 79, noRandom: true,     // North Africa ops (campaign) / chosen only
+      palette: 'steppe', seed: 79,     // North Africa (Halfaya op); in the random rotation too
       colors: { grass: 0xc9ad78, grass2: 0xd8c08c, dirt: 0xa98a5e, rock: 0x9a8268, road: 0xb89e74, sand: 0xdcc898, soft: 0xbfa070, tree: 0x6f6a3c, tree2: 0x7d7646, pine: 0x5a5a34, bush: 0x8a7e4c },
       render: { ...SUMMER, fog: 0xdccdb0, skyHor: 0xe4d8c0, skyTop: 0x5e8cc4, skyLow: 0xb8a68a, sunColor: 0xfff0d6, sunIntensity: 3.2,
          skyLight: 0xd8dce4, groundLight: 0x9a845e, cloud: 0.08, fogNear: 300, fogFar: 1400, grade: { saturation: 1.04, contrast: 1.06 } },
@@ -230,6 +230,30 @@ export const MAPS = {
       minimap: { ground: 0xc2a674, road: 0x8f7a56, bush: 'rgba(112,94,52,.65)', tree: 'rgba(96,82,46,.75)' },   // hud.buildMap: sand, not field green
    },
 };
+// ---- variants of the campaign maps for random / encounter battles --------------------------------
+// Same theme and landmarks, a different terrain seed (other hills, scatter) plus the campaign op's
+// weather: `atmo` { fog 0..1, color } is the op's mission fog applied as the map's standing look
+// (main.startBattle -> R.setFog; visual only, spotting is unchanged). `trenches` are carved after
+// the terrain is built (terrain.makeTerrain -> carveTrench); narrow enough for tanks to bridge.
+const variant = (base, o) => { const b = MAPS[base]; return { ...b, ...o, render: { ...b.render, ...(o.render || {}) }, features: [...b.features, ...(o.extra || [])] }; };
+const zig = (z, x0, x1, n, amp) => { const p = []; for (let i = 0; i <= n; i++) p.push([x0 + (x1 - x0) * i / n, z + (i % 2 ? amp : -amp)]); return p; };
+Object.assign(MAPS, {
+   ardennen: variant('winter', { id: 'ardennen', name: 'Ardennen', seed: 1219,
+      desc: 'Bastogne, Dezember 1944: verschneite Wälder und Gehöfte im eisigen Nebel – man sieht den Gegner erst, wenn er da ist.',
+      atmo: { fog: 0.45, color: 0xd6dbe0 },
+      extra: [{ kind: 'farm', x: 150, z: 60, yaw: 0.6 }, { kind: 'farm', x: -170, z: -80, yaw: -0.3 }, { kind: 'road', pts: [[-500, 0], [-150, 20], [0, 0], [150, -20], [500, 0]], w: 6 }] }),
+   kursk: variant('steppe', { id: 'kursk', name: 'Kursker Bogen', seed: 1243,
+      desc: 'Prochorowka, Juli 1943: weite Steppe im Dunst von Staub und Rauch, quer durchs Feld zieht sich ein Grabensystem.',
+      atmo: { fog: 0.22, color: 0xa29c8c },
+      trenches: [{ pts: zig(-30, -470, -240, 8, 6), w: 2.6, d: 1.7 }, { pts: zig(-30, -180, 180, 12, 6), w: 2.6, d: 1.7 }, { pts: zig(-30, 240, 470, 8, 6), w: 2.6, d: 1.7 },
+         { pts: zig(40, -300, -60, 8, 5), w: 2.4, d: 1.6 }, { pts: zig(40, 60, 300, 8, 5), w: 2.4, d: 1.6 }] }),
+   caen: variant('dorf', { id: 'caen', name: 'Nacht bei Caen', seed: 7844,
+      desc: 'Operation Totalize, August 1944: Dörfer, Hecken und Felder im Mondlicht – Mündungsfeuer verrät jede Stellung.',
+      atmo: { fog: 0.62, color: 0x1b2330 } }),
+   ghibli: variant('wueste', { id: 'ghibli', name: 'Ghibli', seed: 1541,
+      desc: 'Halfaya-Pass, Juni 1941: Sandsturm über dem Steilhang – braune Luft, kurze Sicht, Gefechte um die beiden Pässe.',
+      atmo: { fog: 0.5, color: 0xc6a676 } }),
+});
 export const MAP_LIST = Object.keys(MAPS);
 /** Maps the random pick (menu, lobby host) rolls from: no coast map with open sea for 7v7. */
 export const RANDOM_MAPS = MAP_LIST.filter((id) => !MAPS[id].noRandom);

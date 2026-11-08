@@ -914,6 +914,7 @@ function lerpDepth(s, ft, total, shallow, deep) {
 
 export function makeTerrain(seed, themeId) {
    const t = new Terrain(seed, themeId);
+   for (const tr of t.theme?.trenches || []) t.carveTrench(tr.pts, tr);   // map-defined trench lines (maps.js variants)
    const qs = (typeof location !== 'undefined' && location?.search) || '';
    if (/[?&]demofeatures(=|&|$)/.test(qs)) t.addDemoFeatures(/demofeatures=blown/.test(qs));
    return t;

@@ -42,8 +42,8 @@ export function startBattle(opts = {}) {
    const world = G.world = opts.world || new stateM.World({ mode: 'standard', mapId: 'steppe', seed: 1234, playerCls: undefined, difficulty: 'normal', ...opts });
    if (!opts.world && opts.playerPerks && world.player?.setPerks) world.player.setPerks(opts.playerPerks);   // crew skills from the garage (net games: setup.buildWorld)
    G.battleOpts = { ...opts }; delete G.battleOpts.world; G.endT = 0; G.paused = false;
-   const base = themeOf(world.mapId ?? opts.mapId), th = fogTheme(base, world.campaign?.fog || 0, world.campaign?.fogColor);   // misty / night ops
-   R.setTheme(base); sky.setTheme(base, R.sunDir); G.fogSeen = -1; syncFog(world);
+   const base = themeOf(world.mapId ?? opts.mapId), atmo = world.campaign ? null : base.atmo, th = fogTheme(base, world.campaign?.fog || atmo?.fog || 0, world.campaign?.fogColor ?? atmo?.color);   // misty / night ops and weather maps
+   R.setTheme(base); sky.setTheme(base, R.sunDir); G.fogSeen = -1; syncFog(world); if (atmo?.fog) R.setFog(atmo.fog, atmo.color);
    terrain3d = new Terrain3D(R.scene, world.terrain, th, q);
    if (tanks3dM.Tanks3D) tanks3d = G.tanks3d = new tanks3dM.Tanks3D(R.scene, world);
    if (fxM.FX) fx = new fxM.FX(R.scene, world, q);

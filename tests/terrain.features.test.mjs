@@ -103,12 +103,18 @@ test('bridge over the Flusstal river: drivable deck, blown span drops into the w
 });
 
 test('existing maps are unaffected by features until a mission adds them', () => {
-   for (const id of Object.keys(MAPS)) {
+   for (const id of Object.keys(MAPS).filter((k) => !MAPS[k].trenches)) {   // maps with built-in trenches (kursk) carve on purpose
       const T = makeTerrain(7, id);
       assert.equal(T._pg, null, id);
       assert.equal(T.heightVersion, 0, id);
       assert.equal(T.hullHeightAt(10, 10, 6), T.heightAt(10, 10));
    }
+});
+
+test('kursk: built-in trench lines are carved below the surrounding steppe', () => {
+   const T = makeTerrain(7, 'kursk'), p = MAPS.kursk.trenches[1].pts[3];
+   assert.ok(T._pg && T.heightVersion > 0);
+   assert.ok(T.heightAt(p[0], p[1]) < T.heightAt(p[0], p[1] + 12) - 0.8, 'trench is a ditch');
 });
 
 test('kueste: sea in the north deep enough for a ship, dry spawns, harbour mole', () => {
